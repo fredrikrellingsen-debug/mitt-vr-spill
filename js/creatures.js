@@ -3,7 +3,8 @@ import * as THREE from 'three';
 export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null) {
   const {
     sharedWoodTex, sharedWoodBumpTex, sharedFoliageBumpTex,
-    polishedBrassMat, sharedRedEyeGlowTex
+    polishedBrassMat, wroughtIronMat, sharedRedEyeGlowTex, sharedSparkGlowTex,
+    createContactShadow
   } = M;
 
   function prepareGLTFTemplate(gltf, prefix) {
@@ -142,6 +143,7 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     const tailorNpcGLTF = loadedAssets && loadedAssets.tailorNpc;
     if (tailorNpcGLTF && tailorNpcGLTF.scene) {
       const { group: npc } = instantiateGLTFCreature(tailorNpcGLTF, 'tailorNpc');
+      if (createContactShadow) npc.add(createContactShadow(0.46, 0.46, 0.015));
 
       const npcShield = new THREE.Mesh(
         new THREE.BoxGeometry(0.85, 1.95, 0.6),
@@ -155,6 +157,7 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     }
 
     const npc = new THREE.Group();
+    if (createContactShadow) npc.add(createContactShadow(0.46, 0.46, 0.015));
 
     const trouserMat = new THREE.MeshStandardMaterial({ color: 0x2f251d, roughness: 0.88 });
     const bootMat = new THREE.MeshStandardMaterial({ color: 0x1d130c, roughness: 0.55, metalness: 0.08 });
@@ -439,6 +442,7 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     const deerGLTF = loadedAssets && loadedAssets.deer;
     if (deerGLTF && deerGLTF.scene) {
       const { group, model } = instantiateGLTFCreature(deerGLTF, 'deer');
+      if (createContactShadow) group.add(createContactShadow(0.58, 0.92));
       group.userData.legs = [0, 1, 2, 3]
         .map((i) => model.getObjectByName(`leg${i}`))
         .filter(Boolean);
@@ -446,6 +450,7 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     }
 
     const group = new THREE.Group();
+    if (createContactShadow) group.add(createContactShadow(0.58, 0.92));
 
     const body = new THREE.Mesh(deerTorsoGeo, deerFurMat);
     body.position.set(0, 0.94, 0.05);
@@ -585,6 +590,7 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     const wolfGLTF = loadedAssets && loadedAssets.wolf;
     if (wolfGLTF && wolfGLTF.scene) {
       const { group, model } = instantiateGLTFCreature(wolfGLTF, 'wolf');
+      if (createContactShadow) group.add(createContactShadow(0.48, 0.78));
       group.userData.legs = [0, 1, 2, 3]
         .map((i) => model.getObjectByName(`leg${i}`))
         .filter(Boolean);
@@ -592,6 +598,7 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     }
 
     const group = new THREE.Group();
+    if (createContactShadow) group.add(createContactShadow(0.48, 0.78));
 
     const body = new THREE.Mesh(wolfTorsoGeo, wolfFurMat);
     body.scale.set(0.92, 0.98, 1.0);
@@ -765,6 +772,7 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     const banditGLTF = loadedAssets && loadedAssets.bandit;
     if (banditGLTF && banditGLTF.scene) {
       const { group, model } = instantiateGLTFCreature(banditGLTF, 'bandit');
+      if (createContactShadow) group.add(createContactShadow(0.52, 0.52));
       let muzzle =
         model.getObjectByName('muzzle') ||
         model.getObjectByName('Muzzle') ||
@@ -779,6 +787,7 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     }
 
     const group = new THREE.Group();
+    if (createContactShadow) group.add(createContactShadow(0.52, 0.52));
 
     // Skulpturerte støvler med hælsporer + bukseben
     [-1, 1].forEach((side) => {
@@ -1010,6 +1019,7 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     const vampireGLTF = loadedAssets && loadedAssets.vampire;
     if (vampireGLTF && vampireGLTF.scene) {
       const { group, model } = instantiateGLTFCreature(vampireGLTF, 'vampire');
+      if (createContactShadow) group.add(createContactShadow(0.62, 0.62));
 
       const eyeHalo = new THREE.Sprite(nightEyeHaloMat);
       eyeHalo.scale.set(0.46, 0.26, 1);
@@ -1023,6 +1033,7 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     }
 
     const group = new THREE.Group();
+    if (createContactShadow) group.add(createContactShadow(0.62, 0.62));
 
     const cloak = new THREE.Mesh(nightCloakGeo, nightCloakMat);
     cloak.position.y = 0.78;
@@ -1052,7 +1063,6 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     jaw.position.set(0, 1.33, -0.18);
     group.add(jaw);
 
-    // Svak rød lysglorie rundt de glødende øynene
     const eyeHalo = new THREE.Sprite(nightEyeHaloMat);
     eyeHalo.scale.set(0.46, 0.26, 1);
     eyeHalo.position.set(0, 1.45, -0.31);
@@ -1107,6 +1117,459 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     return group;
   }
 
+  // --- Våpensmed-NPC (Master Caleb) inne hos Gunsmith (assets/gunsmith_npc.glb + fallback) ---
+  function createGunsmithNPC(gunsmithBlockHitMeshes) {
+    const gunsmithNpcGLTF = loadedAssets && loadedAssets.gunsmithNpc;
+    if (gunsmithNpcGLTF && gunsmithNpcGLTF.scene) {
+      const { group: npc } = instantiateGLTFCreature(gunsmithNpcGLTF, 'gunsmithNpc');
+      if (createContactShadow) npc.add(createContactShadow(0.48, 0.48, 0.015));
+
+      const shield = new THREE.Mesh(
+        new THREE.BoxGeometry(0.9, 1.95, 0.65),
+        new THREE.MeshBasicMaterial({ visible: false })
+      );
+      shield.position.set(0, 1.0, 0);
+      npc.add(shield);
+      if (gunsmithBlockHitMeshes) gunsmithBlockHitMeshes.push(shield);
+      return npc;
+    }
+
+    // Prosedyrisk fallback for Våpensmed-NPC (vendt mot +Z som skredderen)
+    const npc = new THREE.Group();
+    if (createContactShadow) npc.add(createContactShadow(0.48, 0.48, 0.015));
+    const apronMat = new THREE.MeshStandardMaterial({ color: 0x4a2914, roughness: 0.78 });
+    const shirtMat = new THREE.MeshStandardMaterial({ color: 0x8f2d22, roughness: 0.85 });
+    const pantsMat = new THREE.MeshStandardMaterial({ color: 0x2a2c30, roughness: 0.88 });
+    const skinMat = new THREE.MeshStandardMaterial({ color: 0xd49c74, roughness: 0.72 });
+    const beardMat = new THREE.MeshStandardMaterial({ color: 0x2e1c10, roughness: 0.86 });
+
+    [-0.13, 0.13].forEach((lx) => {
+      const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.085, 0.56, 5, 10), pantsMat);
+      leg.position.set(lx, 0.44, 0);
+      npc.add(leg);
+    });
+    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 0.42, 6, 12), shirtMat);
+    torso.scale.set(1.08, 1, 0.76);
+    torso.position.set(0, 1.12, 0);
+    npc.add(torso);
+
+    const apron = new THREE.Mesh(new THREE.CylinderGeometry(0.225, 0.26, 0.76, 14, 1, false, -Math.PI * 0.48, Math.PI * 0.96), apronMat);
+    apron.position.set(0, 0.96, 0.02);
+    npc.add(apron);
+
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.155, 12, 10), skinMat);
+    head.position.set(0, 1.58, 0.02);
+    npc.add(head);
+
+    const beard = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.24, 10), beardMat);
+    beard.rotation.x = Math.PI - 0.12;
+    beard.position.set(0, 1.46, 0.09);
+    npc.add(beard);
+
+    const hat = createSculptedCowboyHat(apronMat, polishedBrassMat);
+    hat.position.set(0, 1.70, 0.01);
+    npc.add(hat);
+
+    const shield = new THREE.Mesh(
+      new THREE.BoxGeometry(0.9, 1.95, 0.65),
+      new THREE.MeshBasicMaterial({ visible: false })
+    );
+    shield.position.set(0, 1.0, 0);
+    npc.add(shield);
+    if (gunsmithBlockHitMeshes) gunsmithBlockHitMeshes.push(shield);
+    return npc;
+  }
+
+  // --- Sheriff Vance utenfor Safe House / Saloonen (høydetaljert .glb-lovmann + gull Sheriff-stjerne) ---
+  function createSheriffVanceNPC(sheriffHitMeshes) {
+    const goldStarMat = new THREE.MeshStandardMaterial({
+      color: 0xffd857,
+      emissive: 0x452d00,
+      metalness: 0.92,
+      roughness: 0.18
+    });
+
+    const baseGLTF = loadedAssets && loadedAssets.tailorNpc;
+    if (baseGLTF && baseGLTF.scene) {
+      const { group, model } = instantiateGLTFCreature(baseGLTF, 'tailorNpc');
+      if (createContactShadow) group.add(createContactShadow(0.54, 0.54));
+
+      model.traverse((node) => {
+        if (!node.isMesh || !node.material) return;
+        const mName = node.material.name || '';
+        if (
+          mName === 'MeasuringTape' ||
+          mName === 'TapeTickDark' ||
+          mName === 'RedPincushion' ||
+          mName === 'ShearEdgeSteel' ||
+          mName === 'PearlPin'
+        ) {
+          node.visible = false;
+          return;
+        }
+        if (mName === 'TailorStetson') {
+          node.material = node.material.clone();
+          node.material.color.setHex(0xe4d2b2);
+        } else if (mName === 'TailorBrocadeVest' || mName === 'TailorVestLapel' || mName === 'TailorVestSatinBack') {
+          node.material = node.material.clone();
+          node.material.color.setHex(0x1f334a);
+        } else if (mName === 'TailorSilkCravat') {
+          node.material = node.material.clone();
+          node.material.color.setHex(0x8e1b1b);
+        } else if (mName === 'TailorHair') {
+          node.material = node.material.clone();
+          node.material.color.setHex(0x8c847a);
+        } else if (mName === 'TailorWoolTrousers') {
+          node.material = node.material.clone();
+          node.material.color.setHex(0x28231e);
+        }
+      });
+
+      // Gull 6-tagget Sheriff-stjerne på venstre bryst + lær-hylster på høyre hofte
+      const starGroup = new THREE.Group();
+      const triGeo = new THREE.CylinderGeometry(0.044, 0.044, 0.012, 3);
+      const tA = new THREE.Mesh(triGeo, goldStarMat);
+      tA.rotation.x = Math.PI / 2;
+      const tB = new THREE.Mesh(triGeo, goldStarMat);
+      tB.rotation.x = Math.PI / 2;
+      tB.rotation.z = Math.PI;
+      starGroup.add(tA, tB);
+      starGroup.position.set(-0.105, 1.25, 0.172);
+      group.add(starGroup);
+
+      const holster = new THREE.Mesh(
+        new THREE.BoxGeometry(0.075, 0.21, 0.10),
+        new THREE.MeshStandardMaterial({ color: 0x3a2010, roughness: 0.72 })
+      );
+      holster.position.set(0.23, 0.74, 0.04);
+      holster.rotation.z = -0.14;
+      group.add(holster);
+
+      const hitBox = new THREE.Mesh(
+        new THREE.BoxGeometry(0.95, 2.05, 0.75),
+        new THREE.MeshBasicMaterial({ visible: false })
+      );
+      hitBox.position.set(0, 1.02, 0);
+      group.add(hitBox);
+      if (sheriffHitMeshes) sheriffHitMeshes.push(hitBox);
+
+      return group;
+    }
+
+    const group = new THREE.Group();
+    if (createContactShadow) group.add(createContactShadow(0.54, 0.54));
+
+    const coatMat = new THREE.MeshStandardMaterial({ color: 0x6f4a2b, roughness: 0.78 });
+    const vestMat = new THREE.MeshStandardMaterial({ color: 0x26384d, roughness: 0.72 });
+    const pantsMat = new THREE.MeshStandardMaterial({ color: 0x2b2620, roughness: 0.86 });
+    const bootMat = new THREE.MeshStandardMaterial({ color: 0x1a110b, roughness: 0.52 });
+    const skinMat = new THREE.MeshStandardMaterial({ color: 0xdba47c, roughness: 0.7 });
+    const creamHatMat = new THREE.MeshStandardMaterial({ color: 0xe6d4b5, roughness: 0.74 });
+
+    [-1, 1].forEach((side) => {
+      const leg = new THREE.Mesh(banditThighGeo, pantsMat);
+      leg.position.set(side * 0.13, 0.54, 0);
+      leg.castShadow = true;
+      group.add(leg);
+
+      const boot = new THREE.Mesh(banditBootShaftGeo, bootMat);
+      boot.position.set(side * 0.13, 0.16, 0);
+      group.add(boot);
+
+      const foot = new THREE.Mesh(banditBootFootGeo, bootMat);
+      foot.position.set(side * 0.13, 0.062, 0.048);
+      group.add(foot);
+    });
+
+    const duster = new THREE.Mesh(banditDusterGeo, coatMat);
+    duster.rotation.y = Math.PI;
+    duster.position.set(0, 0.30, 0);
+    duster.castShadow = true;
+    group.add(duster);
+
+    const vest = new THREE.Mesh(banditChestGeo, vestMat);
+    vest.position.set(0, 1.09, 0.01);
+    vest.castShadow = true;
+    group.add(vest);
+
+    const belt = new THREE.Mesh(banditBeltGeo, bootMat);
+    belt.position.set(0, 0.84, 0);
+    group.add(belt);
+    const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.052, 0.02), polishedBrassMat);
+    buckle.position.set(0, 0.84, 0.175);
+    group.add(buckle);
+
+    // Gull 6-tagget Sheriff-stjerne på venstre bryst (+Z er fremover for vennlige by-NPCer)
+    const starGroup = new THREE.Group();
+    const triGeo = new THREE.CylinderGeometry(0.042, 0.042, 0.012, 3);
+    const tA = new THREE.Mesh(triGeo, goldStarMat);
+    tA.rotation.x = Math.PI / 2;
+    const tB = new THREE.Mesh(triGeo, goldStarMat);
+    tB.rotation.x = Math.PI / 2;
+    tB.rotation.z = Math.PI;
+    starGroup.add(tA, tB);
+    starGroup.position.set(-0.095, 1.24, 0.155);
+    group.add(starGroup);
+
+    [-1, 1].forEach((side) => {
+      const arm = new THREE.Mesh(banditUpperArmGeo, coatMat);
+      arm.position.set(side * 0.27, 1.18, 0.02);
+      arm.rotation.z = side * -0.18;
+      arm.rotation.x = -0.18;
+      arm.castShadow = true;
+      group.add(arm);
+
+      const fore = new THREE.Mesh(banditForearmGeo, coatMat);
+      fore.position.set(side * 0.30, 0.96, 0.09);
+      fore.rotation.x = -0.45;
+      group.add(fore);
+
+      const hand = new THREE.Mesh(banditHandGeo, skinMat);
+      hand.position.set(side * 0.29, 0.84, 0.16);
+      group.add(hand);
+    });
+
+    const head = new THREE.Mesh(banditHeadGeo, skinMat);
+    head.position.set(0, 1.56, 0.015);
+    head.castShadow = true;
+    group.add(head);
+
+    [-1, 1].forEach((side) => {
+      const eye = new THREE.Mesh(banditEyeGeo, banditEyeMat);
+      eye.position.set(side * 0.052, 1.585, 0.148);
+      group.add(eye);
+
+      const stache = new THREE.Mesh(new THREE.CapsuleGeometry(0.016, 0.055, 4, 6), new THREE.MeshStandardMaterial({ color: 0x8c7b68, roughness: 0.8 }));
+      stache.rotation.z = Math.PI / 2 + side * 0.28;
+      stache.position.set(side * 0.042, 1.515, 0.156);
+      group.add(stache);
+    });
+
+    const whiteHat = createSculptedCowboyHat(creamHatMat, goldStarMat);
+    whiteHat.position.set(0, 1.69, 0.01);
+    whiteHat.rotation.x = -0.05;
+    group.add(whiteHat);
+
+    const hitBox = new THREE.Mesh(
+      new THREE.BoxGeometry(0.95, 2.05, 0.75),
+      new THREE.MeshBasicMaterial({ visible: false })
+    );
+    hitBox.position.set(0, 1.02, 0);
+    group.add(hitBox);
+    if (sheriffHitMeshes) sheriffHitMeshes.push(hitBox);
+
+    return group;
+  }
+
+  // --- Bandittkaptein («Captain Iron-Jaw») ved den forlatte gullgruven i Crimson Canyon ---
+  function createBanditCaptainModel() {
+    const group = createBanditModel();
+    group.scale.setScalar(1.14);
+
+    // Gi kapteinen mørkerød kappe-fargetone og gull/messing-detaljer på hatten
+    const captainCrimson = new THREE.Color(0x6e1818);
+    group.traverse((node) => {
+      if (!node.isMesh || !node.material || node.material.map) return;
+      const mName = node.material.name || '';
+      if (mName.toLowerCase().includes('coat') || mName.toLowerCase().includes('duster')) {
+        node.material = node.material.clone();
+        node.material.color.copy(captainCrimson);
+      }
+    });
+
+    // Gullskulder-epauletter slik at kapteinen skiller seg tydelig ut på lang avstand
+    [-1, 1].forEach((side) => {
+      const ep = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.038, 0.16), polishedBrassMat);
+      ep.position.set(side * 0.24, 1.38, -0.02);
+      ep.rotation.z = side * -0.18;
+      group.add(ep);
+    });
+
+    return group;
+  }
+
+  // --- Grizzlybjørn i Whispering Woods (assets/bear.glb + skulpturert fallback) ---
+  const bearFurMat = new THREE.MeshStandardMaterial({
+    color: 0x4f301b,
+    bumpMap: sharedFoliageBumpTex,
+    bumpScale: 0.05,
+    roughness: 0.9
+  });
+  const bearGrizzleMat = new THREE.MeshStandardMaterial({
+    color: 0x6c482e,
+    bumpMap: sharedFoliageBumpTex,
+    bumpScale: 0.05,
+    roughness: 0.88
+  });
+  const bearSnoutMat = new THREE.MeshStandardMaterial({ color: 0xa87d56, roughness: 0.84 });
+
+  function createBearModel() {
+    const bearGLTF = loadedAssets && loadedAssets.bear;
+    if (bearGLTF && bearGLTF.scene) {
+      const { group, model } = instantiateGLTFCreature(bearGLTF, 'bear');
+      if (createContactShadow) group.add(createContactShadow(0.95, 1.38));
+      group.userData.legs = [0, 1, 2, 3]
+        .map((i) => model.getObjectByName(`leg${i}`))
+        .filter(Boolean);
+      return group;
+    }
+
+    const group = new THREE.Group();
+    if (createContactShadow) group.add(createContactShadow(0.95, 1.38));
+
+    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.46, 0.92, 7, 14), bearFurMat);
+    torso.rotation.x = Math.PI / 2;
+    torso.position.set(0, 0.88, 0.06);
+    torso.castShadow = true;
+    group.add(torso);
+
+    const hump = new THREE.Mesh(new THREE.SphereGeometry(0.48, 12, 10), bearGrizzleMat);
+    hump.scale.set(0.95, 1.08, 1.1);
+    hump.position.set(0, 1.04, -0.38);
+    hump.castShadow = true;
+    group.add(hump);
+
+    const head = new THREE.Group();
+    head.name = 'head';
+    head.position.set(0, 1.08, -0.92);
+    const skull = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 10), bearFurMat);
+    skull.castShadow = true;
+    head.add(skull);
+    const snout = new THREE.Mesh(new THREE.CapsuleGeometry(0.13, 0.22, 5, 10), bearSnoutMat);
+    snout.rotation.x = Math.PI / 2;
+    snout.position.set(0, -0.06, -0.24);
+    head.add(snout);
+    [-1, 1].forEach((side) => {
+      const ear = new THREE.Mesh(new THREE.SphereGeometry(0.085, 8, 6), bearFurMat);
+      ear.position.set(side * 0.21, 0.22, 0.04);
+      head.add(ear);
+    });
+    group.add(head);
+
+    const legs = [];
+    [-1, 1].forEach((side) => {
+      [-1, 1].forEach((end) => {
+        const legPivot = new THREE.Group();
+        legPivot.name = `leg${legs.length}`;
+        legPivot.position.set(side * 0.30, 0.72, end * 0.52);
+        const limb = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.44, 5, 10), bearFurMat);
+        limb.position.y = -0.34;
+        limb.castShadow = true;
+        legPivot.add(limb);
+        group.add(legPivot);
+        legs.push(legPivot);
+      });
+    });
+    group.userData.legs = legs;
+
+    return group;
+  }
+
+  // --- Sluttboss: Lord Malakor – Vampyrfyrste (assets/boss_vampire.glb + 3D helsemåler over hodet) ---
+  function createBossVampireModel() {
+    let group;
+    let model = null;
+    const bossGLTF = loadedAssets && loadedAssets.bossVampire;
+
+    if (bossGLTF && bossGLTF.scene) {
+      const inst = instantiateGLTFCreature(bossGLTF, 'bossVampire');
+      group = inst.group;
+      model = inst.model;
+      const arm0 = model.getObjectByName('arm0');
+      const arm1 = model.getObjectByName('arm1');
+      group.userData.arms = [arm0, arm1].filter(Boolean);
+    } else {
+      group = createNightEnemyModel();
+      group.scale.setScalar(1.55);
+    }
+
+    if (createContactShadow) group.add(createContactShadow(1.05, 1.05));
+
+    // Glødende rød øye- og aura-halo rundt Lord Malakor
+    const bossEyeHalo = new THREE.Sprite(nightEyeHaloMat);
+    bossEyeHalo.scale.set(0.95, 0.55, 1);
+    bossEyeHalo.position.set(0, 2.28, -0.42);
+    group.add(bossEyeHalo);
+
+    if (sharedSparkGlowTex) {
+      const auraMat = new THREE.SpriteMaterial({
+        map: sharedRedEyeGlowTex,
+        color: 0xff1e38,
+        transparent: true,
+        opacity: 0.38,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        fog: false,
+        toneMapped: false
+      });
+      const auraSprite = new THREE.Sprite(auraMat);
+      auraSprite.scale.set(2.8, 3.1, 1);
+      auraSprite.position.set(0, 1.45, 0.05);
+      group.add(auraSprite);
+    }
+
+    // 3D Helsemåler (Sprite m/ CanvasTexture) over hodet på Lord Malakor
+    const barCanvas = document.createElement('canvas');
+    barCanvas.width = 512;
+    barCanvas.height = 112;
+    const barCtx = barCanvas.getContext('2d');
+    const barTex = new THREE.CanvasTexture(barCanvas);
+    barTex.colorSpace = THREE.SRGBColorSpace;
+
+    const barMat = new THREE.SpriteMaterial({
+      map: barTex,
+      transparent: true,
+      depthTest: true,
+      depthWrite: false,
+      fog: false,
+      toneMapped: false
+    });
+    const barSprite = new THREE.Sprite(barMat);
+    barSprite.scale.set(2.75, 0.60, 1);
+    barSprite.position.set(0, 2.86, 0);
+    group.add(barSprite);
+
+    function updateBossHealthBar(hp, maxHp, titleLabel = 'LORD MALAKOR') {
+      const ratio = Math.max(0, Math.min(1, hp / Math.max(1, maxHp)));
+      barCtx.clearRect(0, 0, 512, 112);
+
+      barCtx.fillStyle = 'rgba(22, 8, 14, 0.92)';
+      barCtx.strokeStyle = '#e5b354';
+      barCtx.lineWidth = 5;
+      barCtx.beginPath();
+      barCtx.roundRect(8, 8, 496, 96, 16);
+      barCtx.fill();
+      barCtx.stroke();
+
+      barCtx.font = 'bold 26px Georgia, serif';
+      barCtx.fillStyle = '#ffe6b3';
+      barCtx.textAlign = 'center';
+      barCtx.fillText(`${titleLabel} (${Math.max(0, Math.ceil(hp))}/${maxHp})`, 256, 40);
+
+      barCtx.fillStyle = '#2d0d14';
+      barCtx.fillRect(32, 56, 448, 30);
+
+      const grad = barCtx.createLinearGradient(32, 0, 480, 0);
+      grad.addColorStop(0, '#a30b24');
+      grad.addColorStop(0.5, '#e61e32');
+      grad.addColorStop(1, '#ff6838');
+      barCtx.fillStyle = grad;
+      barCtx.fillRect(32, 56, Math.round(448 * ratio), 30);
+
+      barCtx.strokeStyle = 'rgba(255, 220, 150, 0.7)';
+      barCtx.lineWidth = 2;
+      barCtx.strokeRect(32, 56, 448, 30);
+
+      barTex.needsUpdate = true;
+    }
+
+    updateBossHealthBar(30, 30);
+    group.userData.updateBossHealthBar = updateBossHealthBar;
+    group.userData.healthBarSprite = barSprite;
+
+    return group;
+  }
+
   function animateQuadrupedLegs(group, stridePhase, amp) {
     const legs = group.userData.legs;
     if (!legs || legs.length < 4) return;
@@ -1120,10 +1583,15 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
   return {
     createSculptedCowboyHat,
     createTailorNPC,
+    createGunsmithNPC,
+    createSheriffVanceNPC,
     createDeerModel,
     createWolfModel,
+    createBearModel,
     createBanditModel,
+    createBanditCaptainModel,
     createNightEnemyModel,
+    createBossVampireModel,
     animateQuadrupedLegs
   };
 }
