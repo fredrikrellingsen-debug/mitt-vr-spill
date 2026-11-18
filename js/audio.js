@@ -393,6 +393,277 @@ export function initWesternAudio(audioCtx, controllers, getNightAmount) {
     thump.stop(now + 0.2);
   }
 
+  function playShotgunSound() {
+    ensureAudioRunning();
+    const now = audioCtx.currentTime;
+
+    const noise = audioCtx.createBufferSource();
+    noise.buffer = getGunNoiseBuffer();
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(3600, now);
+    filter.frequency.exponentialRampToValueAtTime(340, now + 0.44);
+    const nGain = audioCtx.createGain();
+    nGain.gain.setValueAtTime(0.0001, now);
+    nGain.gain.exponentialRampToValueAtTime(1.0, now + 0.004);
+    nGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.46);
+    noise.connect(filter);
+    filter.connect(nGain);
+    nGain.connect(sfxBus);
+    noise.start(now);
+    noise.stop(now + 0.49);
+
+    const sub = audioCtx.createOscillator();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(175, now);
+    sub.frequency.exponentialRampToValueAtTime(28, now + 0.34);
+    const sGain = audioCtx.createGain();
+    sGain.gain.setValueAtTime(0.95, now);
+    sGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.42);
+    sub.connect(sGain);
+    sGain.connect(sfxBus);
+    sub.start(now);
+    sub.stop(now + 0.45);
+  }
+
+  function playRifleSound() {
+    ensureAudioRunning();
+    const now = audioCtx.currentTime;
+
+    const noise = audioCtx.createBufferSource();
+    noise.buffer = getGunNoiseBuffer();
+    const hp = audioCtx.createBiquadFilter();
+    hp.type = 'bandpass';
+    hp.frequency.setValueAtTime(2400, now);
+    hp.Q.value = 0.7;
+    const nGain = audioCtx.createGain();
+    nGain.gain.setValueAtTime(0.82, now);
+    nGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.24);
+    noise.connect(hp);
+    hp.connect(nGain);
+    nGain.connect(sfxBus);
+    noise.start(now);
+    noise.stop(now + 0.26);
+
+    const crack = audioCtx.createOscillator();
+    crack.type = 'sawtooth';
+    crack.frequency.setValueAtTime(2650, now);
+    crack.frequency.exponentialRampToValueAtTime(280, now + 0.075);
+    const cGain = audioCtx.createGain();
+    cGain.gain.setValueAtTime(0.32, now);
+    cGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.085);
+    crack.connect(cGain);
+    cGain.connect(sfxBus);
+    crack.start(now);
+    crack.stop(now + 0.095);
+
+    // Winchester lever-action metallklikk («chhk-chak»)
+    [0.19, 0.28].forEach((offset, idx) => {
+      const lever = audioCtx.createOscillator();
+      lever.type = 'triangle';
+      lever.frequency.setValueAtTime(idx === 0 ? 1150 : 1520, now + offset);
+      lever.frequency.exponentialRampToValueAtTime(420, now + offset + 0.045);
+      const lGain = audioCtx.createGain();
+      lGain.gain.setValueAtTime(0.11, now + offset);
+      lGain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.05);
+      lever.connect(lGain);
+      lGain.connect(sfxBus);
+      lever.start(now + offset);
+      lever.stop(now + offset + 0.06);
+    });
+  }
+
+  function playCrossbowSound() {
+    ensureAudioRunning();
+    const now = audioCtx.currentTime;
+
+    const twang = audioCtx.createOscillator();
+    twang.type = 'triangle';
+    twang.frequency.setValueAtTime(210, now);
+    twang.frequency.exponentialRampToValueAtTime(88, now + 0.16);
+    const tGain = audioCtx.createGain();
+    tGain.gain.setValueAtTime(0.38, now);
+    tGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+    twang.connect(tGain);
+    tGain.connect(sfxBus);
+    twang.start(now);
+    twang.stop(now + 0.2);
+
+    [1760, 2637].forEach((freq, i) => {
+      const silver = audioCtx.createOscillator();
+      silver.type = 'sine';
+      silver.frequency.setValueAtTime(freq, now + i * 0.02);
+      silver.frequency.exponentialRampToValueAtTime(freq * 0.85, now + 0.24);
+      const sGain = audioCtx.createGain();
+      sGain.gain.setValueAtTime(0.13, now + i * 0.02);
+      sGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
+      silver.connect(sGain);
+      sGain.connect(sfxBus);
+      silver.start(now + i * 0.02);
+      silver.stop(now + 0.27);
+    });
+  }
+
+  function playDynamiteThrowSound() {
+    ensureAudioRunning();
+    const now = audioCtx.currentTime;
+
+    const hiss = audioCtx.createBufferSource();
+    hiss.buffer = getGunNoiseBuffer();
+    const bp = audioCtx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(4800, now);
+    bp.Q.value = 1.8;
+    const hGain = audioCtx.createGain();
+    hGain.gain.setValueAtTime(0.18, now);
+    hGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.45);
+    hiss.connect(bp);
+    bp.connect(hGain);
+    hGain.connect(sfxBus);
+    hiss.start(now);
+    hiss.stop(now + 0.48);
+  }
+
+  function playExplosionSound() {
+    ensureAudioRunning();
+    const now = audioCtx.currentTime;
+
+    const blast = audioCtx.createBufferSource();
+    blast.buffer = getGunNoiseBuffer();
+    const lp = audioCtx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(2200, now);
+    lp.frequency.exponentialRampToValueAtTime(140, now + 0.48);
+    const bGain = audioCtx.createGain();
+    bGain.gain.setValueAtTime(0.0001, now);
+    bGain.gain.exponentialRampToValueAtTime(1.0, now + 0.008);
+    bGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.49);
+    blast.connect(lp);
+    lp.connect(bGain);
+    bGain.connect(sfxBus);
+    blast.start(now);
+    blast.stop(now + 0.5);
+
+    const sub = audioCtx.createOscillator();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(110, now);
+    sub.frequency.exponentialRampToValueAtTime(20, now + 0.78);
+    const sGain = audioCtx.createGain();
+    sGain.gain.setValueAtTime(1.0, now);
+    sGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.85);
+    sub.connect(sGain);
+    sGain.connect(sfxBus);
+    sub.start(now);
+    sub.stop(now + 0.88);
+  }
+
+  function playWeaponSwitchSound() {
+    ensureAudioRunning();
+    const now = audioCtx.currentTime;
+    [720, 1080].forEach((freq, idx) => {
+      const start = now + idx * 0.045;
+      const osc = audioCtx.createOscillator();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, start);
+      const g = audioCtx.createGain();
+      g.gain.setValueAtTime(0.12, start);
+      g.gain.exponentialRampToValueAtTime(0.0001, start + 0.06);
+      osc.connect(g);
+      g.connect(sfxBus);
+      osc.start(start);
+      osc.stop(start + 0.07);
+    });
+  }
+
+  function playGoldPickupSound() {
+    ensureAudioRunning();
+    const now = audioCtx.currentTime;
+    [1318.5, 1975.5].forEach((freq, idx) => {
+      const start = now + idx * 0.075;
+      const coin = audioCtx.createOscillator();
+      coin.type = 'sine';
+      coin.frequency.setValueAtTime(freq, start);
+      const g = audioCtx.createGain();
+      g.gain.setValueAtTime(0.2, start);
+      g.gain.exponentialRampToValueAtTime(0.0001, start + 0.28);
+      coin.connect(g);
+      g.connect(sfxBus);
+      coin.start(start);
+      coin.stop(start + 0.3);
+    });
+  }
+
+  function playRockRicochetSound() {
+    if (audioCtx.state === 'suspended') return;
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sine';
+    const f0 = 1750 + Math.random() * 650;
+    osc.frequency.setValueAtTime(f0, now);
+    osc.frequency.exponentialRampToValueAtTime(480, now + 0.14);
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.11, now);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.15);
+    osc.connect(g);
+    g.connect(sfxBus);
+    osc.start(now);
+    osc.stop(now + 0.16);
+  }
+
+  function playBearRoarSound() {
+    ensureAudioRunning();
+    const now = audioCtx.currentTime;
+    const growl = audioCtx.createOscillator();
+    growl.type = 'sawtooth';
+    growl.frequency.setValueAtTime(92, now);
+    growl.frequency.exponentialRampToValueAtTime(46, now + 0.48);
+    const lp = audioCtx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(340, now);
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.32, now);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.52);
+    growl.connect(lp);
+    lp.connect(g);
+    g.connect(sfxBus);
+    growl.start(now);
+    growl.stop(now + 0.55);
+  }
+
+  function playBossVictoryFanfare() {
+    ensureAudioRunning();
+    const now = audioCtx.currentTime;
+    const chords = [
+      { freq: 392.0, time: 0.0, dur: 0.18 },
+      { freq: 523.25, time: 0.16, dur: 0.18 },
+      { freq: 659.25, time: 0.32, dur: 0.18 },
+      { freq: 783.99, time: 0.48, dur: 0.28 },
+      { freq: 659.25, time: 0.76, dur: 0.16 },
+      { freq: 783.99, time: 0.92, dur: 0.22 },
+      { freq: 1046.5, time: 1.14, dur: 0.85 }
+    ];
+    chords.forEach((note) => {
+      const start = now + note.time;
+      [1.0, 0.5].forEach((mult, idx) => {
+        const osc = audioCtx.createOscillator();
+        osc.type = idx === 0 ? 'sawtooth' : 'triangle';
+        osc.frequency.setValueAtTime(note.freq * mult, start);
+        const filter = audioCtx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(note.freq * 3.6, start);
+        const gain = audioCtx.createGain();
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.exponentialRampToValueAtTime(idx === 0 ? 0.24 : 0.18, start + 0.025);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + note.dur);
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(sfxBus);
+        osc.start(start);
+        osc.stop(start + note.dur + 0.04);
+      });
+    });
+  }
+
   const AMBIENCE_MASTER_VOLUME = 0.07;
   const AMBIENCE_DAY_LEVEL = 0.6;
   const AMBIENCE_NIGHT_LEVEL = 0.45;
@@ -582,6 +853,16 @@ export function initWesternAudio(audioCtx, controllers, getNightAmount) {
     sfxBus,
     ensureAudioRunning,
     playGunshot,
+    playShotgunSound,
+    playRifleSound,
+    playCrossbowSound,
+    playDynamiteThrowSound,
+    playExplosionSound,
+    playWeaponSwitchSound,
+    playGoldPickupSound,
+    playRockRicochetSound,
+    playBearRoarSound,
+    playBossVictoryFanfare,
     playBottleHit,
     playFleshHitSound,
     playPlayerHitSound,

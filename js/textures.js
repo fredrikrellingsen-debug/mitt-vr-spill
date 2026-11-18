@@ -680,6 +680,81 @@ export function initTexturesAndMaterials(maxAnisotropy) {
 
   const sharedParticleGlowTex = createSoftRadialGlowTexture(255, 240, 200);
   const sharedRedEyeGlowTex = createSoftRadialGlowTexture(255, 38, 38);
+  const sharedSparkGlowTex = createSoftRadialGlowTexture(255, 215, 95);
+
+  // Grafikk 3.0: én delt myk radial kontaktsygge-tekstur (CanvasTexture) for alle figurer, dyr, trær, tønner og gravsteiner
+  const shadowCanvas = document.createElement('canvas');
+  shadowCanvas.width = 64;
+  shadowCanvas.height = 64;
+  {
+    const sCtx = shadowCanvas.getContext('2d');
+    const sGrad = sCtx.createRadialGradient(32, 32, 2, 32, 32, 31);
+    sGrad.addColorStop(0.0, 'rgba(12, 7, 4, 0.68)');
+    sGrad.addColorStop(0.45, 'rgba(14, 8, 4, 0.42)');
+    sGrad.addColorStop(0.78, 'rgba(16, 9, 5, 0.14)');
+    sGrad.addColorStop(1.0, 'rgba(16, 9, 5, 0.0)');
+    sCtx.fillStyle = sGrad;
+    sCtx.fillRect(0, 0, 64, 64);
+  }
+  const sharedContactShadowTex = new THREE.CanvasTexture(shadowCanvas);
+  sharedContactShadowTex.colorSpace = THREE.SRGBColorSpace;
+
+  const sharedContactShadowMat = new THREE.MeshBasicMaterial({
+    map: sharedContactShadowTex,
+    transparent: true,
+    opacity: 0.72,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -2
+  });
+  const sharedContactShadowGeo = new THREE.PlaneGeometry(1, 1);
+  sharedContactShadowGeo.rotateX(-Math.PI / 2);
+
+  function createContactShadow(radiusX = 0.65, radiusZ = radiusX, yOffset = 0.026) {
+    const mesh = new THREE.Mesh(sharedContactShadowGeo, sharedContactShadowMat);
+    mesh.scale.set(radiusX * 2, 1, radiusZ * 2);
+    mesh.position.y = yOffset;
+    mesh.renderOrder = 1;
+    return mesh;
+  }
+
+  // Delt myk røyksky-tekstur til kruttrøyk og tåke på Boot Hill
+  const smokeCanvas = document.createElement('canvas');
+  smokeCanvas.width = 64;
+  smokeCanvas.height = 64;
+  {
+    const smCtx = smokeCanvas.getContext('2d');
+    const smGrad = smCtx.createRadialGradient(32, 32, 2, 32, 32, 30);
+    smGrad.addColorStop(0.0, 'rgba(232, 224, 212, 0.85)');
+    smGrad.addColorStop(0.45, 'rgba(196, 186, 174, 0.46)');
+    smGrad.addColorStop(0.8, 'rgba(155, 146, 138, 0.14)');
+    smGrad.addColorStop(1.0, 'rgba(155, 146, 138, 0.0)');
+    smCtx.fillStyle = smGrad;
+    smCtx.fillRect(0, 0, 64, 64);
+  }
+  const sharedSmokePuffTex = new THREE.CanvasTexture(smokeCanvas);
+  sharedSmokePuffTex.colorSpace = THREE.SRGBColorSpace;
+
+  // Delte region-materialer for Crimson Canyon (rød sandstein) og Boot Hill Kapell (mørk forvitret granitt)
+  const crimsonRockMat = new THREE.MeshStandardMaterial({
+    color: 0xb8462c,
+    map: sharedSandstoneTex,
+    normalMap: sharedSandstoneNormalTex,
+    normalScale: new THREE.Vector2(1.25, 1.25),
+    roughnessMap: sharedSandstoneRoughTex,
+    roughness: 0.88,
+    metalness: 0.03
+  });
+  const darkGraveStoneMat = new THREE.MeshStandardMaterial({
+    color: 0x5c5b63,
+    map: sharedSandstoneTex,
+    normalMap: sharedSandstoneNormalTex,
+    normalScale: new THREE.Vector2(1.05, 1.05),
+    roughnessMap: sharedSandstoneRoughTex,
+    roughness: 0.9,
+    metalness: 0.04
+  });
 
   return {
     sharedWoodTex, sharedWoodBumpTex, sharedWoodNormalTex, sharedWoodRoughTex,
@@ -696,7 +771,9 @@ export function initTexturesAndMaterials(maxAnisotropy) {
     woodWallMat, lightWoodMat, darkWoodMat,
     weatheredPlankMatA, weatheredPlankMatB, shutterWoodMat,
     logTimberMat, roofMat, wroughtIronMat, polishedBrassMat,
-    stonePlinthMat, windowMat, darkInteriorMat,
-    sharedParticleGlowTex, sharedRedEyeGlowTex
+    stonePlinthMat, crimsonRockMat, darkGraveStoneMat, windowMat, darkInteriorMat,
+    sharedParticleGlowTex, sharedRedEyeGlowTex, sharedSparkGlowTex,
+    sharedContactShadowTex, sharedContactShadowMat, createContactShadow,
+    sharedSmokePuffTex
   };
 }
