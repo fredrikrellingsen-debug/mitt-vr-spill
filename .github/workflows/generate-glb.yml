@@ -1,0 +1,33 @@
+name: Generate 3D GLB Assets
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/**'
+      - '.github/workflows/generate-glb.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-glb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate binary .glb models
+        run: |
+          if [ -f scripts/generate_assets.py ]; then
+            python3 -B scripts/generate_assets.py
+          fi
+      - name: Commit and push .glb assets to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/*.glb || true
+          if ! git diff --cached --quiet; then
+            git commit -m "3D .glb-modeller generert for GitHub Pages"
+            git pull --rebase origin main
+            git push origin main
+          fi
