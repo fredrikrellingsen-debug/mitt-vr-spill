@@ -7,6 +7,7 @@ export function initRevolverAndAtmosphereFX({
   M,
   saloonBuilding,
   tailorBuilding,
+  gunsmithBuilding = null,
   safeHouseBuilding,
   loadedAssets = null
 }) {
@@ -14,7 +15,7 @@ export function initRevolverAndAtmosphereFX({
     sharedWoodTex, sharedWoodNormalTex, sharedWoodRoughTex,
     gltfWoodNormalTex, gltfWoodRoughTex,
     lightWoodMat, darkWoodMat, wroughtIronMat,
-    sharedParticleGlowTex
+    sharedParticleGlowTex, sharedSparkGlowTex, createContactShadow
   } = M;
 
   let damageVignetteTimer = 0;
@@ -368,6 +369,294 @@ export function initRevolverAndAtmosphereFX({
     return root;
   }
 
+  // Felles PBR-forbedring for nye .glb-våpen (Shotgun, Winchester, Crossbow, Dynamite)
+  function enhanceWeaponGLB(gltfScene) {
+    const model = gltfScene.clone(true);
+    const clonedMap = new Map();
+    model.traverse((node) => {
+      if (!node.isMesh || !node.material) return;
+      node.castShadow = false;
+      node.receiveShadow = false;
+      const orig = node.material;
+      let mat = clonedMap.get(orig);
+      if (!mat) {
+        mat = orig.clone();
+        const mName = mat.name || '';
+        if (mName === 'GunSteel' || mName === 'SilverMetal') {
+          mat.envMapIntensity = 1.55;
+        } else if (mName === 'GunDarkSteel' || mName === 'GunBrass') {
+          mat.envMapIntensity = 1.45;
+        } else if (mName === 'GunWalnut') {
+          mat.envMapIntensity = 0.92;
+          if (gltfWoodNormalTex) {
+            mat.normalMap = gltfWoodNormalTex;
+            mat.normalScale = new THREE.Vector2(0.32, -0.32);
+          }
+          if (gltfWoodRoughTex) mat.roughnessMap = gltfWoodRoughTex;
+        }
+        clonedMap.set(orig, mat);
+      }
+      node.material = mat;
+    });
+    return model;
+  }
+
+  const silverMetalMat = new THREE.MeshStandardMaterial({
+    color: 0xe6eefc,
+    metalness: 0.94,
+    roughness: 0.16,
+    envMapIntensity: 1.65
+  });
+  const silverGlowMat = new THREE.MeshStandardMaterial({
+    color: 0xbde4ff,
+    emissive: 0x56b4ff,
+    emissiveIntensity: 1.8,
+    metalness: 0.6,
+    roughness: 0.2
+  });
+  const dynamiteRedMat = new THREE.MeshStandardMaterial({
+    color: 0xb81d18,
+    roughness: 0.72,
+    metalness: 0.04
+  });
+  const fuseSparkSpriteMat = new THREE.SpriteMaterial({
+    map: sharedSparkGlowTex || sharedParticleGlowTex,
+    color: 0xffb84a,
+    transparent: true,
+    opacity: 0.95,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    fog: false,
+    toneMapped: false
+  });
+
+  function createShotgun() {
+    const root = new THREE.Group();
+    const body = new THREE.Group();
+    root.add(body);
+
+    const gltf = loadedAssets && loadedAssets.shotgun;
+    let muzzle = null;
+    if (gltf && gltf.scene) {
+      const m = enhanceWeaponGLB(gltf.scene);
+      body.add(m);
+      muzzle = m.getObjectByName('MuzzlePoint') || m.getObjectByName('muzzle');
+    } else {
+      // Prosedyrisk avsaget dobbeltløpet hagle fallback
+      [-0.014, 0.014].forEach((bx) => {
+        const bMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.014, 0.38, 12), gunDarkMat);
+        bMesh.rotation.x = Math.PI / 2;
+        bMesh.position.set(bx, 0.028, -0.22);
+        body.add(bMesh);
+      });
+      const rec = new THREE.Mesh(new THREE.BoxGeometry(0.056, 0.052, 0.12), gunSteelMat);
+      rec.position.set(0, 0.02, 0.02);
+      body.add(rec);
+      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.048, 0.095, 0.18), gunWoodMat);
+      stock.position.set(0, -0.032, 0.12);
+      stock.rotation.x = -0.26;
+      body.add(stock);
+      const fore = new THREE.Mesh(new THREE.BoxGeometry(0.048, 0.036, 0.16), gunWoodMat);
+      fore.position.set(0, 0.008, -0.14);
+      body.add(fore);
+    }
+
+    if (!muzzle) {
+      muzzle = new THREE.Object3D();
+      muzzle.position.set(0, 0.03, -0.43);
+      body.add(muzzle);
+    }
+    const { flash, flashMat, flashLight } = attachMuzzleFX(muzzle);
+    root.userData = {
+      weaponId: 'shotgun',
+      body,
+      muzzle,
+      flash,
+      flashMat,
+      flashLight,
+      recoilAngle: 0,
+      recoilVel: 0,
+      flashTimer: 0
+    };
+    return root;
+  }
+
+  function createRifle() {
+    const root = new THREE.Group();
+    const body = new THREE.Group();
+    root.add(body);
+
+    const gltf = loadedAssets && loadedAssets.rifle;
+    let muzzle = null;
+    let lever = null;
+    if (gltf && gltf.scene) {
+      const m = enhanceWeaponGLB(gltf.scene);
+      body.add(m);
+      muzzle = m.getObjectByName('MuzzlePoint') || m.getObjectByName('muzzle');
+      lever = m.getObjectByName('Lever') || null;
+    } else {
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.014, 0.54, 8), gunSteelMat);
+      barrel.rotation.x = Math.PI / 2;
+      barrel.position.set(0, 0.036, -0.30);
+      body.add(barrel);
+      const mag = new THREE.Mesh(new THREE.CylinderGeometry(0.010, 0.010, 0.48, 10), gunDarkMat);
+      mag.rotation.x = Math.PI / 2;
+      mag.position.set(0, 0.015, -0.27);
+      body.add(mag);
+      const rec = new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.062, 0.15), gunBrassMat);
+      rec.position.set(0, 0.024, 0.03);
+      body.add(rec);
+      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.095, 0.20), gunWoodMat);
+      stock.position.set(0, -0.028, 0.15);
+      stock.rotation.x = -0.22;
+      body.add(stock);
+    }
+
+    if (!muzzle) {
+      muzzle = new THREE.Object3D();
+      muzzle.position.set(0, 0.036, -0.58);
+      body.add(muzzle);
+    }
+    const { flash, flashMat, flashLight } = attachMuzzleFX(muzzle);
+    root.userData = {
+      weaponId: 'rifle',
+      body,
+      muzzle,
+      lever,
+      flash,
+      flashMat,
+      flashLight,
+      recoilAngle: 0,
+      recoilVel: 0,
+      flashTimer: 0
+    };
+    return root;
+  }
+
+  function createCrossbow() {
+    const root = new THREE.Group();
+    const body = new THREE.Group();
+    root.add(body);
+
+    const gltf = loadedAssets && loadedAssets.crossbow;
+    let muzzle = null;
+    let loadedBolt = null;
+    if (gltf && gltf.scene) {
+      const m = enhanceWeaponGLB(gltf.scene);
+      body.add(m);
+      muzzle = m.getObjectByName('MuzzlePoint') || m.getObjectByName('muzzle');
+      loadedBolt = m.getObjectByName('LoadedBolt') || null;
+    } else {
+      const tiller = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.055, 0.48), gunWoodMat);
+      tiller.position.set(0, 0.012, -0.14);
+      body.add(tiller);
+      const bowArc = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.014, 7, 18, Math.PI * 0.85), silverMetalMat);
+      bowArc.rotation.x = Math.PI / 2;
+      bowArc.rotation.z = Math.PI * 0.075;
+      bowArc.position.set(0, 0.028, -0.22);
+      body.add(bowArc);
+      loadedBolt = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.34, 8), silverGlowMat);
+      loadedBolt.rotation.x = Math.PI / 2;
+      loadedBolt.position.set(0, 0.044, -0.26);
+      body.add(loadedBolt);
+    }
+
+    if (!muzzle) {
+      muzzle = new THREE.Object3D();
+      muzzle.position.set(0, 0.038, -0.45);
+      body.add(muzzle);
+    }
+    const { flash, flashMat, flashLight } = attachMuzzleFX(muzzle);
+    flashMat.color.setHex(0x8fd4ff);
+    flashLight.color.setHex(0x88ccff);
+    root.userData = {
+      weaponId: 'crossbow',
+      body,
+      muzzle,
+      loadedBolt,
+      boltReloadTimer: 0,
+      flash,
+      flashMat,
+      flashLight,
+      recoilAngle: 0,
+      recoilVel: 0,
+      flashTimer: 0
+    };
+    return root;
+  }
+
+  function buildDynamiteVisual() {
+    const gltf = loadedAssets && loadedAssets.dynamite;
+    const holder = new THREE.Group();
+    let fuseTip = null;
+    if (gltf && gltf.scene) {
+      const m = enhanceWeaponGLB(gltf.scene);
+      holder.add(m);
+      fuseTip = m.getObjectByName('FuseTip') || null;
+    } else {
+      [[-0.018, -0.01], [0.018, -0.01], [0, 0.018]].forEach(([ox, oz]) => {
+        const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.21, 10), dynamiteRedMat);
+        stick.position.set(ox, 0, oz);
+        holder.add(stick);
+      });
+      [-0.055, 0.055].forEach((by) => {
+        const band = new THREE.Mesh(new THREE.CylinderGeometry(0.039, 0.039, 0.018, 12), darkWoodMat);
+        band.position.y = by;
+        holder.add(band);
+      });
+    }
+    if (!fuseTip) {
+      fuseTip = new THREE.Object3D();
+      fuseTip.position.set(0, 0.145, -0.015);
+      holder.add(fuseTip);
+    }
+    const spark = new THREE.Sprite(fuseSparkSpriteMat);
+    spark.scale.set(0.095, 0.095, 1);
+    fuseTip.add(spark);
+    holder.userData.fuseTip = fuseTip;
+    holder.userData.spark = spark;
+    return holder;
+  }
+
+  function createDynamiteInHand() {
+    const root = new THREE.Group();
+    const body = new THREE.Group();
+    root.add(body);
+    const dyn = buildDynamiteVisual();
+    dyn.position.set(0, 0.02, -0.16);
+    dyn.rotation.set(0.28, 0.15, -0.12);
+    body.add(dyn);
+
+    const muzzle = new THREE.Object3D();
+    muzzle.position.set(0, 0.06, -0.22);
+    body.add(muzzle);
+
+    root.userData = {
+      weaponId: 'dynamite',
+      body,
+      muzzle,
+      fuseSpark: dyn.userData.spark,
+      recoilAngle: 0,
+      recoilVel: 0,
+      flashTimer: 0
+    };
+    return root;
+  }
+
+  function createWeaponModel(weaponId) {
+    if (weaponId === 'shotgun') return createShotgun();
+    if (weaponId === 'rifle') return createRifle();
+    if (weaponId === 'crossbow') return createCrossbow();
+    if (weaponId === 'dynamite') return createDynamiteInHand();
+    const rev = createRevolver();
+    rev.userData.weaponId = 'revolver';
+    return rev;
+  }
+
+  function createThrownDynamiteMesh() {
+    return buildDynamiteVisual();
+  }
+
   // --- 7c. Øvingsblinker: 5 flasker på en trestokk utenfor Saloonen ---
   const practiceRange = new THREE.Group();
   practiceRange.position.set(-3.9, 0, 5.2);
@@ -558,8 +847,13 @@ export function initRevolverAndAtmosphereFX({
     group.add(chain);
 
     const glow = new THREE.Sprite(lanternGlowMat);
-    glow.scale.set(0.62, 0.62, 1);
+    glow.scale.set(0.68, 0.68, 1);
     group.add(glow);
+
+    // Grafikk 3.0: bred, varm additiv lyshalo rundt alle lykter
+    const outerHalo = new THREE.Sprite(lanternGlowMat);
+    outerHalo.scale.set(1.85, 1.85, 1);
+    group.add(outerHalo);
 
     // Konstant lysantall: intensiteten moduleres mykt uten å fjerne lyset fra scenen
     const light = new THREE.PointLight(0xffa448, 0.5, 18, 2);
@@ -576,9 +870,105 @@ export function initRevolverAndAtmosphereFX({
   tailorLantern.group.position.set(-2.35, 3.3, 2.62);
   tailorBuilding.add(tailorLantern.group);
 
+  const gunsmithLantern = createLantern();
+  gunsmithLantern.group.position.set(-2.35, 3.3, 2.62);
+  if (gunsmithBuilding) gunsmithBuilding.add(gunsmithLantern.group);
+
   const safeHouseLantern = createLantern();
   safeHouseLantern.group.position.set(-0.9, 2.28, 0);
   safeHouseBuilding.add(safeHouseLantern.group);
+
+  // --- Grafikk 3.0: Stigende glør over leirbålene (byen + Crimson Canyon) uten objektallokering ---
+  const EMBER_COUNT = 44;
+  const emberPositions = new Float32Array(EMBER_COUNT * 3);
+  const emberSeeds = new Float32Array(EMBER_COUNT * 3);
+  const campfireAnchors = [
+    { x: 5.1, z: 7.6 },
+    { x: 82.0, z: 4.5 }
+  ];
+  {
+    const eRng = createSeededRng(7331);
+    for (let i = 0; i < EMBER_COUNT; i++) {
+      const i3 = i * 3;
+      const anchor = campfireAnchors[i % campfireAnchors.length];
+      emberPositions[i3] = anchor.x + (eRng() - 0.5) * 0.5;
+      emberPositions[i3 + 1] = 0.2 + eRng() * 2.6;
+      emberPositions[i3 + 2] = anchor.z + (eRng() - 0.5) * 0.5;
+      emberSeeds[i3] = eRng() * Math.PI * 2;
+      emberSeeds[i3 + 1] = 0.65 + eRng() * 0.85;
+      emberSeeds[i3 + 2] = i % campfireAnchors.length;
+    }
+  }
+  const emberGeo = new THREE.BufferGeometry();
+  const emberPosAttr = new THREE.BufferAttribute(emberPositions, 3);
+  emberGeo.setAttribute('position', emberPosAttr);
+  const emberMat = new THREE.PointsMaterial({
+    map: sharedSparkGlowTex || sharedParticleGlowTex,
+    color: 0xff8c2b,
+    size: 0.13,
+    sizeAttenuation: true,
+    transparent: true,
+    opacity: 0.88,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    fog: false,
+    toneMapped: false
+  });
+  const emberPoints = new THREE.Points(emberGeo, emberMat);
+  emberPoints.frustumCulled = false;
+  scene.add(emberPoints);
+
+  // --- Grafikk 3.0: 4 rullende ørkenbusker (Tumbleweeds) som blåser gjennom byen og ødemarken ---
+  const tumbleweedMat = new THREE.MeshStandardMaterial({
+    color: 0xa67c46,
+    roughness: 0.92,
+    metalness: 0.02,
+    wireframe: false
+  });
+  const tumbleweedRingGeoA = new THREE.TorusGeometry(0.36, 0.022, 5, 11);
+  const tumbleweedRingGeoB = new THREE.TorusGeometry(0.31, 0.018, 5, 10);
+  const tumbleweeds = [];
+  [
+    { x: -38, z: 12.5, vx: 2.3, vz: 0.25, phase: 0.4, r: 0.42 },
+    { x: 12, z: -18.5, vx: 1.95, vz: -0.32, phase: 1.9, r: 0.38 },
+    { x: -72, z: -26.0, vx: 2.6, vz: 0.4, phase: 3.3, r: 0.46 },
+    { x: 46, z: 24.0, vx: -2.15, vz: 0.28, phase: 4.8, r: 0.40 }
+  ].forEach((spec) => {
+    const holder = new THREE.Group();
+    const ball = new THREE.Group();
+    for (let k = 0; k < 5; k++) {
+      const ring = new THREE.Mesh(k % 2 === 0 ? tumbleweedRingGeoA : tumbleweedRingGeoB, tumbleweedMat);
+      ring.rotation.set(k * 0.68, k * 1.12, k * 0.45);
+      ring.castShadow = true;
+      ball.add(ring);
+    }
+    holder.add(ball);
+    if (createContactShadow) {
+      holder.add(createContactShadow(spec.r * 1.05, spec.r * 1.05, -spec.r + 0.03));
+    }
+    holder.position.set(spec.x, spec.r, spec.z);
+    scene.add(holder);
+    tumbleweeds.push({ holder, ball, vx: spec.vx, vz: spec.vz, phase: spec.phase, r: spec.r });
+  });
+
+  function updateTumbleweeds(dt, worldTime, getTerrainHeightFn) {
+    for (let i = 0; i < tumbleweeds.length; i++) {
+      const tw = tumbleweeds[i];
+      const gust = 0.85 + 0.35 * Math.sin(worldTime * 0.55 + tw.phase);
+      let nx = tw.holder.position.x + tw.vx * gust * dt;
+      let nz = tw.holder.position.z + tw.vz * gust * dt;
+      if (nx > 115) nx = -115;
+      else if (nx < -115) nx = 115;
+      if (nz > 115) nz = -115;
+      else if (nz < -115) nz = 115;
+
+      const groundY = getTerrainHeightFn ? getTerrainHeightFn(nx, nz) : 0;
+      const bounce = Math.abs(Math.sin(worldTime * 3.8 + tw.phase)) * 0.22;
+      tw.holder.position.set(nx, groundY + tw.r + bounce, nz);
+      tw.ball.rotation.z -= (tw.vx * gust * dt) / tw.r;
+      tw.ball.rotation.x += (tw.vz * gust * dt) / tw.r;
+    }
+  }
 
   // --- 8b2. Svevende støvkorn (dag) og glør/ildfluer (natt) med ett delt THREE.Points (200 partikler) ---
   const AMBIENT_PARTICLE_COUNT = 200; // Under maksgrensen på 220, null objektallokeringer per frame
@@ -620,7 +1010,7 @@ export function initRevolverAndAtmosphereFX({
   ambientParticles.frustumCulled = false;
   scene.add(ambientParticles);
 
-  function updateAmbientParticles(dt, playerPos, nightAmount, worldTime) {
+  function updateAmbientParticles(dt, playerPos, nightAmount, worldTime, getTerrainHeightFn) {
     const px = playerPos.x;
     const py = playerPos.y;
     const pz = playerPos.z;
@@ -631,7 +1021,7 @@ export function initRevolverAndAtmosphereFX({
     ambientParticleMat.opacity = 0.44 + night * 0.34 + Math.sin(worldTime * 2.1) * 0.05;
 
     const windX = 0.28 + Math.sin(worldTime * 0.35) * 0.18;
-    const riseFactor = -0.06 + night * 0.28; // Støv daler rolig i solen; glør/ildfluer stiger svakt om natten
+    const riseFactor = -0.06 + night * 0.28;
 
     for (let i = 0; i < AMBIENT_PARTICLE_COUNT; i++) {
       const i3 = i * 3;
@@ -643,7 +1033,6 @@ export function initRevolverAndAtmosphereFX({
       let y = ambientPositions[i3 + 1] + (riseFactor * spd + Math.cos(worldTime * 1.7 + phase) * 0.14) * dt;
       let z = ambientPositions[i3 + 2] + (driftZ + Math.cos(worldTime * 1.1 + phase) * 0.16) * dt;
 
-      // Sømløs wrapping i en 28x4.6x28m boks rundt spilleren uten allokeringer
       const dx = x - px;
       if (dx > AMBIENT_BOX_HALF) x -= AMBIENT_BOX_SPAN;
       else if (dx < -AMBIENT_BOX_HALF) x += AMBIENT_BOX_SPAN;
@@ -662,6 +1051,32 @@ export function initRevolverAndAtmosphereFX({
       ambientPositions[i3 + 2] = z;
     }
     ambientPosAttr.needsUpdate = true;
+
+    // Oppdater stigende gnister over leirbålene (0 allokeringer)
+    for (let i = 0; i < EMBER_COUNT; i++) {
+      const i3 = i * 3;
+      const phase = emberSeeds[i3];
+      const spd = emberSeeds[i3 + 1];
+      const aIdx = emberSeeds[i3 + 2] | 0;
+      const anchor = campfireAnchors[aIdx];
+      const baseY = getTerrainHeightFn ? getTerrainHeightFn(anchor.x, anchor.z) : 0;
+
+      let ey = emberPositions[i3 + 1] + spd * 1.15 * dt;
+      if (ey > baseY + 3.1) {
+        ey = baseY + 0.22;
+        emberPositions[i3] = anchor.x + Math.sin(worldTime * 3.7 + phase) * 0.22;
+        emberPositions[i3 + 2] = anchor.z + Math.cos(worldTime * 4.1 + phase) * 0.22;
+      } else {
+        emberPositions[i3] += Math.sin(worldTime * 2.8 + phase) * 0.22 * dt;
+        emberPositions[i3 + 2] += Math.cos(worldTime * 2.4 + phase) * 0.18 * dt;
+      }
+      emberPositions[i3 + 1] = ey;
+    }
+    emberPosAttr.needsUpdate = true;
+
+    if (getTerrainHeightFn) {
+      updateTumbleweeds(dt, worldTime, getTerrainHeightFn);
+    }
   }
 
   // --- 8d. Rød skadevignett som også vises inne i VR-headsettet ---
@@ -714,6 +1129,8 @@ export function initRevolverAndAtmosphereFX({
 
   return {
     createRevolver,
+    createWeaponModel,
+    createThrownDynamiteMesh,
     upgradeRevolverToGold,
     practiceBottles,
     moonMesh,
@@ -725,6 +1142,7 @@ export function initRevolverAndAtmosphereFX({
     lanternGlowMat,
     saloonLantern,
     tailorLantern,
+    gunsmithLantern,
     safeHouseLantern,
     updateAmbientParticles,
     flashDamageVignette,
