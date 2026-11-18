@@ -1,0 +1,601 @@
+import * as THREE from 'three';
+import { createSeededRng } from './textures.js';
+
+export function initRevolverAndAtmosphereFX({ scene, camera, M, saloonBuilding, tailorBuilding, safeHouseBuilding }) {
+  const {
+    sharedWoodTex, sharedWoodBumpTex,
+    lightWoodMat, darkWoodMat, wroughtIronMat,
+    sharedParticleGlowTex
+  } = M;
+
+  let damageVignetteTimer = 0;
+
+  // --- 7a. Western-revolver med PBR-stål, valnøttskjefte (bumpMap) og miljørefleksjon ---
+  const gunSteelMat = new THREE.MeshStandardMaterial({
+    color: 0xb6bec8,
+    metalness: 0.86,
+    roughness: 0.22,
+    envMapIntensity: 1.45
+  });
+  const gunDarkMat = new THREE.MeshStandardMaterial({
+    color: 0x3b4049,
+    metalness: 0.82,
+    roughness: 0.30,
+    envMapIntensity: 1.35
+  });
+  const gunWoodMat = new THREE.MeshStandardMaterial({
+    color: 0x6e3b19,
+    map: sharedWoodTex,
+    bumpMap: sharedWoodBumpTex,
+    bumpScale: 0.035,
+    metalness: 0.04,
+    roughness: 0.48,
+    envMapIntensity: 0.9
+  });
+  const gunBrassMat = new THREE.MeshStandardMaterial({
+    color: 0xdeb05a,
+    metalness: 0.90,
+    roughness: 0.20,
+    envMapIntensity: 1.5
+  });
+
+  function upgradeRevolverToGold() {
+    gunSteelMat.color.setHex(0xffd24c);
+    gunSteelMat.emissive.setHex(0x3a2600);
+    gunSteelMat.metalness = 0.94;
+    gunSteelMat.roughness = 0.16;
+
+    gunDarkMat.color.setHex(0xd99b26);
+    gunDarkMat.emissive.setHex(0x261700);
+    gunDarkMat.metalness = 0.9;
+    gunDarkMat.roughness = 0.2;
+
+    gunBrassMat.color.setHex(0xffe98a);
+    gunBrassMat.emissive.setHex(0x2e1e00);
+    gunBrassMat.metalness = 0.95;
+    gunBrassMat.roughness = 0.14;
+  }
+
+  const gunBarrelGeo = new THREE.CylinderGeometry(0.016, 0.016, 0.24, 14);
+  const gunDrumGeo = new THREE.CylinderGeometry(0.042, 0.042, 0.09, 16);
+  const gunEjectorGeo = new THREE.CylinderGeometry(0.008, 0.008, 0.2, 8);
+  const gunFrameGeo = new THREE.BoxGeometry(0.052, 0.056, 0.15);
+  const gunRibGeo = new THREE.BoxGeometry(0.026, 0.016, 0.17);
+  const gunGripGeo = new THREE.BoxGeometry(0.05, 0.125, 0.075);
+  const gunGripCapGeo = new THREE.BoxGeometry(0.058, 0.018, 0.085);
+  const gunGripPanelGeo = new THREE.CapsuleGeometry(0.026, 0.052, 4, 8);
+  gunGripPanelGeo.scale(0.18, 1.0, 1.15);
+  const gunBackstrapGeo = new THREE.BoxGeometry(0.014, 0.125, 0.012);
+  const gunHammerGeo = new THREE.BoxGeometry(0.02, 0.035, 0.022);
+  const gunSightGeo = new THREE.BoxGeometry(0.01, 0.02, 0.014);
+  const gunTriggerGeo = new THREE.BoxGeometry(0.012, 0.028, 0.01);
+  const gunGuardGeo = new THREE.TorusGeometry(0.032, 0.0065, 6, 16);
+  const gunRingGeo = new THREE.TorusGeometry(0.043, 0.004, 6, 16);
+  const gunLatchGeo = new THREE.BoxGeometry(0.012, 0.014, 0.03);
+  const gunLanyardGeo = new THREE.TorusGeometry(0.012, 0.003, 5, 8);
+  const gunMuzzleRingGeo = new THREE.CylinderGeometry(0.019, 0.019, 0.014, 12);
+  const gunEjectorHeadGeo = new THREE.CylinderGeometry(0.014, 0.014, 0.022, 8);
+  const gunGripPanelMat = new THREE.MeshStandardMaterial({
+    color: 0x4c250f,
+    map: sharedWoodTex,
+    bumpMap: sharedWoodBumpTex,
+    bumpScale: 0.04,
+    metalness: 0.04,
+    roughness: 0.42
+  });
+
+  function createRevolver() {
+    const root = new THREE.Group();
+    const body = new THREE.Group();
+    root.add(body);
+
+    // Løp som peker langs revolverens -Z
+    const barrel = new THREE.Mesh(gunBarrelGeo, gunSteelMat);
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.set(0, 0.03, -0.16);
+    body.add(barrel);
+
+    const rib = new THREE.Mesh(gunRibGeo, gunDarkMat);
+    rib.position.set(0, 0.047, -0.15);
+    body.add(rib);
+
+    const muzzleRing = new THREE.Mesh(gunMuzzleRingGeo, gunDarkMat);
+    muzzleRing.rotation.x = Math.PI / 2;
+    muzzleRing.position.set(0, 0.03, -0.274);
+    body.add(muzzleRing);
+
+    const ejector = new THREE.Mesh(gunEjectorGeo, gunDarkMat);
+    ejector.rotation.x = Math.PI / 2;
+    ejector.position.set(0, 0.005, -0.14);
+    body.add(ejector);
+
+    const ejectorHead = new THREE.Mesh(gunEjectorHeadGeo, gunBrassMat);
+    ejectorHead.rotation.x = Math.PI / 2;
+    ejectorHead.position.set(0, 0.005, -0.25);
+    body.add(ejectorHead);
+
+    // Tønne med messingringer
+    const drum = new THREE.Mesh(gunDrumGeo, gunDarkMat);
+    drum.rotation.x = Math.PI / 2;
+    drum.position.set(0, 0.03, -0.02);
+    body.add(drum);
+
+    [-0.047, 0.047].forEach((z) => {
+      const ring = new THREE.Mesh(gunRingGeo, gunBrassMat);
+      ring.position.set(0, 0.03, -0.02 + z);
+      body.add(ring);
+    });
+
+    // Ramme
+    const frame = new THREE.Mesh(gunFrameGeo, gunSteelMat);
+    frame.position.set(0, 0.022, 0.045);
+    body.add(frame);
+
+    // Skjefte i tre, vinklet ned og bakover
+    const grip = new THREE.Mesh(gunGripGeo, gunWoodMat);
+    grip.position.set(0, -0.05, 0.09);
+    grip.rotation.x = -0.32;
+    body.add(grip);
+
+    const gripCap = new THREE.Mesh(gunGripCapGeo, gunBrassMat);
+    gripCap.position.set(0, -0.107, 0.109);
+    gripCap.rotation.x = -0.32;
+    body.add(gripCap);
+
+    // Messingbeslag bak på skjeftet
+    const backstrap = new THREE.Mesh(gunBackstrapGeo, gunBrassMat);
+    backstrap.position.set(0, -0.0385, 0.1255);
+    backstrap.rotation.x = -0.32;
+    body.add(backstrap);
+
+    // Mørke treplater på begge sider av skjeftet
+    [-0.0265, 0.0265].forEach((x) => {
+      const panel = new THREE.Mesh(gunGripPanelGeo, gunGripPanelMat);
+      panel.position.set(x, -0.05, 0.09);
+      panel.rotation.x = -0.32;
+      body.add(panel);
+    });
+
+    // Cowboy-ringer i skjeftet
+    const lanyard = new THREE.Mesh(gunLanyardGeo, gunBrassMat);
+    lanyard.position.set(0, -0.121, 0.117);
+    lanyard.rotation.x = 0.2;
+    body.add(lanyard);
+
+    // Sylinderlås på venstre side av rammen
+    const latch = new THREE.Mesh(gunLatchGeo, gunDarkMat);
+    latch.position.set(-0.031, 0.045, 0.012);
+    body.add(latch);
+
+    // Hanen
+    const hammer = new THREE.Mesh(gunHammerGeo, gunDarkMat);
+    hammer.position.set(0, 0.055, 0.1);
+    hammer.rotation.x = -0.35;
+    body.add(hammer);
+
+    // Avtrekker og avtrekkerbøyle
+    const trigger = new THREE.Mesh(gunTriggerGeo, gunBrassMat);
+    trigger.position.set(0, -0.03, 0.03);
+    body.add(trigger);
+
+    const guard = new THREE.Mesh(gunGuardGeo, gunBrassMat);
+    guard.position.set(0, -0.034, 0.02);
+    guard.rotation.y = Math.PI / 2;
+    body.add(guard);
+
+    // Kimfrontsikte og baksikte
+    const frontSight = new THREE.Mesh(gunSightGeo, gunBrassMat);
+    frontSight.position.set(0, 0.058, -0.265);
+    body.add(frontSight);
+
+    const rearSight = new THREE.Mesh(gunSightGeo, gunDarkMat);
+    rearSight.position.set(0, 0.058, 0.078);
+    body.add(rearSight);
+
+    // Munningsglimt: liten glødende mesh + kortvarig PointLight
+    const flashMat = new THREE.MeshBasicMaterial({
+      color: 0xffd257,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      fog: false
+    });
+    const flash = new THREE.Group();
+    flash.add(new THREE.Mesh(new THREE.IcosahedronGeometry(0.05, 0), flashMat));
+    const flashCone = new THREE.Mesh(new THREE.ConeGeometry(0.042, 0.13, 6), flashMat);
+    flashCone.rotation.x = -Math.PI / 2;
+    flashCone.position.set(0, 0, -0.08);
+    flash.add(flashCone);
+    flash.position.set(0, 0.03, -0.285);
+    flash.visible = false;
+    body.add(flash);
+
+    // Lyset holdes alltid i scenen med intensitet 0. Da slipper vi å bygge
+    // om shaderne hver gang man skyter (viktig for ytelsen på Meta Quest).
+    const flashLight = new THREE.PointLight(0xffb347, 0, 7, 2);
+    flashLight.position.set(0, 0.03, -0.29);
+    body.add(flashLight);
+
+    // Munningspunkt der kula starter
+    const muzzle = new THREE.Object3D();
+    muzzle.position.set(0, 0.03, -0.3);
+    body.add(muzzle);
+
+    root.userData = {
+      body,
+      muzzle,
+      flash,
+      flashMat,
+      flashLight,
+      recoilAngle: 0,
+      recoilVel: 0,
+      flashTimer: 0
+    };
+
+    return root;
+  }
+
+  // --- 7c. Øvingsblinker: 5 flasker på en trestokk utenfor Saloonen ---
+  const practiceRange = new THREE.Group();
+  practiceRange.position.set(-3.9, 0, 5.2);
+  practiceRange.rotation.y = 0.38;
+  scene.add(practiceRange);
+
+  const rangePostGeo = new THREE.CylinderGeometry(0.07, 0.09, 1.15, 8);
+  [-1.55, 1.55].forEach((px) => {
+    const post = new THREE.Mesh(rangePostGeo, darkWoodMat);
+    post.position.set(px, 0.575, 0);
+    practiceRange.add(post);
+  });
+
+  const rangeRailGeo = new THREE.CylinderGeometry(0.075, 0.075, 3.45, 8);
+  const rangeRail = new THREE.Mesh(rangeRailGeo, lightWoodMat);
+  rangeRail.rotation.z = Math.PI / 2;
+  rangeRail.position.set(0, 1.12, 0);
+  practiceRange.add(rangeRail);
+
+  const rangeBraceGeo = new THREE.BoxGeometry(0.09, 0.95, 0.07);
+  [-1.55, 1.55].forEach((px) => {
+    const brace = new THREE.Mesh(rangeBraceGeo, darkWoodMat);
+    brace.position.set(px * 0.82, 0.55, 0.28);
+    brace.rotation.x = -0.45;
+    practiceRange.add(brace);
+  });
+
+  const practiceBottles = [];
+  const bottleBodyGeo = new THREE.CylinderGeometry(0.058, 0.064, 0.19, 10);
+  const bottleShoulderGeo = new THREE.CylinderGeometry(0.03, 0.06, 0.06, 10);
+  const bottleNeckGeo = new THREE.CylinderGeometry(0.024, 0.03, 0.07, 8);
+  const bottleLipGeo = new THREE.TorusGeometry(0.027, 0.007, 5, 10);
+  const bottleLabelGeo = new THREE.CylinderGeometry(0.063, 0.063, 0.07, 10);
+  const bottleGlassMats = [
+    new THREE.MeshStandardMaterial({ color: 0x3f8a5b, roughness: 0.25, metalness: 0.1, transparent: true, opacity: 0.9 }),
+    new THREE.MeshStandardMaterial({ color: 0xa4642c, roughness: 0.3, metalness: 0.1, transparent: true, opacity: 0.9 })
+  ];
+  const bottleLabelMat = new THREE.MeshLambertMaterial({ color: 0xf2e2bd });
+
+  function createPracticeBottle(index) {
+    const bottle = new THREE.Group();
+    const glassMat = bottleGlassMats[index % bottleGlassMats.length];
+
+    const bodyMesh = new THREE.Mesh(bottleBodyGeo, glassMat);
+    bodyMesh.position.y = -0.05;
+    bottle.add(bodyMesh);
+
+    const shoulder = new THREE.Mesh(bottleShoulderGeo, glassMat);
+    shoulder.position.y = 0.075;
+    bottle.add(shoulder);
+
+    const neck = new THREE.Mesh(bottleNeckGeo, glassMat);
+    neck.position.y = 0.14;
+    bottle.add(neck);
+
+    const lip = new THREE.Mesh(bottleLipGeo, glassMat);
+    lip.rotation.x = Math.PI / 2;
+    lip.position.y = 0.178;
+    bottle.add(lip);
+
+    const label = new THREE.Mesh(bottleLabelGeo, bottleLabelMat);
+    label.position.y = -0.04;
+    bottle.add(label);
+
+    const x = (index - 2) * 0.62;
+    bottle.position.set(x, 1.34, 0);
+    bottle.rotation.y = (index * 0.7) % (Math.PI * 2);
+    bottle.userData = {
+      knocked: false,
+      vel: new THREE.Vector3(),
+      angVel: new THREE.Vector3(),
+      home: bottle.position.clone(),
+      homeQuat: bottle.quaternion.clone()
+    };
+    practiceRange.add(bottle);
+    return bottle;
+  }
+
+  for (let i = 0; i < 5; i++) {
+    practiceBottles.push(createPracticeBottle(i));
+  }
+
+  const moonGroup = new THREE.Group();
+  const moonMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(5.6, 18, 16),
+    new THREE.MeshBasicMaterial({ color: 0xe8f0ff, transparent: true, opacity: 0, fog: false, toneMapped: false })
+  );
+  moonGroup.add(moonMesh);
+
+  const moonHaloMat = new THREE.SpriteMaterial({
+    map: sharedParticleGlowTex,
+    color: 0xaec8ff,
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    fog: false,
+    toneMapped: false
+  });
+  const moonHalo = new THREE.Sprite(moonHaloMat);
+  moonHalo.scale.set(28, 28, 1);
+  moonGroup.add(moonHalo);
+  moonGroup.position.set(-76, 86, -155);
+  scene.add(moonGroup);
+
+  const STAR_COUNT = 380;
+  const starPositions = new Float32Array(STAR_COUNT * 3);
+  {
+    const starRng = createSeededRng(8842);
+    for (let i = 0; i < STAR_COUNT; i++) {
+      const angle = starRng() * Math.PI * 2;
+      const elev = 0.14 + starRng() * 1.32;
+      const radius = 210 + starRng() * 70;
+      starPositions[i * 3] = Math.cos(angle) * Math.cos(elev) * radius;
+      starPositions[i * 3 + 1] = Math.sin(elev) * radius;
+      starPositions[i * 3 + 2] = Math.sin(angle) * Math.cos(elev) * radius;
+    }
+  }
+  const starGeometry = new THREE.BufferGeometry();
+  starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+  const starMat = new THREE.PointsMaterial({
+    color: 0xeef4ff,
+    map: sharedParticleGlowTex,
+    size: 2.6,
+    sizeAttenuation: false,
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    fog: false,
+    toneMapped: false
+  });
+  const stars = new THREE.Points(starGeometry, starMat);
+  stars.visible = false;
+  scene.add(stars);
+
+  // --- 8b. Skulpturerte parafinlykter ved Saloonen, Skredderen og Safe House ---
+  const lanternGlassProfile = [
+    new THREE.Vector2(0.048, -0.11),
+    new THREE.Vector2(0.082, -0.04),
+    new THREE.Vector2(0.086, 0.03),
+    new THREE.Vector2(0.056, 0.11)
+  ];
+  const lanternFrameGeo = new THREE.LatheGeometry(lanternGlassProfile, 12);
+  const lanternCapGeo = new THREE.ConeGeometry(0.115, 0.085, 10);
+  const lanternBaseGeo = new THREE.CylinderGeometry(0.075, 0.092, 0.055, 10);
+  const lanternChainGeo = new THREE.CylinderGeometry(0.01, 0.01, 0.3, 6);
+  const lanternBailGeo = new THREE.TorusGeometry(0.095, 0.008, 5, 12, Math.PI);
+  const lanternMetalMat = wroughtIronMat;
+  const lanternGlassMat = new THREE.MeshBasicMaterial({
+    color: 0xffd27d,
+    transparent: true,
+    opacity: 0.62,
+    fog: false,
+    toneMapped: false
+  });
+  const lanternGlowMat = new THREE.SpriteMaterial({
+    map: sharedParticleGlowTex,
+    color: 0xffa648,
+    transparent: true,
+    opacity: 0.25,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    fog: false,
+    toneMapped: false
+  });
+
+  function createLantern() {
+    const group = new THREE.Group();
+
+    const glass = new THREE.Mesh(lanternFrameGeo, lanternGlassMat);
+    group.add(glass);
+
+    const cap = new THREE.Mesh(lanternCapGeo, lanternMetalMat);
+    cap.position.y = 0.145;
+    group.add(cap);
+
+    const base = new THREE.Mesh(lanternBaseGeo, lanternMetalMat);
+    base.position.y = -0.135;
+    group.add(base);
+
+    const bail = new THREE.Mesh(lanternBailGeo, lanternMetalMat);
+    bail.position.y = 0.06;
+    group.add(bail);
+
+    const chain = new THREE.Mesh(lanternChainGeo, lanternMetalMat);
+    chain.position.y = 0.33;
+    group.add(chain);
+
+    const glow = new THREE.Sprite(lanternGlowMat);
+    glow.scale.set(0.62, 0.62, 1);
+    group.add(glow);
+
+    // Konstant lysantall: intensiteten moduleres mykt uten å fjerne lyset fra scenen
+    const light = new THREE.PointLight(0xffa448, 0.5, 18, 2);
+    group.add(light);
+
+    return { group, light };
+  }
+
+  const saloonLantern = createLantern();
+  saloonLantern.group.position.set(2.55, 2.72, 3.12);
+  saloonBuilding.add(saloonLantern.group);
+
+  const tailorLantern = createLantern();
+  tailorLantern.group.position.set(-2.35, 3.3, 2.62);
+  tailorBuilding.add(tailorLantern.group);
+
+  const safeHouseLantern = createLantern();
+  safeHouseLantern.group.position.set(-0.9, 2.28, 0);
+  safeHouseBuilding.add(safeHouseLantern.group);
+
+  // --- 8b2. Svevende støvkorn (dag) og glør/ildfluer (natt) med ett delt THREE.Points (200 partikler) ---
+  const AMBIENT_PARTICLE_COUNT = 200; // Under maksgrensen på 220, null objektallokeringer per frame
+  const AMBIENT_BOX_HALF = 14.0;
+  const AMBIENT_BOX_SPAN = AMBIENT_BOX_HALF * 2;
+  const ambientPositions = new Float32Array(AMBIENT_PARTICLE_COUNT * 3);
+  const ambientSeeds = new Float32Array(AMBIENT_PARTICLE_COUNT * 3);
+  {
+    const pRng = createSeededRng(5150);
+    for (let i = 0; i < AMBIENT_PARTICLE_COUNT; i++) {
+      const i3 = i * 3;
+      ambientPositions[i3] = (pRng() - 0.5) * AMBIENT_BOX_SPAN;
+      ambientPositions[i3 + 1] = 0.25 + pRng() * 4.2;
+      ambientPositions[i3 + 2] = (pRng() - 0.5) * AMBIENT_BOX_SPAN;
+      ambientSeeds[i3] = pRng() * Math.PI * 2;     // fase
+      ambientSeeds[i3 + 1] = 0.25 + pRng() * 0.55; // hastighet
+      ambientSeeds[i3 + 2] = (pRng() - 0.5) * 0.5; // sidevind
+    }
+  }
+  const ambientGeo = new THREE.BufferGeometry();
+  const ambientPosAttr = new THREE.BufferAttribute(ambientPositions, 3);
+  ambientGeo.setAttribute('position', ambientPosAttr);
+
+  const dayDustColor = new THREE.Color(0xffe1a6);
+  const nightEmberColor = new THREE.Color(0xff9c38);
+  const ambientParticleMat = new THREE.PointsMaterial({
+    map: sharedParticleGlowTex,
+    color: 0xffe1a6,
+    size: 0.115,
+    sizeAttenuation: true,
+    transparent: true,
+    opacity: 0.52,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    fog: false,
+    toneMapped: false
+  });
+  const ambientParticles = new THREE.Points(ambientGeo, ambientParticleMat);
+  ambientParticles.frustumCulled = false;
+  scene.add(ambientParticles);
+
+  function updateAmbientParticles(dt, playerPos, nightAmount, worldTime) {
+    const px = playerPos.x;
+    const py = playerPos.y;
+    const pz = playerPos.z;
+    const night = nightAmount;
+
+    ambientParticleMat.color.copy(dayDustColor).lerp(nightEmberColor, night);
+    ambientParticleMat.size = 0.105 + night * 0.045;
+    ambientParticleMat.opacity = 0.44 + night * 0.34 + Math.sin(worldTime * 2.1) * 0.05;
+
+    const windX = 0.28 + Math.sin(worldTime * 0.35) * 0.18;
+    const riseFactor = -0.06 + night * 0.28; // Støv daler rolig i solen; glør/ildfluer stiger svakt om natten
+
+    for (let i = 0; i < AMBIENT_PARTICLE_COUNT; i++) {
+      const i3 = i * 3;
+      const phase = ambientSeeds[i3];
+      const spd = ambientSeeds[i3 + 1];
+      const driftZ = ambientSeeds[i3 + 2];
+
+      let x = ambientPositions[i3] + (windX * spd + Math.sin(worldTime * 1.3 + phase) * 0.16) * dt;
+      let y = ambientPositions[i3 + 1] + (riseFactor * spd + Math.cos(worldTime * 1.7 + phase) * 0.14) * dt;
+      let z = ambientPositions[i3 + 2] + (driftZ + Math.cos(worldTime * 1.1 + phase) * 0.16) * dt;
+
+      // Sømløs wrapping i en 28x4.6x28m boks rundt spilleren uten allokeringer
+      const dx = x - px;
+      if (dx > AMBIENT_BOX_HALF) x -= AMBIENT_BOX_SPAN;
+      else if (dx < -AMBIENT_BOX_HALF) x += AMBIENT_BOX_SPAN;
+
+      const dz = z - pz;
+      if (dz > AMBIENT_BOX_HALF) z -= AMBIENT_BOX_SPAN;
+      else if (dz < -AMBIENT_BOX_HALF) z += AMBIENT_BOX_SPAN;
+
+      const minY = py + 0.22;
+      const maxY = py + 4.6;
+      if (y > maxY) y = minY + (y - maxY) % 4.38;
+      else if (y < minY) y = maxY - (minY - y) % 4.38;
+
+      ambientPositions[i3] = x;
+      ambientPositions[i3 + 1] = y;
+      ambientPositions[i3 + 2] = z;
+    }
+    ambientPosAttr.needsUpdate = true;
+  }
+
+  // --- 8d. Rød skadevignett som også vises inne i VR-headsettet ---
+  const vignetteCanvas = document.createElement('canvas');
+  vignetteCanvas.width = 256;
+  vignetteCanvas.height = 256;
+  const vignetteCtx = vignetteCanvas.getContext('2d');
+  const vignetteGradient = vignetteCtx.createRadialGradient(128, 128, 0, 128, 128, 128);
+  vignetteGradient.addColorStop(0, 'rgba(150, 0, 0, 0)');
+  vignetteGradient.addColorStop(0.55, 'rgba(150, 0, 0, 0)');
+  vignetteGradient.addColorStop(0.68, 'rgba(180, 0, 0, 0.18)');
+  vignetteGradient.addColorStop(0.83, 'rgba(205, 0, 0, 0.55)');
+  vignetteGradient.addColorStop(1, 'rgba(235, 0, 0, 0.95)');
+  vignetteCtx.fillStyle = vignetteGradient;
+  vignetteCtx.fillRect(0, 0, 256, 256);
+
+  const damageVignetteTexture = new THREE.CanvasTexture(vignetteCanvas);
+  damageVignetteTexture.colorSpace = THREE.SRGBColorSpace;
+  const damageVignetteMat = new THREE.MeshBasicMaterial({
+    map: damageVignetteTexture,
+    transparent: true,
+    opacity: 0,
+    depthTest: false,
+    depthWrite: false,
+    fog: false,
+    side: THREE.DoubleSide,
+    toneMapped: false
+  });
+  const damageVignetteMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 1.2), damageVignetteMat);
+  damageVignetteMesh.position.set(0, 0, -0.45);
+  damageVignetteMesh.renderOrder = 999;
+  damageVignetteMesh.visible = false;
+  camera.add(damageVignetteMesh);
+
+  function flashDamageVignette(duration = 0.28) {
+    damageVignetteTimer = Math.max(damageVignetteTimer, duration);
+    damageVignetteMesh.visible = true;
+  }
+
+  function updateDamageVignette(dt) {
+    if (damageVignetteTimer > 0) {
+      damageVignetteTimer = Math.max(0, damageVignetteTimer - dt);
+      damageVignetteMat.opacity = Math.min(1, damageVignetteTimer / 0.28) * 0.9;
+      damageVignetteMesh.visible = true;
+    } else if (damageVignetteMesh.visible) {
+      damageVignetteMesh.visible = false;
+      damageVignetteMat.opacity = 0;
+    }
+  }
+
+  return {
+    createRevolver,
+    upgradeRevolverToGold,
+    practiceBottles,
+    moonMesh,
+    moonHaloMat,
+    moonGroup,
+    starMat,
+    stars,
+    lanternGlassMat,
+    lanternGlowMat,
+    saloonLantern,
+    tailorLantern,
+    safeHouseLantern,
+    updateAmbientParticles,
+    flashDamageVignette,
+    updateDamageVignette
+  };
+}
