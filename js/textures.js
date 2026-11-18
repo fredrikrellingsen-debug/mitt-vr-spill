@@ -10,7 +10,64 @@ export function createSeededRng(seed) {
   };
 }
 
-// 3a. Værbitt treverk: fargekart + bumpMap (sprekker/årringer/spiker) + roughnessMap
+// Rask Sobel høydekart -> tangent-rom RGB normalMap (THREE.NoColorSpace, sømløs RepeatWrapping)
+export function createNormalCanvasFromHeight(bumpCanvas, strength = 2.0) {
+  const w = bumpCanvas.width;
+  const h = bumpCanvas.height;
+  const srcCtx = bumpCanvas.getContext('2d');
+  const srcData = srcCtx.getImageData(0, 0, w, h).data;
+
+  const normalCanvas = document.createElement('canvas');
+  normalCanvas.width = w;
+  normalCanvas.height = h;
+  const dstCtx = normalCanvas.getContext('2d');
+  const dstImg = dstCtx.createImageData(w, h);
+  const dstData = dstImg.data;
+
+  const heights = new Float32Array(w * h);
+  for (let i = 0, p = 0; i < heights.length; i++, p += 4) {
+    heights[i] = srcData[p] / 255.0;
+  }
+
+  for (let y = 0; y < h; y++) {
+    const ym1 = ((y - 1 + h) % h) * w;
+    const y0 = y * w;
+    const yp1 = ((y + 1) % h) * w;
+
+    for (let x = 0; x < w; x++) {
+      const xm1 = (x - 1 + w) % w;
+      const xp1 = (x + 1) % w;
+
+      const tl = heights[ym1 + xm1];
+      const tc = heights[ym1 + x];
+      const tr = heights[ym1 + xp1];
+      const ml = heights[y0 + xm1];
+      const mr = heights[y0 + xp1];
+      const bl = heights[yp1 + xm1];
+      const bc = heights[yp1 + x];
+      const br = heights[yp1 + xp1];
+
+      const dX = (tr + 2.0 * mr + br) - (tl + 2.0 * ml + bl);
+      const dY = (bl + 2.0 * bc + br) - (tl + 2.0 * tc + tr);
+
+      const nx = -dX * strength;
+      const ny = dY * strength;
+      const nz = 1.0;
+      const invLen = 1.0 / Math.sqrt(nx * nx + ny * ny + nz * nz);
+
+      const outIdx = (y0 + x) * 4;
+      dstData[outIdx] = Math.max(0, Math.min(255, Math.round((nx * invLen * 0.5 + 0.5) * 255)));
+      dstData[outIdx + 1] = Math.max(0, Math.min(255, Math.round((ny * invLen * 0.5 + 0.5) * 255)));
+      dstData[outIdx + 2] = Math.max(0, Math.min(255, Math.round((nz * invLen * 0.5 + 0.5) * 255)));
+      dstData[outIdx + 3] = 255;
+    }
+  }
+
+  dstCtx.putImageData(dstImg, 0, 0);
+  return normalCanvas;
+}
+
+// 3a. Værbitt treverk: fargekart + bumpMap/normalMap (sprekker/årringer/spiker) + roughnessMap
 function createWeatheredWoodMaps() {
   const rng = createSeededRng(1885);
   const colorCanvas = document.createElement('canvas');
@@ -131,23 +188,29 @@ function createWeatheredWoodMaps() {
       });
     });
   }
-  return { colorCanvas, bumpCanvas, roughCanvas };
+
+  const normalCanvas = createNormalCanvasFromHeight(bumpCanvas, 2.2);
+  return { colorCanvas, bumpCanvas, roughCanvas, normalCanvas };
 }
 
-// 3b. Takshingel (farge + bump)
+// 3b. Takshingel (farge + bump/normal + roughness)
 function createShingleRoofMaps() {
   const rng = createSeededRng(2911);
   const colorCanvas = document.createElement('canvas');
   const bumpCanvas = document.createElement('canvas');
-  colorCanvas.width = bumpCanvas.width = 256;
-  colorCanvas.height = bumpCanvas.height = 256;
+  const roughCanvas = document.createElement('canvas');
+  colorCanvas.width = bumpCanvas.width = roughCanvas.width = 256;
+  colorCanvas.height = bumpCanvas.height = roughCanvas.height = 256;
   const cCtx = colorCanvas.getContext('2d');
   const bCtx = bumpCanvas.getContext('2d');
+  const rCtx = roughCanvas.getContext('2d');
 
   cCtx.fillStyle = '#3e2311';
   cCtx.fillRect(0, 0, 256, 256);
   bCtx.fillStyle = 'rgb(30,30,30)';
   bCtx.fillRect(0, 0, 256, 256);
+  rCtx.fillStyle = 'rgb(246,246,246)';
+  rCtx.fillRect(0, 0, 256, 256);
 
   const rows = 8;
   const cols = 8;
@@ -170,12 +233,20 @@ function createShingleRoofMaps() {
       grad.addColorStop(1, 'rgb(25,25,25)');
       bCtx.fillStyle = grad;
       bCtx.fillRect(x + 1, y + 1, cw - 2, rh - 2);
+
+      const rVal = 178 + Math.floor((rng() - 0.5) * 34);
+      rCtx.fillStyle = `rgb(${rVal},${rVal},${rVal})`;
+      rCtx.fillRect(x + 1, y + 1, cw - 2, rh - 3);
+      rCtx.fillStyle = 'rgb(248,248,248)';
+      rCtx.fillRect(x, y + rh - 3, cw, 3);
     }
   }
-  return { colorCanvas, bumpCanvas };
+
+  const normalCanvas = createNormalCanvasFromHeight(bumpCanvas, 2.4);
+  return { colorCanvas, bumpCanvas, roughCanvas, normalCanvas };
 }
 
-// 3c. Ørkensand med vindbølger, mineralglitter og småstein (farge + bump + roughness)
+// 3c. Ørkensand med vindbølger, mineralglitter og småstein (farge + bump/normal + roughness)
 function createDesertSandMaps() {
   const rng = createSeededRng(4407);
   const colorCanvas = document.createElement('canvas');
@@ -243,7 +314,9 @@ function createDesertSandMaps() {
     rCtx.fillStyle = 'rgb(155,155,155)';
     rCtx.beginPath(); rCtx.ellipse(px, py, rx, ry, rot, 0, Math.PI * 2); rCtx.fill();
   }
-  return { colorCanvas, bumpCanvas, roughCanvas };
+
+  const normalCanvas = createNormalCanvasFromHeight(bumpCanvas, 1.85);
+  return { colorCanvas, bumpCanvas, roughCanvas, normalCanvas };
 }
 
 // 3d. Ru lagdelt sandstein til klipper, Monument Valley-mesas og steiner
@@ -315,10 +388,12 @@ function createSandstoneMaps() {
     bCtx.stroke();
     rCtx.stroke();
   }
-  return { colorCanvas, bumpCanvas, roughCanvas };
+
+  const normalCanvas = createNormalCanvasFromHeight(bumpCanvas, 2.6);
+  return { colorCanvas, bumpCanvas, roughCanvas, normalCanvas };
 }
 
-// 3e. Trebark og løvverk (farge + bump + roughness)
+// 3e. Trebark og løvverk (farge + bump/normal + roughness)
 function createTreeBarkMaps() {
   const rng = createSeededRng(9013);
   const colorCanvas = document.createElement('canvas');
@@ -346,6 +421,9 @@ function createTreeBarkMaps() {
     const bv = Math.floor(65 + ridge * 145 + (dark ? -25 : 20));
     bCtx.fillStyle = `rgb(${bv},${bv},${bv})`;
     bCtx.fillRect(x, 0, 3, 256);
+    const rv = Math.max(150, Math.min(250, Math.floor(236 - ridge * 48)));
+    rCtx.fillStyle = `rgb(${rv},${rv},${rv})`;
+    rCtx.fillRect(x, 0, 3, 256);
   }
   for (let f = 0; f < 75; f++) {
     const fx = rng() * 128;
@@ -360,22 +438,28 @@ function createTreeBarkMaps() {
     bCtx.beginPath(); bCtx.moveTo(fx, fy); bCtx.lineTo(fx + dx, fy + len); bCtx.stroke();
     rCtx.beginPath(); rCtx.moveTo(fx, fy); rCtx.lineTo(fx + dx, fy + len); rCtx.stroke();
   }
-  return { colorCanvas, bumpCanvas, roughCanvas };
+
+  const normalCanvas = createNormalCanvasFromHeight(bumpCanvas, 2.5);
+  return { colorCanvas, bumpCanvas, roughCanvas, normalCanvas };
 }
 
 function createFoliageMaps() {
   const rng = createSeededRng(6151);
   const colorCanvas = document.createElement('canvas');
   const bumpCanvas = document.createElement('canvas');
-  colorCanvas.width = bumpCanvas.width = 256;
-  colorCanvas.height = bumpCanvas.height = 256;
+  const roughCanvas = document.createElement('canvas');
+  colorCanvas.width = bumpCanvas.width = roughCanvas.width = 256;
+  colorCanvas.height = bumpCanvas.height = roughCanvas.height = 256;
   const cCtx = colorCanvas.getContext('2d');
   const bCtx = bumpCanvas.getContext('2d');
+  const rCtx = roughCanvas.getContext('2d');
 
   cCtx.fillStyle = '#346d33';
   cCtx.fillRect(0, 0, 256, 256);
   bCtx.fillStyle = 'rgb(110,110,110)';
   bCtx.fillRect(0, 0, 256, 256);
+  rCtx.fillStyle = 'rgb(214,214,214)';
+  rCtx.fillRect(0, 0, 256, 256);
 
   for (let i = 0; i < 420; i++) {
     const x = rng() * 256;
@@ -385,20 +469,24 @@ function createFoliageMaps() {
     if (pick < 0.34) {
       cCtx.fillStyle = 'rgba(22, 56, 24, 0.48)';
       bCtx.fillStyle = 'rgba(55, 55, 55, 0.55)';
+      rCtx.fillStyle = 'rgba(242, 242, 242, 0.55)';
     } else if (pick < 0.74) {
       cCtx.fillStyle = 'rgba(68, 132, 58, 0.40)';
       bCtx.fillStyle = 'rgba(165, 165, 165, 0.5)';
+      rCtx.fillStyle = 'rgba(196, 196, 196, 0.5)';
     } else {
       cCtx.fillStyle = 'rgba(118, 172, 82, 0.30)';
       bCtx.fillStyle = 'rgba(225, 225, 225, 0.45)';
+      rCtx.fillStyle = 'rgba(168, 168, 168, 0.45)';
     }
     cCtx.beginPath(); cCtx.arc(x, y, rad, 0, Math.PI * 2); cCtx.fill();
-    bCtx.beginPath(); bCtx.arc(x, y, rad, 0, Math.PI * 2); bCtx.fill();
+    bCtx.beginPath(); bCtx.arc(x, y, rad, 0, Math.PI * 2); cCtx.fill();
+    rCtx.beginPath(); rCtx.arc(x, y, rad, 0, Math.PI * 2); rCtx.fill();
   }
-  return { colorCanvas, bumpCanvas };
+
+  const normalCanvas = createNormalCanvasFromHeight(bumpCanvas, 1.85);
+  return { colorCanvas, bumpCanvas, roughCanvas, normalCanvas };
 }
-
-
 
 export function createSoftRadialGlowTexture(rCol, gCol, bCol) {
   const c = document.createElement('canvas');
@@ -417,12 +505,11 @@ export function createSoftRadialGlowTexture(rCol, gCol, bCol) {
   return tex;
 }
 
-
-
 export function initTexturesAndMaterials(maxAnisotropy) {
-  function makeRepeatingTexture(canvas, repeatX = 1, repeatY = 1, isColor = true) {
+  function makeRepeatingTexture(canvas, repeatX = 1, repeatY = 1, isColor = true, flipY = true) {
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = isColor ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    tex.flipY = flipY;
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
     tex.repeat.set(repeatX, repeatY);
@@ -437,42 +524,61 @@ export function initTexturesAndMaterials(maxAnisotropy) {
   const barkMaps = createTreeBarkMaps();
   const foliageMaps = createFoliageMaps();
 
-  // Delte teksturer (farge + bumpMap + roughnessMap) for 72–90 FPS på Meta Quest
+  // Delte teksturer (farge + normalMap + roughnessMap) for 72–90 FPS på Meta Quest
   const sharedWoodTex = makeRepeatingTexture(woodMaps.colorCanvas, 2, 2, true);
   const sharedWoodBumpTex = makeRepeatingTexture(woodMaps.bumpCanvas, 2, 2, false);
+  const sharedWoodNormalTex = makeRepeatingTexture(woodMaps.normalCanvas, 2, 2, false);
   const sharedWoodRoughTex = makeRepeatingTexture(woodMaps.roughCanvas, 2, 2, false);
 
   const sharedRoofShingleTex = makeRepeatingTexture(shingleMaps.colorCanvas, 3, 2, true);
   const sharedShingleBumpTex = makeRepeatingTexture(shingleMaps.bumpCanvas, 3, 2, false);
+  const sharedShingleNormalTex = makeRepeatingTexture(shingleMaps.normalCanvas, 3, 2, false);
+  const sharedShingleRoughTex = makeRepeatingTexture(shingleMaps.roughCanvas, 3, 2, false);
 
   const sharedDesertSandTex = makeRepeatingTexture(sandMaps.colorCanvas, 42, 42, true);
   const sharedDesertSandBumpTex = makeRepeatingTexture(sandMaps.bumpCanvas, 42, 42, false);
+  const sharedDesertSandNormalTex = makeRepeatingTexture(sandMaps.normalCanvas, 42, 42, false);
   const sharedDesertSandRoughTex = makeRepeatingTexture(sandMaps.roughCanvas, 42, 42, false);
 
   const sharedRoadSandTex = makeRepeatingTexture(sandMaps.colorCanvas, 3, 15, true);
   const sharedRoadBumpTex = makeRepeatingTexture(sandMaps.bumpCanvas, 3, 15, false);
+  const sharedRoadNormalTex = makeRepeatingTexture(sandMaps.normalCanvas, 3, 15, false);
+  const sharedRoadRoughTex = makeRepeatingTexture(sandMaps.roughCanvas, 3, 15, false);
 
   const sharedSandstoneTex = makeRepeatingTexture(sandstoneMaps.colorCanvas, 2, 2, true);
   const sharedSandstoneBumpTex = makeRepeatingTexture(sandstoneMaps.bumpCanvas, 2, 2, false);
+  const sharedSandstoneNormalTex = makeRepeatingTexture(sandstoneMaps.normalCanvas, 2, 2, false);
   const sharedSandstoneRoughTex = makeRepeatingTexture(sandstoneMaps.roughCanvas, 2, 2, false);
 
   const sharedMesaTex = makeRepeatingTexture(sandstoneMaps.colorCanvas, 4, 3, true);
   const sharedMesaBumpTex = makeRepeatingTexture(sandstoneMaps.bumpCanvas, 4, 3, false);
+  const sharedMesaNormalTex = makeRepeatingTexture(sandstoneMaps.normalCanvas, 4, 3, false);
   const sharedMesaRoughTex = makeRepeatingTexture(sandstoneMaps.roughCanvas, 4, 3, false);
 
   const sharedBarkTex = makeRepeatingTexture(barkMaps.colorCanvas, 2, 2, true);
   const sharedBarkBumpTex = makeRepeatingTexture(barkMaps.bumpCanvas, 2, 2, false);
+  const sharedBarkNormalTex = makeRepeatingTexture(barkMaps.normalCanvas, 2, 2, false);
   const sharedBarkRoughTex = makeRepeatingTexture(barkMaps.roughCanvas, 2, 2, false);
 
   const sharedFoliageTex = makeRepeatingTexture(foliageMaps.colorCanvas, 2, 2, true);
   const sharedFoliageBumpTex = makeRepeatingTexture(foliageMaps.bumpCanvas, 2, 2, false);
+  const sharedFoliageNormalTex = makeRepeatingTexture(foliageMaps.normalCanvas, 2, 2, false);
+  const sharedFoliageRoughTex = makeRepeatingTexture(foliageMaps.roughCanvas, 2, 2, false);
 
-  // Felles PBR-bygningsmaterialer med bumpMap, roughnessMap og ekte miljørefleksjoner
+  // Dedikerte glTF-teksturer (flipY = false) til .glb-arkitektur og våpenskjefte
+  const gltfWoodNormalTex = makeRepeatingTexture(woodMaps.normalCanvas, 1.25, 1.25, false, false);
+  const gltfWoodRoughTex = makeRepeatingTexture(woodMaps.roughCanvas, 1.25, 1.25, false, false);
+  const gltfShingleNormalTex = makeRepeatingTexture(shingleMaps.normalCanvas, 1.6, 1.6, false, false);
+  const gltfShingleRoughTex = makeRepeatingTexture(shingleMaps.roughCanvas, 1.6, 1.6, false, false);
+  const gltfSandstoneNormalTex = makeRepeatingTexture(sandstoneMaps.normalCanvas, 1.35, 1.35, false, false);
+  const gltfSandstoneRoughTex = makeRepeatingTexture(sandstoneMaps.roughCanvas, 1.35, 1.35, false, false);
+
+  // Felles PBR-bygningsmaterialer med tangent-rom normalMap, roughnessMap og ekte miljørefleksjoner
   const woodWallMat = new THREE.MeshStandardMaterial({
     color: 0xb67847,
     map: sharedWoodTex,
-    bumpMap: sharedWoodBumpTex,
-    bumpScale: 0.16,
+    normalMap: sharedWoodNormalTex,
+    normalScale: new THREE.Vector2(0.75, 0.75),
     roughnessMap: sharedWoodRoughTex,
     roughness: 0.84,
     metalness: 0.03
@@ -480,8 +586,8 @@ export function initTexturesAndMaterials(maxAnisotropy) {
   const lightWoodMat = new THREE.MeshStandardMaterial({
     color: 0xcf925c,
     map: sharedWoodTex,
-    bumpMap: sharedWoodBumpTex,
-    bumpScale: 0.14,
+    normalMap: sharedWoodNormalTex,
+    normalScale: new THREE.Vector2(0.65, 0.65),
     roughnessMap: sharedWoodRoughTex,
     roughness: 0.78,
     metalness: 0.04
@@ -489,8 +595,8 @@ export function initTexturesAndMaterials(maxAnisotropy) {
   const darkWoodMat = new THREE.MeshStandardMaterial({
     color: 0x673d20,
     map: sharedWoodTex,
-    bumpMap: sharedWoodBumpTex,
-    bumpScale: 0.18,
+    normalMap: sharedWoodNormalTex,
+    normalScale: new THREE.Vector2(0.82, 0.82),
     roughnessMap: sharedWoodRoughTex,
     roughness: 0.82,
     metalness: 0.05
@@ -498,8 +604,8 @@ export function initTexturesAndMaterials(maxAnisotropy) {
   const weatheredPlankMatA = new THREE.MeshStandardMaterial({
     color: 0xa4683b,
     map: sharedWoodTex,
-    bumpMap: sharedWoodBumpTex,
-    bumpScale: 0.2,
+    normalMap: sharedWoodNormalTex,
+    normalScale: new THREE.Vector2(0.92, 0.92),
     roughnessMap: sharedWoodRoughTex,
     roughness: 0.88,
     metalness: 0.02
@@ -507,8 +613,8 @@ export function initTexturesAndMaterials(maxAnisotropy) {
   const weatheredPlankMatB = new THREE.MeshStandardMaterial({
     color: 0xc58955,
     map: sharedWoodTex,
-    bumpMap: sharedWoodBumpTex,
-    bumpScale: 0.18,
+    normalMap: sharedWoodNormalTex,
+    normalScale: new THREE.Vector2(0.84, 0.84),
     roughnessMap: sharedWoodRoughTex,
     roughness: 0.84,
     metalness: 0.03
@@ -516,16 +622,17 @@ export function initTexturesAndMaterials(maxAnisotropy) {
   const shutterWoodMat = new THREE.MeshStandardMaterial({
     color: 0x4b5d46,
     map: sharedWoodTex,
-    bumpMap: sharedWoodBumpTex,
-    bumpScale: 0.14,
+    normalMap: sharedWoodNormalTex,
+    normalScale: new THREE.Vector2(0.68, 0.68),
+    roughnessMap: sharedWoodRoughTex,
     roughness: 0.8,
     metalness: 0.04
   });
   const logTimberMat = new THREE.MeshStandardMaterial({
     color: 0x8d5932,
     map: sharedBarkTex,
-    bumpMap: sharedBarkBumpTex,
-    bumpScale: 0.24,
+    normalMap: sharedBarkNormalTex,
+    normalScale: new THREE.Vector2(0.95, 0.95),
     roughnessMap: sharedBarkRoughTex,
     roughness: 0.88,
     metalness: 0.02
@@ -533,8 +640,9 @@ export function initTexturesAndMaterials(maxAnisotropy) {
   const roofMat = new THREE.MeshStandardMaterial({
     color: 0x693f22,
     map: sharedRoofShingleTex,
-    bumpMap: sharedShingleBumpTex,
-    bumpScale: 0.22,
+    normalMap: sharedShingleNormalTex,
+    normalScale: new THREE.Vector2(0.92, 0.92),
+    roughnessMap: sharedShingleRoughTex,
     roughness: 0.86,
     metalness: 0.03
   });
@@ -553,8 +661,8 @@ export function initTexturesAndMaterials(maxAnisotropy) {
   const stonePlinthMat = new THREE.MeshStandardMaterial({
     color: 0x9c8570,
     map: sharedSandstoneTex,
-    bumpMap: sharedSandstoneBumpTex,
-    bumpScale: 0.26,
+    normalMap: sharedSandstoneNormalTex,
+    normalScale: new THREE.Vector2(0.98, 0.98),
     roughnessMap: sharedSandstoneRoughTex,
     roughness: 0.9,
     metalness: 0.02
@@ -574,14 +682,17 @@ export function initTexturesAndMaterials(maxAnisotropy) {
   const sharedRedEyeGlowTex = createSoftRadialGlowTexture(255, 38, 38);
 
   return {
-    sharedWoodTex, sharedWoodBumpTex, sharedWoodRoughTex,
-    sharedRoofShingleTex, sharedShingleBumpTex,
-    sharedDesertSandTex, sharedDesertSandBumpTex, sharedDesertSandRoughTex,
-    sharedRoadSandTex, sharedRoadBumpTex,
-    sharedSandstoneTex, sharedSandstoneBumpTex, sharedSandstoneRoughTex,
-    sharedMesaTex, sharedMesaBumpTex, sharedMesaRoughTex,
-    sharedBarkTex, sharedBarkBumpTex, sharedBarkRoughTex,
-    sharedFoliageTex, sharedFoliageBumpTex,
+    sharedWoodTex, sharedWoodBumpTex, sharedWoodNormalTex, sharedWoodRoughTex,
+    sharedRoofShingleTex, sharedShingleBumpTex, sharedShingleNormalTex, sharedShingleRoughTex,
+    sharedDesertSandTex, sharedDesertSandBumpTex, sharedDesertSandNormalTex, sharedDesertSandRoughTex,
+    sharedRoadSandTex, sharedRoadBumpTex, sharedRoadNormalTex, sharedRoadRoughTex,
+    sharedSandstoneTex, sharedSandstoneBumpTex, sharedSandstoneNormalTex, sharedSandstoneRoughTex,
+    sharedMesaTex, sharedMesaBumpTex, sharedMesaNormalTex, sharedMesaRoughTex,
+    sharedBarkTex, sharedBarkBumpTex, sharedBarkNormalTex, sharedBarkRoughTex,
+    sharedFoliageTex, sharedFoliageBumpTex, sharedFoliageNormalTex, sharedFoliageRoughTex,
+    gltfWoodNormalTex, gltfWoodRoughTex,
+    gltfShingleNormalTex, gltfShingleRoughTex,
+    gltfSandstoneNormalTex, gltfSandstoneRoughTex,
     woodWallMat, lightWoodMat, darkWoodMat,
     weatheredPlankMatA, weatheredPlankMatB, shutterWoodMat,
     logTimberMat, roofMat, wroughtIronMat, polishedBrassMat,

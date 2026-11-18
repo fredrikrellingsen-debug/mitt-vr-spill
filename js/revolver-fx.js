@@ -1,16 +1,26 @@
 import * as THREE from 'three';
 import { createSeededRng } from './textures.js';
 
-export function initRevolverAndAtmosphereFX({ scene, camera, M, saloonBuilding, tailorBuilding, safeHouseBuilding }) {
+export function initRevolverAndAtmosphereFX({
+  scene,
+  camera,
+  M,
+  saloonBuilding,
+  tailorBuilding,
+  safeHouseBuilding,
+  loadedAssets = null
+}) {
   const {
-    sharedWoodTex, sharedWoodBumpTex,
+    sharedWoodTex, sharedWoodNormalTex, sharedWoodRoughTex,
+    gltfWoodNormalTex, gltfWoodRoughTex,
     lightWoodMat, darkWoodMat, wroughtIronMat,
     sharedParticleGlowTex
   } = M;
 
   let damageVignetteTimer = 0;
+  let isGoldUpgraded = false;
 
-  // --- 7a. Western-revolver med PBR-stål, valnøttskjefte (bumpMap) og miljørefleksjon ---
+  // --- 7a. Western-revolver (.glb + prosedyrisk fallback) med PBR-stål, valnøttskjefte og miljørefleksjon ---
   const gunSteelMat = new THREE.MeshStandardMaterial({
     color: 0xb6bec8,
     metalness: 0.86,
@@ -26,8 +36,9 @@ export function initRevolverAndAtmosphereFX({ scene, camera, M, saloonBuilding, 
   const gunWoodMat = new THREE.MeshStandardMaterial({
     color: 0x6e3b19,
     map: sharedWoodTex,
-    bumpMap: sharedWoodBumpTex,
-    bumpScale: 0.035,
+    normalMap: sharedWoodNormalTex,
+    normalScale: new THREE.Vector2(0.45, 0.45),
+    roughnessMap: sharedWoodRoughTex,
     metalness: 0.04,
     roughness: 0.48,
     envMapIntensity: 0.9
@@ -39,21 +50,39 @@ export function initRevolverAndAtmosphereFX({ scene, camera, M, saloonBuilding, 
     envMapIntensity: 1.5
   });
 
+  const goldSteelMaterials = [gunSteelMat];
+  const goldDarkMaterials = [gunDarkMat];
+  const goldBrassMaterials = [gunBrassMat];
+
+  function applyGoldSteel(mat) {
+    mat.color.setHex(0xffd24c);
+    mat.emissive.setHex(0x3a2600);
+    mat.metalness = 0.94;
+    mat.roughness = 0.16;
+    mat.envMapIntensity = 1.65;
+  }
+
+  function applyGoldDark(mat) {
+    mat.color.setHex(0xd99b26);
+    mat.emissive.setHex(0x261700);
+    mat.metalness = 0.90;
+    mat.roughness = 0.20;
+    mat.envMapIntensity = 1.55;
+  }
+
+  function applyGoldBrass(mat) {
+    mat.color.setHex(0xffe98a);
+    mat.emissive.setHex(0x2e1e00);
+    mat.metalness = 0.95;
+    mat.roughness = 0.14;
+    mat.envMapIntensity = 1.70;
+  }
+
   function upgradeRevolverToGold() {
-    gunSteelMat.color.setHex(0xffd24c);
-    gunSteelMat.emissive.setHex(0x3a2600);
-    gunSteelMat.metalness = 0.94;
-    gunSteelMat.roughness = 0.16;
-
-    gunDarkMat.color.setHex(0xd99b26);
-    gunDarkMat.emissive.setHex(0x261700);
-    gunDarkMat.metalness = 0.9;
-    gunDarkMat.roughness = 0.2;
-
-    gunBrassMat.color.setHex(0xffe98a);
-    gunBrassMat.emissive.setHex(0x2e1e00);
-    gunBrassMat.metalness = 0.95;
-    gunBrassMat.roughness = 0.14;
+    isGoldUpgraded = true;
+    for (let i = 0; i < goldSteelMaterials.length; i++) applyGoldSteel(goldSteelMaterials[i]);
+    for (let i = 0; i < goldDarkMaterials.length; i++) applyGoldDark(goldDarkMaterials[i]);
+    for (let i = 0; i < goldBrassMaterials.length; i++) applyGoldBrass(goldBrassMaterials[i]);
   }
 
   const gunBarrelGeo = new THREE.CylinderGeometry(0.016, 0.016, 0.24, 14);
@@ -78,13 +107,116 @@ export function initRevolverAndAtmosphereFX({ scene, camera, M, saloonBuilding, 
   const gunGripPanelMat = new THREE.MeshStandardMaterial({
     color: 0x4c250f,
     map: sharedWoodTex,
-    bumpMap: sharedWoodBumpTex,
-    bumpScale: 0.04,
+    normalMap: sharedWoodNormalTex,
+    normalScale: new THREE.Vector2(0.45, 0.45),
+    roughnessMap: sharedWoodRoughTex,
     metalness: 0.04,
     roughness: 0.42
   });
 
+  function attachMuzzleFX(muzzle) {
+    // Munningsglimt: liten glødende mesh + kortvarig PointLight
+    const flashMat = new THREE.MeshBasicMaterial({
+      color: 0xffd257,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      fog: false
+    });
+    const flash = new THREE.Group();
+    flash.add(new THREE.Mesh(new THREE.IcosahedronGeometry(0.05, 0), flashMat));
+    const flashCone = new THREE.Mesh(new THREE.ConeGeometry(0.042, 0.13, 6), flashMat);
+    flashCone.rotation.x = -Math.PI / 2;
+    flashCone.position.set(0, 0, -0.08);
+    flash.add(flashCone);
+    flash.position.set(0, 0, 0.015);
+    flash.visible = false;
+    muzzle.add(flash);
+
+    // Lyset holdes alltid i scenen med intensitet 0 for å unngå shader-rekompilering på Meta Quest.
+    const flashLight = new THREE.PointLight(0xffb347, 0, 7, 2);
+    flashLight.position.set(0, 0, 0.01);
+    muzzle.add(flashLight);
+
+    return { flash, flashMat, flashLight };
+  }
+
   function createRevolver() {
+    const revolverGLTF = loadedAssets && loadedAssets.revolver;
+    if (revolverGLTF && revolverGLTF.scene) {
+      const root = new THREE.Group();
+      const body = new THREE.Group();
+      root.add(body);
+
+      const gltfModel = revolverGLTF.scene.clone(true);
+      const clonedMatMap = new Map();
+
+      gltfModel.traverse((node) => {
+        if (!node.isMesh || !node.material) return;
+        node.castShadow = false;
+        node.receiveShadow = false;
+
+        const origMat = node.material;
+        let mat = clonedMatMap.get(origMat);
+        if (!mat) {
+          mat = origMat.clone();
+          const mName = mat.name || '';
+          if (mName === 'GunSteel') {
+            mat.envMapIntensity = 1.5;
+            goldSteelMaterials.push(mat);
+            if (isGoldUpgraded) applyGoldSteel(mat);
+          } else if (mName === 'GunDarkSteel') {
+            mat.envMapIntensity = 1.4;
+            goldDarkMaterials.push(mat);
+            if (isGoldUpgraded) applyGoldDark(mat);
+          } else if (mName === 'GunBrass') {
+            mat.envMapIntensity = 1.55;
+            goldBrassMaterials.push(mat);
+            if (isGoldUpgraded) applyGoldBrass(mat);
+          } else if (mName === 'GunCopper') {
+            mat.envMapIntensity = 1.35;
+          } else if (mName === 'GunWalnut') {
+            mat.envMapIntensity = 0.95;
+            if (gltfWoodNormalTex) {
+              mat.normalMap = gltfWoodNormalTex;
+              mat.normalScale = new THREE.Vector2(0.32, -0.32);
+            }
+            if (gltfWoodRoughTex) {
+              mat.roughnessMap = gltfWoodRoughTex;
+            }
+          }
+          clonedMatMap.set(origMat, mat);
+        }
+        node.material = mat;
+      });
+
+      body.add(gltfModel);
+
+      let muzzle = gltfModel.getObjectByName('MuzzlePoint') || gltfModel.getObjectByName('muzzle');
+      if (!muzzle) {
+        muzzle = new THREE.Object3D();
+        muzzle.position.set(0, 0.032, -0.3);
+        body.add(muzzle);
+      }
+
+      const { flash, flashMat, flashLight } = attachMuzzleFX(muzzle);
+
+      root.userData = {
+        body,
+        muzzle,
+        flash,
+        flashMat,
+        flashLight,
+        cylinder: gltfModel.getObjectByName('Cylinder') || null,
+        hammer: gltfModel.getObjectByName('Hammer') || null,
+        recoilAngle: 0,
+        recoilVel: 0,
+        flashTimer: 0
+      };
+      return root;
+    }
+
     const root = new THREE.Group();
     const body = new THREE.Group();
     root.add(body);
