@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+dist/
+.next/
+node_modules/
+*.pem
+*.key
+*service-account*.json
+*.log
+.DS_Store
