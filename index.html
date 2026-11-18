@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="data:," />
   <title>Western Cowboy VR (WebXR)</title>
   <style>
     body {
@@ -107,6 +108,8 @@
   <script type="module">
     import * as THREE from 'three';
     import { VRButton } from 'three/addons/webxr/VRButton.js';
+    import { Sky } from 'three/addons/objects/Sky.js';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
     import { I18N, drawRoundedRect, drawSheriffStar2D } from './js/i18n.js';
     import { initTexturesAndMaterials } from './js/textures.js';
     import { initCreatureModels } from './js/creatures.js';
@@ -179,6 +182,7 @@
     let hasGoldenRevolver = false;
     let hasLegendTitle = false;
     let isNightStateFlag = false;
+    let playerHiddenStatus = false;
 
     const hudEl = document.getElementById('hud');
     const pcHintEl = document.getElementById('pc-hint');
@@ -399,7 +403,7 @@
         `${dict.hudHealth}: ${playerState.health} | ${dict.hudFood}: ${playerState.food} ${dict.hudEatHint} | ` +
         `${dict.hudPelts}: ${playerState.pelt} | ${dict.hudOutfit}: ${playerState.outfit} | ${dict.hudTime}: ${playerState.timeOfDay} | ` +
         `${dict.hudTargets}: ${playerState.targets}/5${titleSuffix}\n${questLine}`;
-      hudEl.textContent = summaryText;
+      hudEl.textContent = playerHiddenStatus ? `${summaryText}\n${dict.hiddenStatus}` : summaryText;
 
       wristCtx.clearRect(0, 0, wristCanvas.width, wristCanvas.height);
 
@@ -459,6 +463,12 @@
       }
       wristCtx.fillStyle = activeQuest ? '#a6f096' : '#f5d284';
       wristCtx.fillText(questLine, 36, 320);
+
+      if (playerHiddenStatus) {
+        wristCtx.font = 'bold 23px sans-serif';
+        wristCtx.fillStyle = '#8ff0a8';
+        wristCtx.fillText(dict.hiddenStatus, 36, 352);
+      }
 
       wristTexture.needsUpdate = true;
 
@@ -547,12 +557,53 @@
     const M = initTexturesAndMaterials(maxAnisotropy);
     const { windowMat } = M;
 
-    const W = buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy });
+    const W = buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy, Sky });
     const {
       sky, skySunVec, dayEnvRT, nightEnvRT,
       hemiLight, sunLight, sunMesh,
+      rockColliders,
       campfireFlameMeshes, campfireLight, campfireEmberMat
     } = W;
+
+    // Last inn alle 8 skulpturerte .glb-modeller parallelt (med sømløs prosedyrisk fallback per fil)
+    const gltfLoader = new GLTFLoader();
+    function loadOptionalGLB(url) {
+      return gltfLoader.loadAsync(url).catch((err) => {
+        console.warn(`[WesternVR] Fallback til prosedyrisk modell for ${url}:`, err);
+        return null;
+      });
+    }
+
+    const [
+      revolverGLTF,
+      saloonGLTF,
+      tailorGLTF,
+      banditGLTF,
+      tailorNpcGLTF,
+      vampireGLTF,
+      deerGLTF,
+      wolfGLTF
+    ] = await Promise.all([
+      loadOptionalGLB('./assets/revolver.glb'),
+      loadOptionalGLB('./assets/saloon.glb'),
+      loadOptionalGLB('./assets/tailor.glb'),
+      loadOptionalGLB('./assets/bandit.glb'),
+      loadOptionalGLB('./assets/tailor_npc.glb'),
+      loadOptionalGLB('./assets/vampire.glb'),
+      loadOptionalGLB('./assets/deer.glb'),
+      loadOptionalGLB('./assets/wolf.glb')
+    ]);
+
+    const loadedAssets = {
+      revolver: revolverGLTF,
+      saloon: saloonGLTF,
+      tailor: tailorGLTF,
+      bandit: banditGLTF,
+      tailorNpc: tailorNpcGLTF,
+      vampire: vampireGLTF,
+      deer: deerGLTF,
+      wolf: wolfGLTF
+    };
 
     // --- 5a. Saloon / Oppdragsbygg og «SHERIFF'S BOUNTY BOARD» ---
     const SALOON_QUESTS = [
@@ -903,12 +954,12 @@
     refreshTailorWorkshopHook = updateTailorWorkshopUI;
 
     // --- 5c. FYSISK GJEMMESTED (SAFE HOUSE / HIDEOUT) VED SIDEN AV SALOONEN ---
-    // Aksejustert sone som zombie-AI og kollisjoner kan bruke direkte i neste steg.
+    // Nøyaktig innvendig gulvareal inne i Safe House-hytta (tømmerveggene står rett utenfor sonen).
     const hidingZone = {
-      minX: -7.4,
-      maxX: -3.5,
-      minZ: -8.2,
-      maxZ: -4.4
+      minX: -7.66,
+      maxX: -3.90,
+      minZ: -8.66,
+      maxZ: -4.74
     };
 
     let safeHouseDoorOpen = true;
@@ -921,14 +972,19 @@
       (hidingZone.minZ + hidingZone.maxZ) * 0.5
     );
     const safeHouseDoorwayWorld = new THREE.Vector3(
-      hidingZone.maxX,
+      hidingZone.maxX + 0.16,
       1.2,
       (hidingZone.minZ + hidingZone.maxZ) * 0.5
     );
+    // Pre-allokert: hiding-sjekken skal ikke lage nye Vector3-objekter i løkken.
+    const hidingCheckWorldPos = new THREE.Vector3();
+    const safeHouseOutsidePoint = new THREE.Vector3(
+      hidingZone.maxX + 2.6,
+      0,
+      (hidingZone.minZ + hidingZone.maxZ) * 0.5
+    );
 
-    function isPlayerInHidingZone() {
-      const px = playerRig.position.x;
-      const pz = playerRig.position.z;
+    function isPointInHidingZone(px, pz) {
       return (
         px >= hidingZone.minX &&
         px <= hidingZone.maxX &&
@@ -937,7 +993,25 @@
       );
     }
 
-    const C = initCreatureModels(M, tailorBlockHitMeshes);
+    function isPlayerInHidingZone() {
+      if (isPointInHidingZone(playerRig.position.x, playerRig.position.z)) {
+        return true;
+      }
+
+      // I VR kan spilleren fysisk gå inn i hytta mens riggens origo står utenfor.
+      camera.getWorldPosition(hidingCheckWorldPos);
+      return isPointInHidingZone(hidingCheckWorldPos.x, hidingCheckWorldPos.z);
+    }
+
+    function updatePlayerHiddenStatus() {
+      const hiddenNow = isPlayerInHidingZone();
+      if (hiddenNow !== playerHiddenStatus) {
+        playerHiddenStatus = hiddenNow;
+        updateStatusUI();
+      }
+    }
+
+    const C = initCreatureModels(M, tailorBlockHitMeshes, loadedAssets);
     const {
       createDeerModel,
       createWolfModel,
@@ -948,28 +1022,54 @@
 
     const townBuilt = buildTownBuildings({
       L, M, W, C,
+      loadedAssets,
       saloonQuestTexture, saloonQuestButtonEntries, saloonQuestButtonMeshes, saloonQuestBlockMeshes,
       worldLangButtonMeshes,
       workshopBoardTexture, tailorButtonEntries, tailorButtonMeshes, tailorBlockHitMeshes,
       hidingZone, safeHouseCenterWorld, safeHouseDoorAngle, safeHouseDoorHitMeshes
     });
 
+    // Mål faktiske lokale og globale dimensjoner med THREE.Box3 før/etter plassering
+    const buildingMeasureBox = new THREE.Box3();
+
     const saloonBuilding = townBuilt.saloonBuilding;
     saloonMainSignMesh = townBuilt.saloonMainSignMesh;
     saloonLangSignMesh = townBuilt.saloonLangSignMesh;
     saloonQuestAnchorMesh = townBuilt.saloonQuestAnchorMesh;
+    saloonBuilding.position.set(0, 0, 0);
+    saloonBuilding.rotation.y = 0;
+    scene.add(saloonBuilding);
+    saloonBuilding.updateMatrixWorld(true);
+    buildingMeasureBox.setFromObject(saloonBuilding);
+    const saloonLocalBounds = {
+      minX: buildingMeasureBox.min.x,
+      maxX: buildingMeasureBox.max.x,
+      minZ: buildingMeasureBox.min.z,
+      maxZ: buildingMeasureBox.max.z
+    };
     saloonBuilding.position.set(-6.8, 0, 1.0);
     saloonBuilding.rotation.y = 0.45;
-    scene.add(saloonBuilding);
+    saloonBuilding.updateMatrixWorld(true);
     updateSaloonQuestBoardUI();
 
     const tailorBuilding = townBuilt.tailorBuilding;
     tailorMainSignMesh = townBuilt.tailorMainSignMesh;
     tailorCounterMesh = townBuilt.tailorCounterMesh;
     tailorNPCGroup = townBuilt.tailorNPCGroup;
+    tailorBuilding.position.set(0, 0, 0);
+    tailorBuilding.rotation.y = 0;
+    scene.add(tailorBuilding);
+    tailorBuilding.updateMatrixWorld(true);
+    buildingMeasureBox.setFromObject(tailorBuilding);
+    const tailorLocalBounds = {
+      minX: buildingMeasureBox.min.x,
+      maxX: buildingMeasureBox.max.x,
+      minZ: buildingMeasureBox.min.z,
+      maxZ: buildingMeasureBox.max.z
+    };
     tailorBuilding.position.set(6.8, 0, 1.0);
     tailorBuilding.rotation.y = -0.45;
-    scene.add(tailorBuilding);
+    tailorBuilding.updateMatrixWorld(true);
     updateTailorWorkshopUI();
 
     const safeHouseBuilding = townBuilt.safeHouseBuilding;
@@ -977,6 +1077,237 @@
     safeHouseMainSignMesh = townBuilt.safeHouseMainSignMesh;
     safeHouseStreetSignMesh = townBuilt.safeHouseStreetSignMesh;
     scene.add(safeHouseBuilding);
+    safeHouseBuilding.updateMatrixWorld(true);
+    buildingMeasureBox.setFromObject(safeHouseBuilding);
+    const safeHouseWorldBounds = {
+      minX: buildingMeasureBox.min.x,
+      maxX: buildingMeasureBox.max.x,
+      minZ: buildingMeasureBox.min.z,
+      maxZ: buildingMeasureBox.max.z
+    };
+
+    // =========================================================================
+    // 5d. NØYAKTIGE VEGGKOLLISJONER (AABB / OBB) OG AKTØRKOLLISJON I HVER FRAME
+    // =========================================================================
+    const wallColliders = [];
+    const PLAYER_RADIUS = 0.45;
+    const DEER_RADIUS = 0.45;
+    const WOLF_RADIUS = 0.38;
+    const BANDIT_RADIUS = 0.38;
+    const NIGHT_RADIUS = 0.42;
+
+    function addLocalWallCollider(group, minX, maxX, minZ, maxZ, isSafeHouseDoor = false, maxY = 4.8) {
+      wallColliders.push({
+        group,
+        ox: group.position.x,
+        oz: group.position.z,
+        cos: Math.cos(group.rotation.y),
+        sin: Math.sin(group.rotation.y),
+        minX,
+        maxX,
+        minZ,
+        maxZ,
+        maxY,
+        isSafeHouseDoor
+      });
+    }
+
+    function addWorldWallCollider(minX, maxX, minZ, maxZ, maxY = 3.8) {
+      wallColliders.push({
+        group: null,
+        ox: 0,
+        oz: 0,
+        cos: 1,
+        sin: 0,
+        minX,
+        maxX,
+        minZ,
+        maxZ,
+        maxY,
+        isSafeHouseDoor: false
+      });
+    }
+
+    // 1) Saloon (målt fra saloon.glb): venstre vegg + venstre veranda, høyre vegg + oppdragstavle,
+    //    bakvegg, bardisk inne i lokalet, og frontvegger på hver side av 1,96 m fri døråpning (-0.98..+0.98).
+    const sLeftOuter = Math.min(-3.24, saloonLocalBounds.minX + 0.14);
+    const sRightOuter = Math.max(3.24, saloonLocalBounds.maxX - 0.14);
+    const sBackOuter = Math.min(-2.44, saloonLocalBounds.minZ + 0.10);
+    addLocalWallCollider(saloonBuilding, sLeftOuter, -2.90, sBackOuter, 2.02);
+    addLocalWallCollider(saloonBuilding, sLeftOuter, -1.06, 2.00, 3.50, false, 1.35);
+    addLocalWallCollider(saloonBuilding, 2.90, sRightOuter, sBackOuter, 3.50);
+    addLocalWallCollider(saloonBuilding, 0.98, sRightOuter, 3.28, 3.60, false, 2.95);
+    addLocalWallCollider(saloonBuilding, sLeftOuter, sRightOuter, sBackOuter, -2.10);
+    addLocalWallCollider(saloonBuilding, -2.22, 2.22, -1.86, -1.04, false, 1.32);
+    addLocalWallCollider(saloonBuilding, sLeftOuter, -0.98, 1.72, 2.02);
+    addLocalWallCollider(saloonBuilding, 0.98, sRightOuter, 1.72, 2.02);
+
+    // 2) Skredderbutikk (målt fra tailor.glb): venstre vegg, høyre vegg + vognhjul, bakvegg,
+    //    frontstolper/tønne på hver side av 3,84 m fri inngang (-1.92..+1.92), samt skredderdisken inne.
+    const tLeftOuter = Math.min(-2.86, tailorLocalBounds.minX + 0.16);
+    const tRightOuter = Math.min(3.22, Math.max(2.92, tailorLocalBounds.maxX - 0.08));
+    const tBackOuter = Math.min(-2.14, tailorLocalBounds.minZ + 0.12);
+    addLocalWallCollider(tailorBuilding, tLeftOuter, -2.42, tBackOuter, 3.00);
+    addLocalWallCollider(tailorBuilding, 2.42, tRightOuter, tBackOuter, 3.00);
+    addLocalWallCollider(tailorBuilding, tLeftOuter, tRightOuter, tBackOuter, -1.74);
+    addLocalWallCollider(tailorBuilding, tLeftOuter, -1.92, 2.68, 3.02);
+    addLocalWallCollider(tailorBuilding, 1.92, tRightOuter, 2.22, 3.02, false, 1.35);
+    addLocalWallCollider(tailorBuilding, -2.44, 2.44, 0.78, 1.72, false, 1.32);
+
+    // 3) Safe House (målt fra safeHouseBuilding): bakvegg, nordvegg, sørvegg og to frontvegg-segmenter
+    //    rundt en fri døråpning på 1,92 m (-0.96..+0.96), pluss dynamisk dørboks når døren er lukket.
+    const shHalfW = (hidingZone.maxX - hidingZone.minX + 0.32) * 0.5;
+    const shHalfD = (hidingZone.maxZ - hidingZone.minZ + 0.32) * 0.5;
+    const shBackOuter = Math.min(-(shHalfW + 0.22), safeHouseWorldBounds.minX - safeHouseCenterWorld.x + 0.28);
+    addLocalWallCollider(safeHouseBuilding, shBackOuter, -(shHalfW - 0.16), -(shHalfD + 0.22), shHalfD + 0.22, false, 3.1);
+    addLocalWallCollider(safeHouseBuilding, shBackOuter, shHalfW + 0.22, -(shHalfD + 0.22), -(shHalfD - 0.16), false, 3.1);
+    addLocalWallCollider(safeHouseBuilding, shBackOuter, shHalfW + 0.22, shHalfD - 0.16, shHalfD + 0.22, false, 3.1);
+    addLocalWallCollider(safeHouseBuilding, shHalfW - 0.16, shHalfW + 0.22, -(shHalfD + 0.22), -0.96, false, 3.1);
+    addLocalWallCollider(safeHouseBuilding, shHalfW - 0.16, shHalfW + 0.22, 0.96, shHalfD + 0.22, false, 3.1);
+    // Egen kollisjonsboks for selve Safe House-døren (kun aktiv for spilleren når døren er lukket)
+    addLocalWallCollider(safeHouseBuilding, shHalfW - 0.16, shHalfW + 0.18, -0.98, 0.98, true, 2.42);
+    // Smal køye og forsyningskasse helt inntil bakveggen inne i Safe House
+    addLocalWallCollider(safeHouseBuilding, -(shHalfW - 0.12), -(shHalfW - 0.92), -1.76, 0.10, false, 0.9);
+    addLocalWallCollider(safeHouseBuilding, -(shHalfW - 0.12), -(shHalfW - 0.82), 0.94, 1.62, false, 0.95);
+
+    // 4) Store sandsteinsklipper (målt med THREE.Box3 i world.js)
+    for (let i = 0; i < rockColliders.length; i++) {
+      const rock = rockColliders[i];
+      addWorldWallCollider(rock.minX, rock.maxX, rock.minZ, rock.maxZ, 3.8);
+    }
+
+    // Glatt vegg-glidning med ekte Sirkel-mot-OBB nærmeste-punkt-projeksjon (0 objektallokeringer per frame)
+    function resolveWallCollisions(position, radius, blockOpenSafeDoor = false) {
+      const rSq = radius * radius;
+      for (let pass = 0; pass < 3; pass++) {
+        let moved = false;
+
+        for (let i = 0; i < wallColliders.length; i++) {
+          const collider = wallColliders[i];
+          if (collider.isSafeHouseDoor && safeHouseDoorOpen && !blockOpenSafeDoor) continue;
+
+          let localX;
+          let localZ;
+          if (collider.group) {
+            const dx = position.x - collider.ox;
+            const dz = position.z - collider.oz;
+            localX = dx * collider.cos - dz * collider.sin;
+            localZ = dx * collider.sin + dz * collider.cos;
+          } else {
+            localX = position.x;
+            localZ = position.z;
+          }
+
+          const closestX = localX < collider.minX ? collider.minX : (localX > collider.maxX ? collider.maxX : localX);
+          const closestZ = localZ < collider.minZ ? collider.minZ : (localZ > collider.maxZ ? collider.maxZ : localZ);
+
+          const diffX = localX - closestX;
+          const diffZ = localZ - closestZ;
+          const distSq = diffX * diffX + diffZ * diffZ;
+
+          if (distSq >= rSq) continue;
+
+          let pushX = 0;
+          let pushZ = 0;
+
+          if (distSq > 1e-8) {
+            const dist = Math.sqrt(distSq);
+            const pen = radius - dist;
+            pushX = (diffX / dist) * pen;
+            pushZ = (diffZ / dist) * pen;
+          } else {
+            const dLeft = localX - collider.minX;
+            const dRight = collider.maxX - localX;
+            const dBack = localZ - collider.minZ;
+            const dFront = collider.maxZ - localZ;
+            const minFace = Math.min(dLeft, dRight, dBack, dFront);
+            if (minFace === dLeft) pushX = -(dLeft + radius);
+            else if (minFace === dRight) pushX = dRight + radius;
+            else if (minFace === dBack) pushZ = -(dBack + radius);
+            else pushZ = dFront + radius;
+          }
+
+          if (collider.group) {
+            position.x += pushX * collider.cos + pushZ * collider.sin;
+            position.z += -pushX * collider.sin + pushZ * collider.cos;
+          } else {
+            position.x += pushX;
+            position.z += pushZ;
+          }
+          moved = true;
+        }
+
+        if (!moved) break;
+      }
+    }
+
+    const resolveCircleAgainstWalls = resolveWallCollisions;
+
+    function pointHitsSolidWall(wx, wy, wz) {
+      if (wy < 0) return false;
+      for (let i = 0; i < wallColliders.length; i++) {
+        const collider = wallColliders[i];
+        if (wy > collider.maxY) continue;
+        if (collider.isSafeHouseDoor && safeHouseDoorOpen) continue;
+
+        let localX;
+        let localZ;
+        if (collider.group) {
+          const dx = wx - collider.ox;
+          const dz = wz - collider.oz;
+          localX = dx * collider.cos - dz * collider.sin;
+          localZ = dx * collider.sin + dz * collider.cos;
+        } else {
+          localX = wx;
+          localZ = wz;
+        }
+
+        if (
+          localX >= collider.minX &&
+          localX <= collider.maxX &&
+          localZ >= collider.minZ &&
+          localZ <= collider.maxZ
+        ) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    // Vampyrer og ulver skal ALDRI kunne gå inn i hidingZone (uansett om døren er åpen eller spilleren står utenfor)
+    function pushOutOfHidingZone(group, radius) {
+      const pad = radius + 0.34;
+      const boxMinX = hidingZone.minX - 0.36;
+      const boxMaxX = hidingZone.maxX + 0.36;
+      const boxMinZ = hidingZone.minZ - 0.36;
+      const boxMaxZ = hidingZone.maxZ + 0.36;
+
+      const x = group.position.x;
+      const z = group.position.z;
+      const closestX = x < boxMinX ? boxMinX : (x > boxMaxX ? boxMaxX : x);
+      const closestZ = z < boxMinZ ? boxMinZ : (z > boxMaxZ ? boxMaxZ : z);
+      const diffX = x - closestX;
+      const diffZ = z - closestZ;
+      const distSq = diffX * diffX + diffZ * diffZ;
+      if (distSq >= pad * pad) return;
+
+      if (distSq > 1e-8) {
+        const dist = Math.sqrt(distSq);
+        const pen = pad - dist;
+        group.position.x += (diffX / dist) * pen;
+        group.position.z += (diffZ / dist) * pen;
+      } else {
+        const dLeft = x - boxMinX;
+        const dRight = boxMaxX - x;
+        const dBack = z - boxMinZ;
+        const dFront = boxMaxZ - z;
+        const minDelta = Math.min(dLeft, dRight, dBack, dFront);
+        if (minDelta === dLeft) group.position.x = boxMinX - pad;
+        else if (minDelta === dRight) group.position.x = boxMaxX + pad;
+        else if (minDelta === dBack) group.position.z = boxMinZ - pad;
+        else group.position.z = boxMaxZ + pad;
+      }
+    }
 
     refreshWorldSignsHook = () => {
       const dict = L();
@@ -1009,7 +1340,7 @@
     }
 
     const FX = initRevolverAndAtmosphereFX({
-      scene, camera, M, saloonBuilding, tailorBuilding, safeHouseBuilding
+      scene, camera, M, saloonBuilding, tailorBuilding, safeHouseBuilding, loadedAssets
     });
     const {
       createRevolver,
@@ -1139,6 +1470,7 @@
       if (!rev) return;
       const data = rev.userData;
       data.recoilVel += 7.5;
+      data.cylinderTargetRot = (data.cylinderTargetRot || 0) + Math.PI / 3;
       data.flashTimer = 0.08;
       data.flash.visible = true;
       data.flashLight.intensity = 22;
@@ -1161,6 +1493,12 @@
       data.recoilAngle = THREE.MathUtils.clamp(data.recoilAngle, -0.08, 0.5);
       data.body.rotation.x = data.recoilAngle;
       data.body.position.z = data.recoilAngle * 0.05;
+      if (data.cylinder && data.cylinderTargetRot !== undefined) {
+        data.cylinder.rotation.z += (data.cylinderTargetRot - data.cylinder.rotation.z) * Math.min(1, dt * 18);
+      }
+      if (data.hammer) {
+        data.hammer.rotation.x = -Math.max(0, data.recoilAngle) * 0.65;
+      }
 
       if (data.flashTimer > 0) {
         data.flashTimer = Math.max(0, data.flashTimer - dt);
@@ -1387,6 +1725,12 @@
           continue;
         }
 
+        if (pointHitsSolidWall(bullet.mesh.position.x, bullet.mesh.position.y, bullet.mesh.position.z)) {
+          spawnImpact(bullet.mesh.position, 0xd9b07c, 0.14);
+          removeBullet(i);
+          continue;
+        }
+
         const groundY = getTerrainHeight(bullet.mesh.position.x, bullet.mesh.position.z);
         if (bullet.mesh.position.y < groundY + 0.05) {
           spawnImpact(bullet.mesh.position, 0xd9b07c, 0.16);
@@ -1468,7 +1812,13 @@
       if (moveVector.lengthSq() > 1) moveVector.normalize();
       if (moveVector.lengthSq() === 0) return;
 
-      playerRig.position.addScaledVector(moveVector, speed * dt);
+      const totalStep = speed * dt;
+      const subSteps = totalStep > 0.22 ? 2 : 1;
+      const stepDelta = totalStep / subSteps;
+      for (let s = 0; s < subSteps; s++) {
+        playerRig.position.addScaledVector(moveVector, stepDelta);
+        resolveWallCollisions(playerRig.position, PLAYER_RADIUS, false);
+      }
       clampPlayerRig();
     }
 
@@ -1519,6 +1869,7 @@
       const rotated = snapTurnRotated.copy(rigCamLocal).applyAxisAngle(UP, playerRig.rotation.y);
       playerRig.position.x = rigCamWorld.x - rotated.x;
       playerRig.position.z = rigCamWorld.z - rotated.z;
+      resolveCircleAgainstWalls(playerRig.position, PLAYER_RADIUS);
       clampPlayerRig();
     }
 
@@ -2121,7 +2472,7 @@
       group.rotation.y = Math.atan2(-dx, -dz);
     }
 
-    function moveEntityToward(group, targetX, targetZ, speed, dt, stopDistance = 0) {
+    function moveEntityToward(group, targetX, targetZ, speed, dt, stopDistance = 0, radius = 0, blockOpenSafeDoor = false) {
       const dx = targetX - group.position.x;
       const dz = targetZ - group.position.z;
       const distance = Math.hypot(dx, dz);
@@ -2130,10 +2481,222 @@
       const step = Math.min(speed * dt, Math.max(0, distance - stopDistance));
       if (step <= 0) return distance;
 
-      group.position.x += (dx / distance) * step;
-      group.position.z += (dz / distance) * step;
+      const dirX = dx / distance;
+      const dirZ = dz / distance;
+      const startX = group.position.x;
+      const startZ = group.position.z;
+
+      group.position.x = startX + dirX * step;
+      group.position.z = startZ + dirZ * step;
+
+      if (radius > 0) {
+        if (blockOpenSafeDoor) pushOutOfHidingZone(group, radius);
+        resolveWallCollisions(group.position, radius, blockOpenSafeDoor);
+
+        const movedX = group.position.x - startX;
+        const movedZ = group.position.z - startZ;
+        const movedDist = Math.hypot(movedX, movedZ);
+
+        if (movedDist >= step * 0.55) {
+          group.userData.slideSign = 0;
+        } else if (movedDist < step * 0.38) {
+          const slideStep = step * 0.85;
+          let sign = group.userData.slideSign || 0;
+
+          if (sign === 0) {
+            group.position.x = startX - dirZ * slideStep;
+            group.position.z = startZ + dirX * slideStep;
+            if (blockOpenSafeDoor) pushOutOfHidingZone(group, radius);
+            resolveWallCollisions(group.position, radius, blockOpenSafeDoor);
+            const lx = group.position.x;
+            const lz = group.position.z;
+            const lTargetSq = (targetX - lx) * (targetX - lx) + (targetZ - lz) * (targetZ - lz);
+
+            group.position.x = startX + dirZ * slideStep;
+            group.position.z = startZ - dirX * slideStep;
+            if (blockOpenSafeDoor) pushOutOfHidingZone(group, radius);
+            resolveWallCollisions(group.position, radius, blockOpenSafeDoor);
+            const rx = group.position.x;
+            const rz = group.position.z;
+            const rTargetSq = (targetX - rx) * (targetX - rx) + (targetZ - rz) * (targetZ - rz);
+
+            sign = lTargetSq <= rTargetSq ? -1 : 1;
+            group.userData.slideSign = sign;
+          }
+
+          group.position.x = startX + sign * dirZ * slideStep;
+          group.position.z = startZ - sign * dirX * slideStep;
+          if (blockOpenSafeDoor) pushOutOfHidingZone(group, radius);
+          resolveWallCollisions(group.position, radius, blockOpenSafeDoor);
+
+          const sMovedSq =
+            (group.position.x - startX) * (group.position.x - startX) +
+            (group.position.z - startZ) * (group.position.z - startZ);
+          if (sMovedSq < 1e-6) {
+            sign = -sign;
+            group.userData.slideSign = sign;
+            group.position.x = startX + sign * dirZ * slideStep;
+            group.position.z = startZ - sign * dirX * slideStep;
+            if (blockOpenSafeDoor) pushOutOfHidingZone(group, radius);
+            resolveWallCollisions(group.position, radius, blockOpenSafeDoor);
+          }
+        }
+
+        const actualDX = group.position.x - startX;
+        const actualDZ = group.position.z - startZ;
+        if (actualDX * actualDX + actualDZ * actualDZ > 1e-6) {
+          group.rotation.y = Math.atan2(-actualDX, -actualDZ);
+        } else {
+          faceToward(group, targetX, targetZ);
+        }
+        return distance;
+      }
+
       faceToward(group, targetX, targetZ);
       return distance;
+    }
+
+    // --- 8g2. Animasjonskontroll: AnimationMixer + tilstander ---
+    const animationMixers = [];
+
+    function createQuadrupedAnimationClips() {
+      const idleTracks = [];
+      const walkTracks = [];
+      const runTracks = [];
+      for (let i = 0; i < 4; i++) {
+        const phase = (i === 0 || i === 3) ? 1 : -1;
+        idleTracks.push(new THREE.NumberKeyframeTrack(`leg${i}.rotation[x]`, [0, 1], [0, 0]));
+        walkTracks.push(new THREE.NumberKeyframeTrack(`leg${i}.rotation[x]`, [0, 0.5, 1], [0, 0.28 * phase, 0]));
+        runTracks.push(new THREE.NumberKeyframeTrack(`leg${i}.rotation[x]`, [0, 0.275, 0.55], [0, 0.5 * phase, 0]));
+      }
+
+      return [
+        new THREE.AnimationClip('Idle', 1, idleTracks),
+        new THREE.AnimationClip('Walk', 1, walkTracks),
+        new THREE.AnimationClip('Run', 0.55, runTracks),
+        new THREE.AnimationClip('Attack', 0.35, [
+          new THREE.NumberKeyframeTrack('head.rotation[x]', [0, 0.15, 0.35], [0, -0.35, 0])
+        ])
+      ];
+    }
+
+    function createNightAnimationClips() {
+      return [
+        new THREE.AnimationClip('Idle', 2, [
+          new THREE.NumberKeyframeTrack('arm0.rotation[x]', [0, 1, 2], [0, 0.06, 0]),
+          new THREE.NumberKeyframeTrack('arm1.rotation[x]', [0, 1, 2], [0, -0.06, 0])
+        ]),
+        new THREE.AnimationClip('Walk', 1, [
+          new THREE.NumberKeyframeTrack('arm0.rotation[x]', [0, 0.5, 1], [0, 0.3, 0]),
+          new THREE.NumberKeyframeTrack('arm1.rotation[x]', [0, 0.5, 1], [0, -0.3, 0])
+        ]),
+        new THREE.AnimationClip('Attack', 0.35, [
+          new THREE.NumberKeyframeTrack('arm0.rotation[x]', [0, 0.12, 0.35], [0, -0.55, 0]),
+          new THREE.NumberKeyframeTrack('arm1.rotation[x]', [0, 0.12, 0.35], [0, -0.55, 0])
+        ])
+      ];
+    }
+
+    function createBanditAnimationClips() {
+      return [
+        new THREE.AnimationClip('Idle', 2, [
+          new THREE.NumberKeyframeTrack('rightUpper.rotation[x]', [0, 1, 2], [-0.95, -0.93, -0.95]),
+          new THREE.NumberKeyframeTrack('rightFore.rotation[x]', [0, 1, 2], [-1.48, -1.46, -1.48])
+        ]),
+        new THREE.AnimationClip('Attack', 0.35, [
+          new THREE.NumberKeyframeTrack('rightUpper.rotation[x]', [0, 0.1, 0.35], [-0.95, -1.28, -0.95]),
+          new THREE.NumberKeyframeTrack('rightFore.rotation[x]', [0, 0.1, 0.35], [-1.48, -1.62, -1.48])
+        ])
+      ];
+    }
+
+    const quadrupedAnimationClips = createQuadrupedAnimationClips();
+    const nightAnimationClips = createNightAnimationClips();
+    const banditAnimationClips = createBanditAnimationClips();
+
+    function registerEntityAnimations(entity, fallbackClips) {
+      entity.animationMixer = null;
+      entity.animationActions = null;
+      entity.animationState = '';
+      entity.currentAnimationAction = null;
+      entity.attackAnimTimer = 0;
+
+      // GLB-klosser kan levere clips på gruppen eller via userData. Hvis
+      // modellen er prosedyrisk, bruker vi de genererte fallback-clipene.
+      const groupClips = entity.group.animations && entity.group.animations.length
+        ? entity.group.animations
+        : (entity.group.userData.animations && entity.group.userData.animations.length
+          ? entity.group.userData.animations
+          : null);
+      const clips = entity.animationClips || groupClips || fallbackClips;
+      if (!clips || clips.length === 0) return;
+
+      const mixer = new THREE.AnimationMixer(entity.group);
+      const actions = Object.create(null);
+      for (let i = 0; i < clips.length; i++) {
+        const clip = clips[i];
+        if (!clip) continue;
+        actions[(clip.name || '').toLowerCase()] = mixer.clipAction(clip);
+      }
+
+      entity.animationMixer = mixer;
+      entity.animationActions = actions;
+      animationMixers.push(entity);
+      setEntityAnimation(entity, 'Idle');
+    }
+
+    function setEntityAnimation(entity, stateName) {
+      const actions = entity.animationActions;
+      if (!actions) return;
+      if (entity.animationState === stateName) return;
+
+      const lower = stateName.toLowerCase();
+      let action = actions[lower];
+
+      if (!action) {
+        for (const key in actions) {
+          if (key.includes(lower)) {
+            action = actions[key];
+            break;
+          }
+        }
+      }
+
+      if (!action) action = actions.idle;
+      if (!action) {
+        const keys = Object.keys(actions);
+        if (keys.length > 0) action = actions[keys[0]];
+      }
+      if (!action) return;
+
+      entity.animationState = stateName;
+      if (entity.currentAnimationAction === action) return;
+
+      if (entity.currentAnimationAction) {
+        entity.currentAnimationAction.fadeOut(0.18);
+      }
+
+      action.reset();
+      action.setEffectiveWeight(1);
+      action.fadeIn(0.18);
+      if (stateName === 'Attack') {
+        action.setLoop(THREE.LoopOnce, 1);
+        action.clampWhenFinished = true;
+      } else {
+        action.setLoop(THREE.LoopRepeat, Infinity);
+        action.clampWhenFinished = false;
+      }
+      action.play();
+      entity.currentAnimationAction = action;
+    }
+
+    function updateAnimationMixers(dt) {
+      for (let i = 0; i < animationMixers.length; i++) {
+        const entity = animationMixers[i];
+        if (entity.animationMixer && entity.group.visible) {
+          entity.animationMixer.update(dt);
+        }
+      }
     }
 
     // --- 8h. Opprett og plasser skapningene (følger terrenghøyden) ---
@@ -2180,6 +2743,7 @@
       };
 
       chooseDeerTarget(deer);
+      registerEntityAnimations(deer, quadrupedAnimationClips);
       deerList.push(deer);
     }
 
@@ -2215,10 +2779,13 @@
         attackCooldown: 0,
         respawnTimer: 0,
         deathTimer: 0,
-        stride: Math.random() * Math.PI * 2
+        stride: Math.random() * Math.PI * 2,
+        hidingTimer: 0,
+        lostTrail: false
       };
 
       chooseWolfTarget(wolf);
+      registerEntityAnimations(wolf, quadrupedAnimationClips);
       wolfList.push(wolf);
     }
 
@@ -2246,9 +2813,11 @@
         cooldown: 1.2 + index * 0.45,
         spawn: spawnGrounded,
         baseYaw: group.rotation.y,
-        deathTimer: 0
+        deathTimer: 0,
+        attackAnimTimer: 0
       };
 
+      registerEntityAnimations(bandit, banditAnimationClips);
       banditList.push(bandit);
     }
 
@@ -2259,6 +2828,20 @@
       new THREE.Vector3(18, 0, -50),
       new THREE.Vector3(0, 0, -65)
     ];
+
+    function chooseNightWanderAwayTarget(enemy) {
+      // Velg et punkt langt ute i nattmørket/skogen bort fra Safe House (null objektallokering)
+      const awayX = enemy.group.position.x - safeHouseCenterWorld.x;
+      const awayZ = enemy.group.position.z - safeHouseCenterWorld.z;
+      const baseAngle = (awayX * awayX + awayZ * awayZ > 0.25)
+        ? Math.atan2(awayZ, awayX)
+        : (Math.random() * Math.PI * 2);
+      const spreadAngle = baseAngle + (Math.random() - 0.5) * 1.45;
+      const dist = 34 + Math.random() * 24;
+      const tx = THREE.MathUtils.clamp(safeHouseCenterWorld.x + Math.cos(spreadAngle) * dist, -78, 78);
+      const tz = THREE.MathUtils.clamp(safeHouseCenterWorld.z + Math.sin(spreadAngle) * dist, -78, 78);
+      enemy.wanderTarget.set(tx, 0, tz);
+    }
 
     function createNightEnemyAt(index) {
       const group = createNightEnemyModel();
@@ -2276,9 +2859,13 @@
         burnTimer: 0,
         attackCooldown: 0,
         spawnIndex: index,
-        deathTimer: 0
+        deathTimer: 0,
+        hidingTimer: 0,
+        lostTrail: false,
+        wanderTarget: new THREE.Vector3(sp.x, 0, sp.z)
       };
 
+      registerEntityAnimations(enemy, nightAnimationClips);
       nightEnemies.push(enemy);
     }
 
@@ -2305,7 +2892,9 @@
       deer.group.rotation.set(0, Math.random() * Math.PI * 2, 0);
       deer.group.scale.setScalar(1);
       deer.group.visible = !isNight;
-      animateQuadrupedLegs(deer.group, 0, 0);
+      deer.attackAnimTimer = 0;
+      if (!deer.animationMixer) animateQuadrupedLegs(deer.group, 0, 0);
+      setEntityAnimation(deer, 'Idle');
       chooseDeerTarget(deer);
     }
 
@@ -2316,6 +2905,9 @@
       wolf.deathTimer = 0;
       wolf.respawnTimer = 0;
       wolf.attackCooldown = 0;
+      wolf.attackAnimTimer = 0;
+      wolf.hidingTimer = 0;
+      wolf.lostTrail = false;
       wolf.wanderPause = 0.5 + Math.random() * 2;
       const wx = THREE.MathUtils.clamp(wolf.home.x + (Math.random() - 0.5) * 14, FOREST_BOUNDS.minX, FOREST_BOUNDS.maxX);
       const wz = THREE.MathUtils.clamp(wolf.home.z + (Math.random() - 0.5) * 14, FOREST_BOUNDS.minZ, FOREST_BOUNDS.maxZ);
@@ -2323,7 +2915,8 @@
       wolf.group.rotation.set(0, Math.random() * Math.PI * 2, 0);
       wolf.group.scale.setScalar(1);
       wolf.group.visible = true;
-      animateQuadrupedLegs(wolf.group, 0, 0);
+      if (!wolf.animationMixer) animateQuadrupedLegs(wolf.group, 0, 0);
+      setEntityAnimation(wolf, 'Idle');
       chooseWolfTarget(wolf);
     }
 
@@ -2333,11 +2926,15 @@
         bandit.hp = 3;
         bandit.active = !isNight;
         bandit.deathTimer = 0;
+        bandit.attackAnimTimer = 0;
         bandit.cooldown = 1.0 + index * 0.4;
         bandit.group.position.copy(bandit.spawn);
+        resolveCircleAgainstWalls(bandit.group.position, BANDIT_RADIUS);
+        bandit.group.position.y = getTerrainHeight(bandit.group.position.x, bandit.group.position.z);
         bandit.group.rotation.set(0, bandit.baseYaw, 0);
         bandit.group.scale.setScalar(1);
         bandit.group.visible = !isNight;
+        setEntityAnimation(bandit, 'Idle');
       });
     }
 
@@ -2366,11 +2963,17 @@
         enemy.burnTimer = 0;
         enemy.attackCooldown = 0.8 + Math.random() * 0.6;
         enemy.deathTimer = 0;
+        enemy.attackAnimTimer = 0;
+        enemy.hidingTimer = 0;
+        enemy.lostTrail = false;
         enemy.group.position.copy(point);
+        resolveCircleAgainstWalls(enemy.group.position, NIGHT_RADIUS);
+        enemy.group.position.y = getTerrainHeight(enemy.group.position.x, enemy.group.position.z);
         enemy.group.rotation.set(0, 0, 0);
         enemy.group.scale.setScalar(1);
         enemy.group.visible = true;
         faceToward(enemy.group, playerRig.position.x, playerRig.position.z);
+        setEntityAnimation(enemy, 'Idle');
       });
     }
 
@@ -2380,6 +2983,8 @@
         enemy.burning = true;
         enemy.burnTimer = 1.0;
         enemy.attackCooldown = 999;
+        enemy.attackAnimTimer = 0;
+        setEntityAnimation(enemy, 'Idle');
 
         nightBurnStartPosition.copy(enemy.group.position);
         nightBurnStartPosition.y += 0.9;
@@ -2406,6 +3011,7 @@
       deer.deathTimer = 1.2;
       deer.respawnTimer = 20;
       deer.group.rotation.z = 0;
+      setEntityAnimation(deer, 'Idle');
 
       playerState.food += 1;
       playerState.pelt += 1;
@@ -2429,6 +3035,7 @@
       wolf.deathTimer = 1.2;
       wolf.respawnTimer = 20;
       wolf.group.rotation.z = 0;
+      setEntityAnimation(wolf, 'Idle');
 
       playerState.pelt += 1;
       updateStatusUI();
@@ -2447,6 +3054,7 @@
       bandit.deathTimer = 1.2;
       bandit.respawnTimer = 22;
       bandit.group.rotation.z = 0;
+      setEntityAnimation(bandit, 'Idle');
       recordQuestKill('bandit');
     }
 
@@ -2462,6 +3070,7 @@
       enemy.group.visible = false;
       enemy.group.scale.setScalar(1);
       enemy.respawnTimer = 14;
+      setEntityAnimation(enemy, 'Idle');
 
       nightDeathImpactPosition.copy(enemy.group.position);
       nightDeathImpactPosition.y += 1.0;
@@ -2524,7 +3133,10 @@
             deer.group.position.x + (dx / len) * 12,
             deer.group.position.z + (dz / len) * 12,
             5.6,
-            dt
+            dt,
+            0,
+            DEER_RADIUS,
+            true
           );
           movingSpeed = 5.6;
 
@@ -2543,23 +3155,58 @@
             deer.wanderPause = 1 + Math.random() * 4;
             chooseDeerTarget(deer);
           } else {
-            moveEntityToward(deer.group, deer.wanderTarget.x, deer.wanderTarget.z, 1.3, dt);
+            moveEntityToward(deer.group, deer.wanderTarget.x, deer.wanderTarget.z, 1.3, dt, 0, DEER_RADIUS, true);
             movingSpeed = 1.3;
           }
         }
 
         deer.group.position.x = THREE.MathUtils.clamp(deer.group.position.x, FOREST_BOUNDS.minX, FOREST_BOUNDS.maxX);
         deer.group.position.z = THREE.MathUtils.clamp(deer.group.position.z, FOREST_BOUNDS.minZ, FOREST_BOUNDS.maxZ);
+        resolveWallCollisions(deer.group.position, DEER_RADIUS, true);
+        deer.group.position.x = THREE.MathUtils.clamp(deer.group.position.x, FOREST_BOUNDS.minX, FOREST_BOUNDS.maxX);
+        deer.group.position.z = THREE.MathUtils.clamp(deer.group.position.z, FOREST_BOUNDS.minZ, FOREST_BOUNDS.maxZ);
+
         const groundY = getTerrainHeight(deer.group.position.x, deer.group.position.z);
         if (movingSpeed > 0) {
           deer.stride += dt * (movingSpeed > 3 ? 13 : 6);
-          animateQuadrupedLegs(deer.group, deer.stride, movingSpeed > 3 ? 0.48 : 0.24);
           deer.group.position.y = groundY + (movingSpeed > 3 ? Math.abs(Math.sin(deer.stride)) * 0.08 : 0);
         } else {
-          animateQuadrupedLegs(deer.group, 0, 0);
           deer.group.position.y = groundY;
         }
+
+        // Animationsklippene overtar når en mixer finnes; ellers brukes den
+        // eksisterende prosedyriske beinanimasjonen.
+        if (!deer.animationMixer) {
+          if (movingSpeed > 0) {
+            animateQuadrupedLegs(deer.group, deer.stride, movingSpeed > 3 ? 0.48 : 0.24);
+          } else {
+            animateQuadrupedLegs(deer.group, 0, 0);
+          }
+        }
+
+        setEntityAnimation(deer, movingSpeed > 3 ? 'Run' : movingSpeed > 0 ? 'Walk' : 'Idle');
       }
+    }
+
+    function updateWolfPatrol(wolf, dt, speed) {
+      wolf.attackCooldown = Math.max(0, wolf.attackCooldown - dt);
+
+      if (wolf.wanderPause > 0) {
+        wolf.wanderPause -= dt;
+        return 0;
+      }
+
+      const dx = wolf.wanderTarget.x - wolf.group.position.x;
+      const dz = wolf.wanderTarget.z - wolf.group.position.z;
+
+      if (Math.hypot(dx, dz) < 0.8) {
+        wolf.wanderPause = 1 + Math.random() * 3;
+        chooseWolfTarget(wolf);
+        return 0;
+      }
+
+      moveEntityToward(wolf.group, wolf.wanderTarget.x, wolf.wanderTarget.z, speed, dt, 0, WOLF_RADIUS, true);
+      return speed;
     }
 
     function updateWolves(dt) {
@@ -2575,55 +3222,103 @@
 
         if (!wolf.group.visible) continue;
 
+        wolf.attackAnimTimer = Math.max(0, wolf.attackAnimTimer - dt);
+
         const dx = playerRig.position.x - wolf.group.position.x;
         const dz = playerRig.position.z - wolf.group.position.z;
         const distance = Math.hypot(dx, dz);
-
-        if (distance < 12) wolf.state = 'chase';
-        else if (distance > 22) wolf.state = 'patrol';
-
         let movingSpeed = 0;
-        if (wolf.state === 'chase') {
-          if (wolf.attackCooldown > 0) wolf.attackCooldown -= dt;
 
-          if (distance > 1.7) {
-            moveEntityToward(wolf.group, playerRig.position.x, playerRig.position.z, 4.3, dt, 1.4);
-            movingSpeed = 4.3;
-          } else {
-            faceToward(wolf.group, playerRig.position.x, playerRig.position.z);
-            if (wolf.attackCooldown <= 0) {
-              wolf.attackCooldown = 1.5;
-              damagePlayer(12);
+        if (playerHiddenStatus) {
+          // Spilleren er i Safe House: ulven kan aldri gå inn i sonen, mister sporet
+          // etter 1,5 sek (enda raskere med lukket dør) og vandrer bort i skogen/mørket.
+          const distanceToSafeHouse = Math.hypot(
+            wolf.group.position.x - safeHouseCenterWorld.x,
+            wolf.group.position.z - safeHouseCenterWorld.z
+          );
+
+          if (wolf.state === 'chase' || distanceToSafeHouse < 24) {
+            if (!wolf.lostTrail) {
+              if (wolf.hidingTimer <= 0) wolf.hidingTimer = 1.5;
+              wolf.hidingTimer -= dt * (safeHouseDoorOpen ? 1.0 : 1.35);
+
+              if (wolf.hidingTimer > 0) {
+                moveEntityToward(
+                  wolf.group,
+                  safeHouseOutsidePoint.x,
+                  safeHouseOutsidePoint.z,
+                  2.6,
+                  dt,
+                  1.8,
+                  WOLF_RADIUS,
+                  true
+                );
+                movingSpeed = 2.6;
+              } else {
+                wolf.lostTrail = true;
+                wolf.state = 'patrol';
+                wolf.wanderPause = 0;
+                chooseWolfTarget(wolf);
+                movingSpeed = updateWolfPatrol(wolf, dt, 2.1);
+              }
+            } else {
+              movingSpeed = updateWolfPatrol(wolf, dt, 1.9);
             }
+          } else {
+            movingSpeed = updateWolfPatrol(wolf, dt, 1.6);
           }
         } else {
-          wolf.attackCooldown = Math.max(0, wolf.attackCooldown - dt);
+          wolf.hidingTimer = 0;
+          wolf.lostTrail = false;
 
-          if (wolf.wanderPause > 0) {
-            wolf.wanderPause -= dt;
-          } else {
-            const targetDx = wolf.wanderTarget.x - wolf.group.position.x;
-            const targetDz = wolf.wanderTarget.z - wolf.group.position.z;
+          if (distance < 12) wolf.state = 'chase';
+          else if (distance > 22) wolf.state = 'patrol';
 
-            if (Math.hypot(targetDx, targetDz) < 0.8) {
-              wolf.wanderPause = 1 + Math.random() * 3;
-              chooseWolfTarget(wolf);
+          if (wolf.state === 'chase') {
+            if (wolf.attackCooldown > 0) wolf.attackCooldown -= dt;
+
+            if (distance > 1.7) {
+              moveEntityToward(wolf.group, playerRig.position.x, playerRig.position.z, 4.3, dt, 1.4, WOLF_RADIUS, true);
+              movingSpeed = 4.3;
             } else {
-              moveEntityToward(wolf.group, wolf.wanderTarget.x, wolf.wanderTarget.z, 1.7, dt);
-              movingSpeed = 1.7;
+              faceToward(wolf.group, playerRig.position.x, playerRig.position.z);
+              if (wolf.attackCooldown <= 0) {
+                wolf.attackCooldown = 1.5;
+                wolf.attackAnimTimer = 0.45;
+                damagePlayer(12);
+              }
             }
+          } else {
+            movingSpeed = updateWolfPatrol(wolf, dt, 1.7);
           }
         }
 
+        pushOutOfHidingZone(wolf.group, WOLF_RADIUS);
         wolf.group.position.x = THREE.MathUtils.clamp(wolf.group.position.x, -82, 82);
         wolf.group.position.z = THREE.MathUtils.clamp(wolf.group.position.z, -82, 82);
+        resolveWallCollisions(wolf.group.position, WOLF_RADIUS, true);
+        pushOutOfHidingZone(wolf.group, WOLF_RADIUS);
+        wolf.group.position.x = THREE.MathUtils.clamp(wolf.group.position.x, -82, 82);
+        wolf.group.position.z = THREE.MathUtils.clamp(wolf.group.position.z, -82, 82);
+
         wolf.group.position.y = getTerrainHeight(wolf.group.position.x, wolf.group.position.z);
+
         if (movingSpeed > 0) {
           wolf.stride += dt * (movingSpeed > 3 ? 12 : 6.5);
-          animateQuadrupedLegs(wolf.group, wolf.stride, movingSpeed > 3 ? 0.45 : 0.24);
-        } else {
-          animateQuadrupedLegs(wolf.group, 0, 0);
         }
+
+        if (!wolf.animationMixer) {
+          if (movingSpeed > 0) {
+            animateQuadrupedLegs(wolf.group, wolf.stride, movingSpeed > 3 ? 0.45 : 0.24);
+          } else {
+            animateQuadrupedLegs(wolf.group, 0, 0);
+          }
+        }
+
+        const animationState = playerHiddenStatus
+          ? (movingSpeed > 0 ? 'Walk' : 'Idle')
+          : (wolf.attackAnimTimer > 0 ? 'Attack' : (movingSpeed > 3 ? 'Run' : (movingSpeed > 0 ? 'Walk' : 'Idle')));
+        setEntityAnimation(wolf, animationState);
       }
     }
 
@@ -2657,17 +3352,23 @@
               bandit.hp = 3;
               bandit.active = true;
               bandit.deathTimer = 0;
+              bandit.attackAnimTimer = 0;
               bandit.cooldown = 1.4;
               bandit.group.position.copy(bandit.spawn);
+              resolveWallCollisions(bandit.group.position, BANDIT_RADIUS, true);
+              bandit.group.position.y = getTerrainHeight(bandit.group.position.x, bandit.group.position.z);
               bandit.group.rotation.set(0, bandit.baseYaw, 0);
               bandit.group.scale.setScalar(1);
               bandit.group.visible = true;
+              setEntityAnimation(bandit, 'Idle');
             }
           }
           continue;
         }
 
         if (!bandit.active || isNight) continue;
+
+        bandit.attackAnimTimer = Math.max(0, bandit.attackAnimTimer - dt);
 
         const dx = playerRig.position.x - bandit.group.position.x;
         const dz = playerRig.position.z - bandit.group.position.z;
@@ -2679,12 +3380,17 @@
 
           if (bandit.cooldown <= 0) {
             bandit.cooldown = 2.2;
+            bandit.attackAnimTimer = 0.45;
             fireBanditBullet(bandit);
           }
         } else {
           bandit.cooldown = Math.max(0, bandit.cooldown - dt);
           faceToward(bandit.group, 0, 8);
         }
+
+        resolveWallCollisions(bandit.group.position, BANDIT_RADIUS, true);
+        bandit.group.position.y = getTerrainHeight(bandit.group.position.x, bandit.group.position.z);
+        setEntityAnimation(bandit, bandit.attackAnimTimer > 0 ? 'Attack' : 'Idle');
       }
     }
 
@@ -2715,11 +3421,18 @@
               enemy.burning = false;
               enemy.burnTimer = 0;
               enemy.attackCooldown = 1.0;
+              enemy.attackAnimTimer = 0;
+              enemy.hidingTimer = 0;
+              enemy.lostTrail = false;
               enemy.group.position.copy(point);
+              pushOutOfHidingZone(enemy.group, NIGHT_RADIUS);
+              resolveWallCollisions(enemy.group.position, NIGHT_RADIUS, true);
+              enemy.group.position.y = getTerrainHeight(enemy.group.position.x, enemy.group.position.z);
               enemy.group.rotation.set(0, 0, 0);
               enemy.group.scale.setScalar(1);
               enemy.group.visible = true;
               faceToward(enemy.group, playerRig.position.x, playerRig.position.z);
+              setEntityAnimation(enemy, 'Idle');
             }
           }
           continue;
@@ -2748,40 +3461,118 @@
 
         if (!enemy.alive) continue;
 
+        enemy.attackAnimTimer = Math.max(0, enemy.attackAnimTimer - dt);
+
         const dx = playerRig.position.x - enemy.group.position.x;
         const dz = playerRig.position.z - enemy.group.position.z;
         const distance = Math.hypot(dx, dz);
+        let movingSpeed = 0;
 
-        enemy.group.rotation.z = Math.sin(worldTime * 2.4 + index) * 0.04;
-        const arms = enemy.group.userData.arms;
-        if (arms && arms.length === 2) {
-          const clawReach = Math.sin(worldTime * 4.2 + index) * 0.12;
-          arms[0].rotation.x = clawReach;
-          arms[1].rotation.x = -clawReach;
-        }
+        if (playerHiddenStatus) {
+          // Spilleren er inne i Safe House: nattmonsteret slipper aldri inn i hidingZone,
+          // mister sporet etter 1,5 sekunder (raskere med lukket dør) og vandrer bort i mørket.
+          if (!enemy.lostTrail) {
+            if (enemy.hidingTimer <= 0) enemy.hidingTimer = 1.5;
+            enemy.hidingTimer -= dt * (safeHouseDoorOpen ? 1.0 : 1.35);
 
-        if (distance > 1.8) {
-          moveEntityToward(enemy.group, playerRig.position.x, playerRig.position.z, 2.35, dt, 1.55);
+            if (enemy.hidingTimer > 0) {
+              moveEntityToward(
+                enemy.group,
+                safeHouseOutsidePoint.x,
+                safeHouseOutsidePoint.z,
+                2.0,
+                dt,
+                1.8,
+                NIGHT_RADIUS,
+                true
+              );
+              movingSpeed = 2.0;
+            } else {
+              enemy.lostTrail = true;
+              chooseNightWanderAwayTarget(enemy);
+              moveEntityToward(
+                enemy.group,
+                enemy.wanderTarget.x,
+                enemy.wanderTarget.z,
+                2.15,
+                dt,
+                0,
+                NIGHT_RADIUS,
+                true
+              );
+              movingSpeed = 2.15;
+            }
+          } else {
+            const wdx = enemy.wanderTarget.x - enemy.group.position.x;
+            const wdz = enemy.wanderTarget.z - enemy.group.position.z;
+            if (wdx * wdx + wdz * wdz < 2.25) {
+              chooseNightWanderAwayTarget(enemy);
+            }
+            moveEntityToward(
+              enemy.group,
+              enemy.wanderTarget.x,
+              enemy.wanderTarget.z,
+              2.15,
+              dt,
+              0,
+              NIGHT_RADIUS,
+              true
+            );
+            movingSpeed = 2.15;
+          }
+
           enemy.attackCooldown = Math.max(0, enemy.attackCooldown - dt);
         } else {
-          faceToward(enemy.group, playerRig.position.x, playerRig.position.z);
-          enemy.attackCooldown -= dt;
+          enemy.hidingTimer = 0;
+          enemy.lostTrail = false;
 
-          if (enemy.attackCooldown <= 0) {
-            enemy.attackCooldown = 1.2;
-            damagePlayer(20);
+          if (distance > 1.8) {
+            moveEntityToward(enemy.group, playerRig.position.x, playerRig.position.z, 2.35, dt, 1.55, NIGHT_RADIUS, true);
+            movingSpeed = 2.35;
+            enemy.attackCooldown = Math.max(0, enemy.attackCooldown - dt);
+          } else {
+            faceToward(enemy.group, playerRig.position.x, playerRig.position.z);
+            enemy.attackCooldown -= dt;
 
-            nightAttackImpactPosition.copy(playerChestPosition);
-            spawnImpact(nightAttackImpactPosition, 0xff2a2a, 0.18);
+            if (enemy.attackCooldown <= 0) {
+              enemy.attackCooldown = 1.2;
+              enemy.attackAnimTimer = 0.45;
+              damagePlayer(20);
+
+              nightAttackImpactPosition.copy(playerChestPosition);
+              spawnImpact(nightAttackImpactPosition, 0xff2a2a, 0.18);
+            }
           }
         }
 
+        pushOutOfHidingZone(enemy.group, NIGHT_RADIUS);
         enemy.group.position.x = THREE.MathUtils.clamp(enemy.group.position.x, -82, 82);
         enemy.group.position.z = THREE.MathUtils.clamp(enemy.group.position.z, -82, 82);
+        resolveWallCollisions(enemy.group.position, NIGHT_RADIUS, true);
+        pushOutOfHidingZone(enemy.group, NIGHT_RADIUS);
+        enemy.group.position.x = THREE.MathUtils.clamp(enemy.group.position.x, -82, 82);
+        enemy.group.position.z = THREE.MathUtils.clamp(enemy.group.position.z, -82, 82);
+
+        enemy.group.rotation.z = Math.sin(worldTime * 2.4 + index) * 0.04;
+
+        if (!enemy.animationMixer) {
+          const arms = enemy.group.userData.arms;
+          if (arms && arms.length === 2) {
+            const clawReach = Math.sin(worldTime * 4.2 + index) * 0.12;
+            arms[0].rotation.x = clawReach;
+            arms[1].rotation.x = -clawReach;
+          }
+        }
+
         enemy.group.position.y =
           getTerrainHeight(enemy.group.position.x, enemy.group.position.z) +
           0.05 +
           Math.sin(worldTime * 3.1 + index) * 0.045;
+
+        const animationState = playerHiddenStatus
+          ? (movingSpeed > 0 ? 'Walk' : 'Idle')
+          : (enemy.attackAnimTimer > 0 ? 'Attack' : (movingSpeed > 0 ? 'Walk' : 'Idle'));
+        setEntityAnimation(enemy, animationState);
       }
     }
 
@@ -2836,6 +3627,12 @@
         bullet.prev.copy(bullet.mesh.position);
         bullet.mesh.position.addScaledVector(bullet.dir, bullet.speed * dt);
         bullet.life -= dt;
+
+        if (pointHitsSolidWall(bullet.mesh.position.x, bullet.mesh.position.y, bullet.mesh.position.z)) {
+          spawnImpact(bullet.mesh.position, 0xd9b07c, 0.14);
+          removeEnemyBullet(i);
+          continue;
+        }
 
         const headHit = segmentPointDistance(bullet.prev, bullet.mesh.position, playerHeadPosition) < 0.42;
         const chestHit = segmentPointDistance(bullet.prev, bullet.mesh.position, playerChestPosition) < 0.5;
@@ -2918,6 +3715,9 @@
     }
 
     // --- 8n. Plasser alle skapningene i verdenen ---
+    if (tailorNPCGroup && tailorNPCGroup.userData.animations && tailorNPCGroup.userData.animations.length > 0) {
+      registerEntityAnimations({ kind: 'npc', group: tailorNPCGroup }, null);
+    }
     deerHomes.forEach((home) => createDeerAt(home.x, home.z));
     wolfHomes.forEach((home) => createWolfAt(home.x, home.z));
     banditPosts.forEach((post, index) => createBanditAt(post, index));
@@ -3038,6 +3838,40 @@
       renderer.setSize(window.innerWidth, window.innerHeight);
     });
 
+    // Garanter at resolveWallCollisions kjøres for ALLE aktører i hver eneste frame (0 allokeringer)
+    function enforceAllActorWallCollisions() {
+      resolveWallCollisions(playerRig.position, PLAYER_RADIUS, false);
+      clampPlayerRig();
+
+      for (let i = 0; i < nightEnemies.length; i++) {
+        const enemy = nightEnemies[i];
+        if (!enemy.alive || !enemy.group.visible || enemy.burning) continue;
+        pushOutOfHidingZone(enemy.group, NIGHT_RADIUS);
+        resolveWallCollisions(enemy.group.position, NIGHT_RADIUS, true);
+        pushOutOfHidingZone(enemy.group, NIGHT_RADIUS);
+      }
+
+      for (let i = 0; i < wolfList.length; i++) {
+        const wolf = wolfList[i];
+        if (!wolf.alive || !wolf.group.visible) continue;
+        pushOutOfHidingZone(wolf.group, WOLF_RADIUS);
+        resolveWallCollisions(wolf.group.position, WOLF_RADIUS, true);
+        pushOutOfHidingZone(wolf.group, WOLF_RADIUS);
+      }
+
+      for (let i = 0; i < banditList.length; i++) {
+        const bandit = banditList[i];
+        if (!bandit.alive || !bandit.group.visible) continue;
+        resolveWallCollisions(bandit.group.position, BANDIT_RADIUS, true);
+      }
+
+      for (let i = 0; i < deerList.length; i++) {
+        const deer = deerList[i];
+        if (!deer.alive || !deer.group.visible) continue;
+        resolveWallCollisions(deer.group.position, DEER_RADIUS, true);
+      }
+    }
+
     // =========================================================================
     // 11. HOVEDLØKKE
     // =========================================================================
@@ -3082,13 +3916,16 @@
       updateVRMovement(dt);
       updatePCMovement(dt);
       updateSnapTurn(dt);
-      updatePlayerBodyPoints();
 
-      // Skapninger, fiender og bandittkuler
+      // Skapninger, fiender og solide veggkollisjoner i hver eneste frame
       updateDeer(dt);
       updateWolves(dt);
       updateBandits(dt);
       updateNightEnemies(dt);
+      enforceAllActorWallCollisions();
+      updatePlayerBodyPoints();
+      updatePlayerHiddenStatus();
+      updateAnimationMixers(dt);
       updateEnemyBullets(dt);
 
       // Skyting: kuler, treff, blinkfysikk, støvkorn/glør og visuelle effekter
@@ -3098,6 +3935,10 @@
       updateAmbientParticles(dt, playerRig.position, nightAmount, worldTime);
       updateDamageVignette(dt);
 
+      if (weaponDamage >= 2 && !hasGoldenRevolver) {
+        hasGoldenRevolver = true;
+        upgradeRevolverToGold();
+      }
       updateRevolverFX(pcRevolver, dt);
       if (vrRevolver) updateRevolverFX(vrRevolver, dt);
 
