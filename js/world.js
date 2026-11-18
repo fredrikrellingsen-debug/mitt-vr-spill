@@ -38,22 +38,21 @@ export function getTerrainHeight(x, z) {
   return (dunePrimary + duneSecondary + rimLift + 0.22) * blend;
 }
 
-export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy }) {
+export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy, Sky: SkyClass = Sky }) {
   const {
-    sharedWoodTex, sharedWoodBumpTex, sharedWoodRoughTex,
-    sharedDesertSandTex, sharedDesertSandBumpTex, sharedDesertSandRoughTex,
-    sharedRoadSandTex, sharedRoadBumpTex,
-    sharedSandstoneTex, sharedSandstoneBumpTex, sharedSandstoneRoughTex,
-    sharedMesaTex, sharedMesaBumpTex, sharedMesaRoughTex,
-    sharedBarkTex, sharedBarkBumpTex, sharedBarkRoughTex,
-    sharedFoliageTex, sharedFoliageBumpTex,
+    sharedDesertSandTex, sharedDesertSandNormalTex, sharedDesertSandRoughTex,
+    sharedRoadSandTex, sharedRoadNormalTex, sharedRoadRoughTex,
+    sharedSandstoneTex, sharedSandstoneNormalTex, sharedSandstoneRoughTex,
+    sharedMesaTex, sharedMesaNormalTex, sharedMesaRoughTex,
+    sharedBarkTex, sharedBarkNormalTex, sharedBarkRoughTex,
+    sharedFoliageTex, sharedFoliageNormalTex, sharedFoliageRoughTex,
     woodWallMat, lightWoodMat, darkWoodMat,
     weatheredPlankMatA, weatheredPlankMatB, shutterWoodMat,
     wroughtIronMat, polishedBrassMat, stonePlinthMat, windowMat
   } = M;
 
   // --- 3f. Atmosfærisk Sky-shader og forhåndsbakt PMREM PBR-miljølys ---
-  const sky = new Sky();
+  const sky = new SkyClass();
   sky.scale.setScalar(490);
   scene.add(sky);
 
@@ -68,7 +67,7 @@ export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy }
 
   function bakeWesternEnvironment(nightAmt) {
     const envScene = new THREE.Scene();
-    const envSky = new Sky();
+    const envSky = new SkyClass();
     envSky.scale.setScalar(80);
     const tmpSun = new THREE.Vector3();
     applySkyShaderParams(envSky, nightAmt, tmpSun);
@@ -140,8 +139,8 @@ export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy }
   const desertGroundMat = new THREE.MeshStandardMaterial({
     color: 0xe2b47c,
     map: sharedDesertSandTex,
-    bumpMap: sharedDesertSandBumpTex,
-    bumpScale: 0.28,
+    normalMap: sharedDesertSandNormalTex,
+    normalScale: new THREE.Vector2(0.58, 0.58),
     roughnessMap: sharedDesertSandRoughTex,
     roughness: 0.92,
     metalness: 0.02
@@ -154,8 +153,9 @@ export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy }
   const roadMat = new THREE.MeshStandardMaterial({
     color: 0xb8844f,
     map: sharedRoadSandTex,
-    bumpMap: sharedRoadBumpTex,
-    bumpScale: 0.18,
+    normalMap: sharedRoadNormalTex,
+    normalScale: new THREE.Vector2(0.45, 0.45),
+    roughnessMap: sharedRoadRoughTex,
     roughness: 0.94,
     metalness: 0.01
   });
@@ -186,8 +186,8 @@ export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy }
   const mesaMat = new THREE.MeshStandardMaterial({
     color: 0xc9744a,
     map: sharedMesaTex,
-    bumpMap: sharedMesaBumpTex,
-    bumpScale: 0.85,
+    normalMap: sharedMesaNormalTex,
+    normalScale: new THREE.Vector2(1.35, 1.35),
     roughnessMap: sharedMesaRoughTex,
     roughness: 0.88,
     metalness: 0.03
@@ -195,8 +195,9 @@ export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy }
   const mesaCapMat = new THREE.MeshStandardMaterial({
     color: 0xa45434,
     map: sharedSandstoneTex,
-    bumpMap: sharedSandstoneBumpTex,
-    bumpScale: 0.65,
+    normalMap: sharedSandstoneNormalTex,
+    normalScale: new THREE.Vector2(1.15, 1.15),
+    roughnessMap: sharedSandstoneRoughTex,
     roughness: 0.9,
     metalness: 0.02
   });
@@ -287,7 +288,9 @@ export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy }
     { x: 74, z: 152, r: 30, h: 35, seed: 909, spire: false }
   ].forEach((m) => spawnMonumentMesa(m.x, m.z, m.r, m.h, m.seed, m.spire));
 
-  // Nærmere klipper/kampestein-formasjoner ved bandittpostene (naturlige klynger i stedet for kjegler)
+  // Nærmere klipper/kampestein-formasjoner ved bandittpostene (målt med THREE.Box3)
+  const rockColliders = [];
+  const rockMeasureBox = new THREE.Box3();
   const cragBoulderGeo = new THREE.DodecahedronGeometry(1.0, 1);
   function spawnBanditRockCluster(cx, cz, scale, seed) {
     const rng = createSeededRng(seed);
@@ -299,6 +302,7 @@ export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy }
       { ox: 1.8, oz: -0.9, sx: 2.1, sy: 1.7, sz: 1.8, mat: mesaMat },
       { ox: 0.4, oz: 1.7, sx: 1.5, sy: 0.95, sz: 1.4, mat: mesaCapMat }
     ];
+    const boulders = [];
     specs.forEach((sp) => {
       const b = new THREE.Mesh(cragBoulderGeo, sp.mat);
       b.scale.set(sp.sx * scale, sp.sy * scale, sp.sz * scale);
@@ -307,9 +311,24 @@ export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy }
       b.castShadow = true;
       b.receiveShadow = true;
       cluster.add(b);
+      boulders.push(b);
     });
     cluster.position.set(cx, baseGround, cz);
     scene.add(cluster);
+    cluster.updateMatrixWorld(true);
+
+    // Nøyaktig verdensposisjon og størrelse per kampestein målt direkte med THREE.Box3
+    for (let i = 0; i < boulders.length; i++) {
+      rockMeasureBox.setFromObject(boulders[i]);
+      const shrinkX = (rockMeasureBox.max.x - rockMeasureBox.min.x) * 0.10;
+      const shrinkZ = (rockMeasureBox.max.z - rockMeasureBox.min.z) * 0.10;
+      rockColliders.push({
+        minX: rockMeasureBox.min.x + shrinkX,
+        maxX: rockMeasureBox.max.x - shrinkX,
+        minZ: rockMeasureBox.min.z + shrinkZ,
+        maxZ: rockMeasureBox.max.z - shrinkZ
+      });
+    }
   }
 
   [
@@ -698,8 +717,8 @@ export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy }
         color: 0x264858,
         roughness: 0.04,
         metalness: 0.16,
-        bumpMap: sharedDesertSandBumpTex,
-        bumpScale: 0.012,
+        normalMap: sharedDesertSandNormalTex,
+        normalScale: new THREE.Vector2(0.08, 0.08),
         envMapIntensity: 1.55
       })
     );
@@ -769,8 +788,9 @@ export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy }
     const charredLogMat = new THREE.MeshStandardMaterial({
       color: 0x2b1a10,
       map: sharedBarkTex,
-      bumpMap: sharedBarkBumpTex,
-      bumpScale: 0.18,
+      normalMap: sharedBarkNormalTex,
+      normalScale: new THREE.Vector2(0.85, 0.85),
+      roughnessMap: sharedBarkRoughTex,
       roughness: 0.94
     });
     const logGeo = new THREE.CylinderGeometry(0.065, 0.075, 0.86, 8);
@@ -861,8 +881,9 @@ export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy }
   const cactusMat = new THREE.MeshStandardMaterial({
     color: 0x427c3d,
     map: sharedFoliageTex,
-    bumpMap: sharedFoliageBumpTex,
-    bumpScale: 0.1,
+    normalMap: sharedFoliageNormalTex,
+    normalScale: new THREE.Vector2(0.45, 0.45),
+    roughnessMap: sharedFoliageRoughTex,
     roughness: 0.76
   });
   const cactusFlowerCoralMat = new THREE.MeshStandardMaterial({
@@ -997,8 +1018,9 @@ export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy }
     new THREE.MeshStandardMaterial({
       color: 0x768c46,
       map: sharedFoliageTex,
-      bumpMap: sharedFoliageBumpTex,
-      bumpScale: 0.14,
+      normalMap: sharedFoliageNormalTex,
+      normalScale: new THREE.Vector2(0.52, 0.52),
+      roughnessMap: sharedFoliageRoughTex,
       alphaMap: forestAlphaTex,
       transparent: true,
       depthWrite: false,
@@ -1021,30 +1043,33 @@ export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy }
   const trunkMat = new THREE.MeshStandardMaterial({
     color: 0x784b28,
     map: sharedBarkTex,
-    bumpMap: sharedBarkBumpTex,
-    bumpScale: 0.24,
+    normalMap: sharedBarkNormalTex,
+    normalScale: new THREE.Vector2(0.95, 0.95),
     roughnessMap: sharedBarkRoughTex,
     roughness: 0.92
   });
   const foliageMatA = new THREE.MeshStandardMaterial({
     color: 0x387836,
     map: sharedFoliageTex,
-    bumpMap: sharedFoliageBumpTex,
-    bumpScale: 0.12,
+    normalMap: sharedFoliageNormalTex,
+    normalScale: new THREE.Vector2(0.55, 0.55),
+    roughnessMap: sharedFoliageRoughTex,
     roughness: 0.88
   });
   const foliageMatB = new THREE.MeshStandardMaterial({
     color: 0x488a3f,
     map: sharedFoliageTex,
-    bumpMap: sharedFoliageBumpTex,
-    bumpScale: 0.12,
+    normalMap: sharedFoliageNormalTex,
+    normalScale: new THREE.Vector2(0.55, 0.55),
+    roughnessMap: sharedFoliageRoughTex,
     roughness: 0.86
   });
   const foliageMatDark = new THREE.MeshStandardMaterial({
     color: 0x295e2a,
     map: sharedFoliageTex,
-    bumpMap: sharedFoliageBumpTex,
-    bumpScale: 0.14,
+    normalMap: sharedFoliageNormalTex,
+    normalScale: new THREE.Vector2(0.62, 0.62),
+    roughnessMap: sharedFoliageRoughTex,
     roughness: 0.9
   });
 
@@ -1124,21 +1149,21 @@ export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy }
   ];
   treeCoords.forEach(([x, z, s], idx) => addTree(x, z, s, idx));
 
-  // Steiner med ru sandsteinstekstur, bumpMap og roughnessMap som følger terrenghøyden
+  // Steiner med ru sandsteinstekstur, normalMap og roughnessMap som følger terrenghøyden
   const rockGeo = new THREE.DodecahedronGeometry(0.88, 1);
   const rockMatA = new THREE.MeshStandardMaterial({
     color: 0xa8927c,
     map: sharedSandstoneTex,
-    bumpMap: sharedSandstoneBumpTex,
-    bumpScale: 0.32,
+    normalMap: sharedSandstoneNormalTex,
+    normalScale: new THREE.Vector2(1.05, 1.05),
     roughnessMap: sharedSandstoneRoughTex,
     roughness: 0.9
   });
   const rockMatB = new THREE.MeshStandardMaterial({
     color: 0x8b7764,
     map: sharedSandstoneTex,
-    bumpMap: sharedSandstoneBumpTex,
-    bumpScale: 0.36,
+    normalMap: sharedSandstoneNormalTex,
+    normalScale: new THREE.Vector2(1.15, 1.15),
     roughnessMap: sharedSandstoneRoughTex,
     roughness: 0.92
   });
@@ -1160,11 +1185,22 @@ export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy }
     rock.castShadow = z > -42;
     rock.receiveShadow = true;
     forestGroup.add(rock);
+
+    // Dodecahedron-geometrien har ca. 0,88 m radius før skalering.
+    const halfX = sx * 0.95;
+    const halfZ = sz * 0.95;
+    rockColliders.push({
+      minX: x - halfX,
+      maxX: x + halfX,
+      minZ: z - halfZ,
+      maxZ: z + halfZ
+    });
   });
 
   return {
     sky, skySunVec, dayEnvRT, nightEnvRT,
     hemiLight, sunLight, sunMesh,
+    rockColliders,
     createWesternSign, createDetailedBarrel, createWagonWheel,
     createFramedWindow, addWeatheredFacadePlanks, createWoodenFence,
     createCarvedBatwingDoor,

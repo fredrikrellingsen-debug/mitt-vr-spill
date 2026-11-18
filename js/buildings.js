@@ -3,6 +3,7 @@ import * as THREE from 'three';
 export function buildTownBuildings(ctx) {
   const {
     L, M, W, C,
+    loadedAssets = null,
     saloonQuestTexture, saloonQuestButtonEntries, saloonQuestButtonMeshes, saloonQuestBlockMeshes,
     worldLangButtonMeshes,
     workshopBoardTexture, tailorButtonEntries, tailorButtonMeshes, tailorBlockHitMeshes,
@@ -10,10 +11,13 @@ export function buildTownBuildings(ctx) {
   } = ctx;
 
   const {
-    sharedWoodTex, sharedWoodBumpTex,
+    sharedWoodTex, sharedWoodNormalTex, sharedWoodRoughTex,
+    gltfWoodNormalTex, gltfWoodRoughTex,
+    gltfShingleNormalTex, gltfShingleRoughTex,
+    gltfSandstoneNormalTex, gltfSandstoneRoughTex,
     woodWallMat, lightWoodMat, darkWoodMat, weatheredPlankMatA,
     logTimberMat, roofMat, wroughtIronMat, polishedBrassMat,
-    stonePlinthMat, darkInteriorMat
+    stonePlinthMat, windowMat, darkInteriorMat
   } = M;
 
   const {
@@ -22,6 +26,75 @@ export function buildTownBuildings(ctx) {
   } = W;
 
   const { createSculptedCowboyHat, createTailorNPC } = C;
+
+  function enhanceBuildingGLB(gltfScene) {
+    const model = gltfScene.clone(true);
+    const clonedMats = new Map();
+
+    model.traverse((node) => {
+      if (!node.isMesh || !node.material) return;
+      const origMat = node.material;
+      const mName = origMat.name || '';
+
+      if (mName === 'WindowGlass') {
+        node.material = windowMat;
+        node.castShadow = false;
+        node.receiveShadow = true;
+        return;
+      }
+
+      node.castShadow = true;
+      node.receiveShadow = true;
+
+      let mat = clonedMats.get(origMat);
+      if (!mat) {
+        mat = origMat.clone();
+        if (
+          mName === 'WeatheredSiding' ||
+          mName === 'WarmPine' ||
+          mName === 'DarkTimber' ||
+          mName === 'PaintedShutters' ||
+          mName === 'PolishedCounterWood'
+        ) {
+          const ns = mName === 'PolishedCounterWood' ? 0.24 : (mName === 'DarkTimber' ? 0.62 : 0.52);
+          if (gltfWoodNormalTex) {
+            mat.normalMap = gltfWoodNormalTex;
+            mat.normalScale = new THREE.Vector2(ns, -ns);
+          }
+          if (gltfWoodRoughTex) {
+            mat.roughnessMap = gltfWoodRoughTex;
+          }
+          if (mName === 'PolishedCounterWood') {
+            mat.envMapIntensity = 1.15;
+          }
+        } else if (mName === 'CedarShingles') {
+          if (gltfShingleNormalTex) {
+            mat.normalMap = gltfShingleNormalTex;
+            mat.normalScale = new THREE.Vector2(0.74, -0.74);
+          }
+          if (gltfShingleRoughTex) {
+            mat.roughnessMap = gltfShingleRoughTex;
+          }
+        } else if (mName === 'StoneFoundation' || mName === 'ChimneyBrick') {
+          if (gltfSandstoneNormalTex) {
+            mat.normalMap = gltfSandstoneNormalTex;
+            mat.normalScale = new THREE.Vector2(0.84, -0.84);
+          }
+          if (gltfSandstoneRoughTex) {
+            mat.roughnessMap = gltfSandstoneRoughTex;
+          }
+        } else if (mName === 'WroughtIron') {
+          mat.envMapIntensity = 1.2;
+        } else if (mName === 'PolishedBrass') {
+          mat.envMapIntensity = 1.35;
+        }
+        clonedMats.set(origMat, mat);
+      }
+      node.material = mat;
+    });
+
+    return model;
+  }
 
   let saloonMainSignMesh = null;
   let saloonLangSignMesh = null;
@@ -36,151 +109,191 @@ export function buildTownBuildings(ctx) {
   function buildSaloon() {
     const saloon = new THREE.Group();
     const dict = L();
+    const saloonGLTF = loadedAssets && loadedAssets.saloon;
 
-    // Verandagulv bygget med tydelige plankebord langs bredden
-    const deck = new THREE.Mesh(new THREE.BoxGeometry(6.6, 0.22, 6.0), darkWoodMat);
-    deck.position.set(0, 0.11, 0.5);
-    deck.receiveShadow = true;
-    deck.castShadow = true;
-    saloon.add(deck);
+    if (saloonGLTF && saloonGLTF.scene) {
+      saloon.add(enhanceBuildingGLB(saloonGLTF.scene));
+    } else {
+      // Prosedyrisk fallback dersom saloon.glb ikke er tilgjengelig
+      const deck = new THREE.Mesh(new THREE.BoxGeometry(6.6, 0.22, 6.0), darkWoodMat);
+      deck.position.set(0, 0.11, 0.5);
+      deck.receiveShadow = true;
+      deck.castShadow = true;
+      saloon.add(deck);
 
-    for (let pz = 2.05; pz <= 3.42; pz += 0.28) {
-      const board = new THREE.Mesh(
-        new THREE.BoxGeometry(6.56, 0.03, 0.24),
-        Math.round(pz * 10) % 2 === 0 ? weatheredPlankMatA : lightWoodMat
-      );
-      board.position.set(0, 0.23, pz);
-      board.rotation.z = ((pz * 7) % 2 - 0.5) * 0.008;
-      board.receiveShadow = true;
-      saloon.add(board);
-    }
+      for (let pz = 2.05; pz <= 3.42; pz += 0.28) {
+        const board = new THREE.Mesh(
+          new THREE.BoxGeometry(6.56, 0.03, 0.24),
+          Math.round(pz * 10) % 2 === 0 ? weatheredPlankMatA : lightWoodMat
+        );
+        board.position.set(0, 0.23, pz);
+        board.rotation.z = ((pz * 7) % 2 - 0.5) * 0.008;
+        board.receiveShadow = true;
+        saloon.add(board);
+      }
 
-    // Verandatrapp i to trinn
-    const stepUpper = new THREE.Mesh(new THREE.BoxGeometry(2.35, 0.11, 0.32), lightWoodMat);
-    stepUpper.position.set(0, 0.12, 3.64);
-    stepUpper.receiveShadow = true;
-    saloon.add(stepUpper);
-    const stepLower = new THREE.Mesh(new THREE.BoxGeometry(2.45, 0.09, 0.32), weatheredPlankMatA);
-    stepLower.position.set(0, 0.045, 3.92);
-    stepLower.receiveShadow = true;
-    saloon.add(stepLower);
+      const stepUpper = new THREE.Mesh(new THREE.BoxGeometry(2.35, 0.11, 0.32), lightWoodMat);
+      stepUpper.position.set(0, 0.12, 3.64);
+      stepUpper.receiveShadow = true;
+      saloon.add(stepUpper);
+      const stepLower = new THREE.Mesh(new THREE.BoxGeometry(2.45, 0.09, 0.32), weatheredPlankMatA);
+      stepLower.position.set(0, 0.045, 3.92);
+      stepLower.receiveShadow = true;
+      saloon.add(stepLower);
 
-    // Bygningskropp + håndlagde skjeve/slitte fasadeplanker
-    const body = new THREE.Mesh(new THREE.BoxGeometry(6.2, 4.2, 4.2), woodWallMat);
-    body.position.set(0, 2.34, -0.2);
-    body.castShadow = true;
-    body.receiveShadow = true;
-    saloon.add(body);
+      const saloonFloor = new THREE.Mesh(new THREE.BoxGeometry(6.0, 0.06, 4.1), weatheredPlankMatA);
+      saloonFloor.position.set(0, 0.21, -0.2);
+      saloonFloor.receiveShadow = true;
+      saloon.add(saloonFloor);
 
-    addWeatheredFacadePlanks(saloon, 5.8, 3.1, 4.3, 1.91, 401);
-    addWeatheredFacadePlanks(saloon, 5.9, 4.55, 5.8, 2.01, 402);
-
-    const cornerTrimGeo = new THREE.BoxGeometry(0.2, 4.26, 0.2);
-    [
-      [-3.06, -2.26], [3.06, -2.26], [-3.06, 1.86], [3.06, 1.86]
-    ].forEach(([cx, cz]) => {
-      const trim = new THREE.Mesh(cornerTrimGeo, darkWoodMat);
-      trim.position.set(cx, 2.35, cz);
-      trim.castShadow = true;
-      saloon.add(trim);
-    });
-
-    // Hovedtak bak parapeten med shingel + bumpMap
-    const mainRoof = new THREE.Mesh(new THREE.BoxGeometry(6.5, 0.24, 4.5), roofMat);
-    mainRoof.position.set(0, 4.52, -0.2);
-    mainRoof.castShadow = true;
-    saloon.add(mainRoof);
-
-    // Klassisk høy western-fasade øverst med utskåret gesims og skråstivere
-    const parapet = new THREE.Mesh(new THREE.BoxGeometry(6.4, 1.58, 0.3), lightWoodMat);
-    parapet.position.set(0, 5.18, 1.85);
-    parapet.castShadow = true;
-    saloon.add(parapet);
-
-    const parapetTrim = new THREE.Mesh(new THREE.BoxGeometry(6.72, 0.22, 0.52), darkWoodMat);
-    parapetTrim.position.set(0, 6.0, 1.89);
-    parapetTrim.castShadow = true;
-    saloon.add(parapetTrim);
-
-    // Dekorative gesimsklosser (corbels) under toppen av Saloonen
-    for (let cx = -2.85; cx <= 2.86; cx += 0.57) {
-      const corbel = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.18, 0.24), darkWoodMat);
-      corbel.position.set(cx, 5.82, 2.04);
-      saloon.add(corbel);
-    }
-
-    // Synlige takbjelker (rafters) under verandataket
-    const rafterGeo = new THREE.BoxGeometry(0.1, 0.12, 1.95);
-    for (let rx = -2.8; rx <= 2.81; rx += 0.8) {
-      const rafter = new THREE.Mesh(rafterGeo, darkWoodMat);
-      rafter.position.set(rx, 3.16, 2.66);
-      rafter.rotation.x = 0.06;
-      saloon.add(rafter);
-    }
-
-    const porchRoof = new THREE.Mesh(new THREE.BoxGeometry(6.7, 0.18, 1.9), roofMat);
-    porchRoof.position.set(0, 3.28, 2.68);
-    porchRoof.rotation.x = 0.06;
-    porchRoof.castShadow = true;
-    saloon.add(porchRoof);
-
-    // Dreide verandastolper med skrå knebjelker øverst
-    const postGeo = new THREE.CylinderGeometry(0.088, 0.102, 3.05, 10);
-    [-2.9, -1.1, 1.1, 2.9].forEach((px) => {
-      const post = new THREE.Mesh(postGeo, darkWoodMat);
-      post.position.set(px, 1.72, 3.38);
-      post.castShadow = true;
-      saloon.add(post);
-
-      [-1, 1].forEach((dir) => {
-        if ((px < -2.5 && dir < 0) || (px > 2.5 && dir > 0)) return;
-        const knee = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.085, 0.085), lightWoodMat);
-        knee.position.set(px + dir * 0.2, 2.98, 3.38);
-        knee.rotation.z = dir * 0.68;
-        saloon.add(knee);
+      [-2.06, 2.06].forEach((bx) => {
+        const frontBay = new THREE.Mesh(new THREE.BoxGeometry(2.08, 4.2, 0.24), woodWallMat);
+        frontBay.position.set(bx, 2.34, 1.84);
+        frontBay.castShadow = true;
+        frontBay.receiveShadow = true;
+        saloon.add(frontBay);
       });
-    });
+      const frontHeader = new THREE.Mesh(new THREE.BoxGeometry(2.06, 1.78, 0.24), woodWallMat);
+      frontHeader.position.set(0, 3.55, 1.84);
+      frontHeader.castShadow = true;
+      saloon.add(frontHeader);
 
-    // Rekkverk på venstre del av verandaen
-    const leftRailTop = new THREE.Mesh(new THREE.BoxGeometry(1.82, 0.085, 0.09), lightWoodMat);
-    leftRailTop.position.set(-2.0, 0.96, 3.38);
-    saloon.add(leftRailTop);
-    for (let bx = -2.7; bx <= -1.3; bx += 0.28) {
-      const baluster = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.72, 6), darkWoodMat);
-      baluster.position.set(bx, 0.58, 3.38);
-      saloon.add(baluster);
+      const backSaloonWall = new THREE.Mesh(new THREE.BoxGeometry(6.2, 4.2, 0.24), woodWallMat);
+      backSaloonWall.position.set(0, 2.34, -2.26);
+      backSaloonWall.castShadow = true;
+      saloon.add(backSaloonWall);
+
+      [-3.04, 3.04].forEach((sx) => {
+        const sideSaloonWall = new THREE.Mesh(new THREE.BoxGeometry(0.24, 4.2, 4.16), woodWallMat);
+        sideSaloonWall.position.set(sx, 2.34, -0.2);
+        sideSaloonWall.castShadow = true;
+        saloon.add(sideSaloonWall);
+      });
+
+      const barCounter = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.96, 0.68), darkWoodMat);
+      barCounter.position.set(0, 0.7, -1.46);
+      barCounter.castShadow = true;
+      saloon.add(barCounter);
+
+      addWeatheredFacadePlanks(saloon, 5.8, 3.1, 4.3, 1.91, 401);
+      addWeatheredFacadePlanks(saloon, 5.9, 4.55, 5.8, 2.01, 402);
+
+      const cornerTrimGeo = new THREE.BoxGeometry(0.2, 4.26, 0.2);
+      [
+        [-3.06, -2.26], [3.06, -2.26], [-3.06, 1.86], [3.06, 1.86]
+      ].forEach(([cx, cz]) => {
+        const trim = new THREE.Mesh(cornerTrimGeo, darkWoodMat);
+        trim.position.set(cx, 2.35, cz);
+        trim.castShadow = true;
+        saloon.add(trim);
+      });
+
+      const mainRoof = new THREE.Mesh(new THREE.BoxGeometry(6.5, 0.24, 4.5), roofMat);
+      mainRoof.position.set(0, 4.52, -0.2);
+      mainRoof.castShadow = true;
+      saloon.add(mainRoof);
+
+      const parapet = new THREE.Mesh(new THREE.BoxGeometry(6.4, 1.58, 0.3), lightWoodMat);
+      parapet.position.set(0, 5.18, 1.85);
+      parapet.castShadow = true;
+      saloon.add(parapet);
+
+      const parapetTrim = new THREE.Mesh(new THREE.BoxGeometry(6.72, 0.22, 0.52), darkWoodMat);
+      parapetTrim.position.set(0, 6.0, 1.89);
+      parapetTrim.castShadow = true;
+      saloon.add(parapetTrim);
+
+      for (let cx = -2.85; cx <= 2.86; cx += 0.57) {
+        const corbel = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.18, 0.24), darkWoodMat);
+        corbel.position.set(cx, 5.82, 2.04);
+        saloon.add(corbel);
+      }
+
+      const rafterGeo = new THREE.BoxGeometry(0.1, 0.12, 1.95);
+      for (let rx = -2.8; rx <= 2.81; rx += 0.8) {
+        const rafter = new THREE.Mesh(rafterGeo, darkWoodMat);
+        rafter.position.set(rx, 3.16, 2.66);
+        rafter.rotation.x = 0.06;
+        saloon.add(rafter);
+      }
+
+      const porchRoof = new THREE.Mesh(new THREE.BoxGeometry(6.7, 0.18, 1.9), roofMat);
+      porchRoof.position.set(0, 3.28, 2.68);
+      porchRoof.rotation.x = 0.06;
+      porchRoof.castShadow = true;
+      saloon.add(porchRoof);
+
+      const postGeo = new THREE.CylinderGeometry(0.088, 0.102, 3.05, 10);
+      [-2.9, -1.1, 1.1, 2.9].forEach((px) => {
+        const post = new THREE.Mesh(postGeo, darkWoodMat);
+        post.position.set(px, 1.72, 3.38);
+        post.castShadow = true;
+        saloon.add(post);
+
+        [-1, 1].forEach((dir) => {
+          if ((px < -2.5 && dir < 0) || (px > 2.5 && dir > 0)) return;
+          const knee = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.085, 0.085), lightWoodMat);
+          knee.position.set(px + dir * 0.2, 2.98, 3.38);
+          knee.rotation.z = dir * 0.68;
+          saloon.add(knee);
+        });
+      });
+
+      const leftRailTop = new THREE.Mesh(new THREE.BoxGeometry(1.82, 0.085, 0.09), lightWoodMat);
+      leftRailTop.position.set(-2.0, 0.96, 3.38);
+      saloon.add(leftRailTop);
+      for (let bx = -2.7; bx <= -1.3; bx += 0.28) {
+        const baluster = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.72, 6), darkWoodMat);
+        baluster.position.set(bx, 0.58, 3.38);
+        saloon.add(baluster);
+      }
+
+      const doorFrameTop = new THREE.Mesh(new THREE.BoxGeometry(2.26, 0.15, 0.16), darkWoodMat);
+      doorFrameTop.position.set(0, 2.64, 1.94);
+      saloon.add(doorFrameTop);
+      [-1.05, 1.05].forEach((dx) => {
+        const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.12, 2.42, 0.22), darkWoodMat);
+        jamb.position.set(dx, 1.42, 1.90);
+        saloon.add(jamb);
+      });
+
+      const leftBatwing = createCarvedBatwingDoor(false);
+      leftBatwing.position.set(-0.97, 1.38, 1.90);
+      leftBatwing.rotation.y = 1.44;
+      saloon.add(leftBatwing);
+
+      const rightBatwing = createCarvedBatwingDoor(true);
+      rightBatwing.position.set(0.97, 1.38, 1.90);
+      rightBatwing.rotation.y = -1.44;
+      saloon.add(rightBatwing);
+
+      [-2.14, 2.14].forEach((wx) => {
+        const win = createFramedWindow(0.80, 1.16, true);
+        win.position.set(wx, 1.88, 1.92);
+        saloon.add(win);
+      });
+
+      [-1.85, 1.85].forEach((sx) => {
+        const strap = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.42, 6), wroughtIronMat);
+        strap.position.set(sx, 5.82, 2.05);
+        saloon.add(strap);
+      });
+
+      const barrel1 = createDetailedBarrel();
+      barrel1.position.set(-2.55, 0.65, 2.75);
+      saloon.add(barrel1);
+
+      const barrel2 = createDetailedBarrel();
+      barrel2.scale.setScalar(0.88);
+      barrel2.position.set(-1.92, 0.6, 2.82);
+      saloon.add(barrel2);
+
+      const saloonWheel = createWagonWheel();
+      saloonWheel.position.set(-3.12, 0.72, 2.85);
+      saloonWheel.rotation.y = Math.PI / 2 - 0.15;
+      saloonWheel.rotation.x = 0.22;
+      saloon.add(saloonWheel);
     }
-
-    // Mørk døråpning, utskåret dørkarm og utskårne svingdører (batwing doors)
-    const doorFrameTop = new THREE.Mesh(new THREE.BoxGeometry(1.72, 0.15, 0.13), darkWoodMat);
-    doorFrameTop.position.set(0, 2.64, 1.94);
-    saloon.add(doorFrameTop);
-    [-0.78, 0.78].forEach((dx) => {
-      const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.12, 2.42, 0.12), darkWoodMat);
-      jamb.position.set(dx, 1.42, 1.94);
-      saloon.add(jamb);
-    });
-
-    const doorway = new THREE.Mesh(new THREE.PlaneGeometry(1.44, 2.36), darkInteriorMat);
-    doorway.position.set(0, 1.4, 1.91);
-    saloon.add(doorway);
-
-    const leftBatwing = createCarvedBatwingDoor(false);
-    leftBatwing.position.set(-0.71, 1.38, 1.97);
-    leftBatwing.rotation.y = 0.24;
-    saloon.add(leftBatwing);
-
-    const rightBatwing = createCarvedBatwingDoor(true);
-    rightBatwing.position.set(0.71, 1.38, 1.97);
-    rightBatwing.rotation.y = -0.18;
-    saloon.add(rightBatwing);
-
-    // Innrammede saloon-vinduer med ekte treskodder og varm glød om natten
-    [-2.08, 2.08].forEach((wx) => {
-      const win = createFramedWindow(0.92, 1.16, true);
-      win.position.set(wx, 1.88, 1.92);
-      saloon.add(win);
-    });
 
     // Klikkbar 3D-språkknapp (EN / NO) på Saloon-verandaens venstre stolpe/vegg
     saloonLangSignMesh = createWesternSign(dict.saloonLangSign, dict.saloonLangSub, 1.48, 0.42);
@@ -188,13 +301,13 @@ export function buildTownBuildings(ctx) {
     saloon.add(saloonLangSignMesh);
     worldLangButtonMeshes.push(saloonLangSignMesh);
 
-    // Stor interaktiv 3D-oppdragstavle på verandaen utenfor Saloonen
+    // Stor interaktiv 3D-oppdragstavle på verandaen utenfor Saloonen (plassert på høyre side slik at trapp + inngang har >2.0m fri bredde)
     const questBoardGroup = new THREE.Group();
-    questBoardGroup.position.set(1.98, 2.16, 3.48);
+    questBoardGroup.position.set(2.08, 2.16, 3.48);
     saloon.add(questBoardGroup);
     saloonQuestAnchorMesh = questBoardGroup;
 
-    [-1.18, 1.18].forEach((lx) => {
+    [-1.12, 1.12].forEach((lx) => {
       const leg = new THREE.Mesh(new THREE.BoxGeometry(0.11, 2.0, 0.11), darkWoodMat);
       leg.position.set(lx, -0.96, -0.05);
       questBoardGroup.add(leg);
@@ -224,32 +337,10 @@ export function buildTownBuildings(ctx) {
       saloonQuestButtonMeshes.push(entry.mesh);
     });
 
-    // 3D-skilt øverst på Saloon-bygget med smijernsbeslag
+    // 3D-skilt øverst på Saloon-bygget
     saloonMainSignMesh = createWesternSign(dict.signSaloonTitle, dict.signSaloonSub, 4.4, 1.15);
-    saloonMainSignMesh.position.set(0, 5.18, 2.06);
+    saloonMainSignMesh.position.set(0, 5.18, 2.07);
     saloon.add(saloonMainSignMesh);
-
-    [-1.85, 1.85].forEach((sx) => {
-      const strap = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.42, 6), wroughtIronMat);
-      strap.position.set(sx, 5.82, 2.05);
-      saloon.add(strap);
-    });
-
-    // Detaljerte tønner og vognhjul ved Saloonen
-    const barrel1 = createDetailedBarrel();
-    barrel1.position.set(-2.55, 0.65, 2.75);
-    saloon.add(barrel1);
-
-    const barrel2 = createDetailedBarrel();
-    barrel2.scale.setScalar(0.88);
-    barrel2.position.set(-1.92, 0.6, 2.82);
-    saloon.add(barrel2);
-
-    const saloonWheel = createWagonWheel();
-    saloonWheel.position.set(-3.12, 0.72, 2.85);
-    saloonWheel.rotation.y = Math.PI / 2 - 0.15;
-    saloonWheel.rotation.x = 0.22;
-    saloon.add(saloonWheel);
 
     return saloon;
   }
@@ -257,136 +348,168 @@ export function buildTownBuildings(ctx) {
   function buildTailorShop() {
     const shop = new THREE.Group();
     const dict = L();
+    const tailorGLTF = loadedAssets && loadedAssets.tailor;
 
-    const floor = new THREE.Mesh(new THREE.BoxGeometry(5.8, 0.22, 5.4), darkWoodMat);
-    floor.position.set(0, 0.11, 0.4);
-    floor.receiveShadow = true;
-    floor.castShadow = true;
-    shop.add(floor);
+    if (tailorGLTF && tailorGLTF.scene) {
+      shop.add(enhanceBuildingGLB(tailorGLTF.scene));
 
-    const frontStep = new THREE.Mesh(new THREE.BoxGeometry(3.8, 0.11, 0.36), lightWoodMat);
-    frontStep.position.set(0, 0.055, 3.24);
-    frontStep.receiveShadow = true;
-    shop.add(frontStep);
+      const counterAnchor = new THREE.Object3D();
+      counterAnchor.position.set(0, 1.26, 1.25);
+      shop.add(counterAnchor);
+      tailorCounterMesh = counterAnchor;
+    } else {
+      // Prosedyrisk fallback dersom tailor.glb ikke er tilgjengelig
+      const floor = new THREE.Mesh(new THREE.BoxGeometry(5.8, 0.22, 5.4), darkWoodMat);
+      floor.position.set(0, 0.11, 0.4);
+      floor.receiveShadow = true;
+      floor.castShadow = true;
+      shop.add(floor);
 
-    const backWall = new THREE.Mesh(new THREE.BoxGeometry(5.4, 3.6, 0.26), lightWoodMat);
-    backWall.position.set(0, 2.0, -1.9);
-    backWall.castShadow = true;
-    backWall.receiveShadow = true;
-    shop.add(backWall);
+      const frontStep = new THREE.Mesh(new THREE.BoxGeometry(3.8, 0.11, 0.36), lightWoodMat);
+      frontStep.position.set(0, 0.055, 3.24);
+      frontStep.receiveShadow = true;
+      shop.add(frontStep);
 
-    [-2.58, 2.58].forEach((wx, idx) => {
-      const sideWall = new THREE.Mesh(new THREE.BoxGeometry(0.26, 3.6, 4.1), woodWallMat);
-      sideWall.position.set(wx, 2.0, 0.05);
-      sideWall.castShadow = true;
-      sideWall.receiveShadow = true;
-      shop.add(sideWall);
+      const backWall = new THREE.Mesh(new THREE.BoxGeometry(5.4, 3.6, 0.26), lightWoodMat);
+      backWall.position.set(0, 2.0, -1.9);
+      backWall.castShadow = true;
+      backWall.receiveShadow = true;
+      shop.add(backWall);
 
-      // Sidevinduer med treskodder og varmt lys om natten
-      const sideWin = createFramedWindow(0.88, 1.05, true);
-      sideWin.position.set(wx + (idx === 0 ? -0.14 : 0.14), 2.05, 0.2);
-      sideWin.rotation.y = idx === 0 ? -Math.PI / 2 : Math.PI / 2;
-      shop.add(sideWin);
-    });
+      [-2.58, 2.58].forEach((wx, idx) => {
+        const sideWall = new THREE.Mesh(new THREE.BoxGeometry(0.26, 3.6, 4.1), woodWallMat);
+        sideWall.position.set(wx, 2.0, 0.05);
+        sideWall.castShadow = true;
+        sideWall.receiveShadow = true;
+        shop.add(sideWall);
 
-    const ceiling = new THREE.Mesh(new THREE.BoxGeometry(5.9, 0.24, 5.3), roofMat);
-    ceiling.position.set(0, 3.92, 0.45);
-    ceiling.castShadow = true;
-    shop.add(ceiling);
+        const sideWin = createFramedWindow(0.88, 1.05, true);
+        sideWin.position.set(wx + (idx === 0 ? -0.14 : 0.14), 2.05, 0.2);
+        sideWin.rotation.y = idx === 0 ? -Math.PI / 2 : Math.PI / 2;
+        shop.add(sideWin);
+      });
 
-    // Takbjelker i himlingen
-    const beamGeo = new THREE.BoxGeometry(0.11, 0.12, 5.15);
-    for (let bx = -2.2; bx <= 2.21; bx += 1.1) {
-      const beam = new THREE.Mesh(beamGeo, darkWoodMat);
-      beam.position.set(bx, 3.76, 0.45);
-      shop.add(beam);
-    }
+      const ceiling = new THREE.Mesh(new THREE.BoxGeometry(5.9, 0.24, 5.3), roofMat);
+      ceiling.position.set(0, 3.92, 0.45);
+      ceiling.castShadow = true;
+      shop.add(ceiling);
 
-    const frontPostGeo = new THREE.CylinderGeometry(0.11, 0.125, 3.6, 10);
-    [-2.58, 2.58].forEach((px, pIdx) => {
-      const post = new THREE.Mesh(frontPostGeo, darkWoodMat);
-      post.position.set(px, 2.0, 2.85);
-      post.castShadow = true;
-      shop.add(post);
+      const beamGeo = new THREE.BoxGeometry(0.11, 0.12, 5.15);
+      for (let bx = -2.2; bx <= 2.21; bx += 1.1) {
+        const beam = new THREE.Mesh(beamGeo, darkWoodMat);
+        beam.position.set(bx, 3.76, 0.45);
+        shop.add(beam);
+      }
 
-      const dir = pIdx === 0 ? 1 : -1;
-      const brace = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.09, 0.09), lightWoodMat);
-      brace.position.set(px + dir * 0.24, 3.48, 2.85);
-      brace.rotation.z = dir * 0.68;
-      shop.add(brace);
-    });
+      const frontPostGeo = new THREE.CylinderGeometry(0.11, 0.125, 3.6, 10);
+      [-2.58, 2.58].forEach((px, pIdx) => {
+        const post = new THREE.Mesh(frontPostGeo, darkWoodMat);
+        post.position.set(px, 2.0, 2.85);
+        post.castShadow = true;
+        shop.add(post);
 
-    const parapet = new THREE.Mesh(new THREE.BoxGeometry(5.85, 1.48, 0.28), woodWallMat);
-    parapet.position.set(0, 4.74, 2.82);
-    parapet.castShadow = true;
-    shop.add(parapet);
+        const dir = pIdx === 0 ? 1 : -1;
+        const brace = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.09, 0.09), lightWoodMat);
+        brace.position.set(px + dir * 0.24, 3.48, 2.85);
+        brace.rotation.z = dir * 0.68;
+        shop.add(brace);
+      });
 
-    addWeatheredFacadePlanks(shop, 5.5, 4.12, 5.35, 2.97, 707);
+      const parapet = new THREE.Mesh(new THREE.BoxGeometry(5.85, 1.48, 0.28), woodWallMat);
+      parapet.position.set(0, 4.74, 2.82);
+      parapet.castShadow = true;
+      shop.add(parapet);
 
-    const parapetCap = new THREE.Mesh(new THREE.BoxGeometry(6.16, 0.2, 0.48), darkWoodMat);
-    parapetCap.position.set(0, 5.54, 2.85);
-    parapetCap.castShadow = true;
-    shop.add(parapetCap);
+      addWeatheredFacadePlanks(shop, 5.5, 4.12, 5.35, 2.97, 707);
 
-    for (let cx = -2.6; cx <= 2.61; cx += 0.65) {
-      const corbel = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.16, 0.22), darkWoodMat);
-      corbel.position.set(cx, 5.38, 2.98);
-      shop.add(corbel);
+      const parapetCap = new THREE.Mesh(new THREE.BoxGeometry(6.16, 0.2, 0.48), darkWoodMat);
+      parapetCap.position.set(0, 5.54, 2.85);
+      parapetCap.castShadow = true;
+      shop.add(parapetCap);
+
+      for (let cx = -2.6; cx <= 2.61; cx += 0.65) {
+        const corbel = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.16, 0.22), darkWoodMat);
+        corbel.position.set(cx, 5.38, 2.98);
+        shop.add(corbel);
+      }
+
+      const counterBase = new THREE.Mesh(new THREE.BoxGeometry(3.3, 1.0, 0.78), woodWallMat);
+      counterBase.position.set(0, 0.7, 1.25);
+      counterBase.castShadow = true;
+      counterBase.receiveShadow = true;
+      shop.add(counterBase);
+
+      [-1.05, 0, 1.05].forEach((px) => {
+        const panel = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.68, 0.04), darkWoodMat);
+        panel.position.set(px, 0.7, 1.65);
+        shop.add(panel);
+      });
+
+      const counterTop = new THREE.Mesh(
+        new THREE.BoxGeometry(3.55, 0.12, 0.96),
+        new THREE.MeshStandardMaterial({
+          color: 0x5c361b,
+          map: sharedWoodTex,
+          normalMap: sharedWoodNormalTex,
+          normalScale: new THREE.Vector2(0.32, 0.32),
+          roughnessMap: sharedWoodRoughTex,
+          roughness: 0.34,
+          metalness: 0.06,
+          envMapIntensity: 1.1
+        })
+      );
+      counterTop.position.set(0, 1.26, 1.25);
+      counterTop.castShadow = true;
+      counterTop.receiveShadow = true;
+      shop.add(counterTop);
+      tailorCounterMesh = counterTop;
+
+      const rollGeo = new THREE.CylinderGeometry(0.11, 0.11, 0.58, 12);
+      [
+        { x: -0.35, color: 0x9e2820 },
+        { x: 0.02, color: 0x26527e },
+        { x: 1.05, color: 0xc68c48 }
+      ].forEach((r) => {
+        const roll = new THREE.Mesh(
+          rollGeo,
+          new THREE.MeshStandardMaterial({ color: r.color, roughness: 0.85 })
+        );
+        roll.rotation.z = Math.PI / 2;
+        roll.position.set(r.x, 1.42, 1.25);
+        roll.castShadow = true;
+        shop.add(roll);
+      });
+
+      const standPole = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.075, 1.48, 10), darkWoodMat);
+      standPole.position.set(-2.05, 0.94, 0.4);
+      shop.add(standPole);
+
+      const displayHat = createSculptedCowboyHat(
+        new THREE.MeshStandardMaterial({ color: 0x6e3e1c, roughness: 0.78 }),
+        polishedBrassMat
+      );
+      displayHat.position.set(-2.05, 1.68, 0.4);
+      displayHat.rotation.z = 0.14;
+      displayHat.rotation.y = 0.4;
+      shop.add(displayHat);
+
+      const shopBarrel = createDetailedBarrel();
+      shopBarrel.position.set(2.25, 0.63, 2.55);
+      shop.add(shopBarrel);
+
+      const shopWheel = createWagonWheel();
+      shopWheel.position.set(2.92, 0.56, 1.75);
+      shopWheel.rotation.y = Math.PI / 2;
+      shopWheel.rotation.z = -0.18;
+      shop.add(shopWheel);
     }
 
     tailorMainSignMesh = createWesternSign(dict.signTailorTitle, dict.signTailorSub, 4.3, 1.1);
-    tailorMainSignMesh.position.set(0, 4.74, 3.03);
+    tailorMainSignMesh.position.set(0, 4.74, 3.04);
     shop.add(tailorMainSignMesh);
 
-    // Butikkdisk med polert treplate og utskårne speilpaneler foran
-    const counterBase = new THREE.Mesh(new THREE.BoxGeometry(3.3, 1.0, 0.78), woodWallMat);
-    counterBase.position.set(0, 0.7, 1.25);
-    counterBase.castShadow = true;
-    counterBase.receiveShadow = true;
-    shop.add(counterBase);
-
-    [-1.05, 0, 1.05].forEach((px) => {
-      const panel = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.68, 0.04), darkWoodMat);
-      panel.position.set(px, 0.7, 1.65);
-      shop.add(panel);
-    });
-
-    const counterTop = new THREE.Mesh(
-      new THREE.BoxGeometry(3.55, 0.12, 0.96),
-      new THREE.MeshStandardMaterial({
-        color: 0x5c361b,
-        map: sharedWoodTex,
-        bumpMap: sharedWoodBumpTex,
-        bumpScale: 0.06,
-        roughness: 0.34,
-        metalness: 0.06,
-        envMapIntensity: 1.1
-      })
-    );
-    counterTop.position.set(0, 1.26, 1.25);
-    counterTop.castShadow = true;
-    counterTop.receiveShadow = true;
-    shop.add(counterTop);
-    tailorCounterMesh = counterTop;
-
-    const rollGeo = new THREE.CylinderGeometry(0.11, 0.11, 0.58, 12);
-    [
-      { x: -0.35, color: 0x9e2820 },
-      { x: 0.02, color: 0x26527e },
-      { x: 1.05, color: 0xc68c48 }
-    ].forEach((r) => {
-      const roll = new THREE.Mesh(
-        rollGeo,
-        new THREE.MeshStandardMaterial({ color: r.color, roughness: 0.85 })
-      );
-      roll.rotation.z = Math.PI / 2;
-      roll.position.set(r.x, 1.42, 1.25);
-      roll.castShadow = true;
-      shop.add(roll);
-    });
-
     tailorNPCGroup = createTailorNPC();
-    tailorNPCGroup.position.set(-1.12, 0.2, 0.44);
+    tailorNPCGroup.position.set(-1.12, 0.22, 0.44);
     tailorNPCGroup.rotation.y = 0.14;
     shop.add(tailorNPCGroup);
 
@@ -425,63 +548,39 @@ export function buildTownBuildings(ctx) {
       tailorButtonMeshes.push(entry.mesh);
     });
 
-    // Dreid hattestativ med ekte skulpturert Stetson-cowboyhatt
-    const standPole = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.075, 1.48, 10), darkWoodMat);
-    standPole.position.set(-2.05, 0.94, 0.4);
-    shop.add(standPole);
-
-    const displayHat = createSculptedCowboyHat(
-      new THREE.MeshStandardMaterial({ color: 0x6e3e1c, roughness: 0.78 }),
-      polishedBrassMat
-    );
-    displayHat.position.set(-2.05, 1.68, 0.4);
-    displayHat.rotation.z = 0.14;
-    displayHat.rotation.y = 0.4;
-    shop.add(displayHat);
-
-    // Tønne og vognhjul ved siden av Skredder-butikken
-    const shopBarrel = createDetailedBarrel();
-    shopBarrel.position.set(2.25, 0.63, 2.55);
-    shop.add(shopBarrel);
-
-    const shopWheel = createWagonWheel();
-    shopWheel.position.set(2.92, 0.56, 1.75);
-    shopWheel.rotation.y = Math.PI / 2;
-    shopWheel.rotation.z = -0.18;
-    shop.add(shopWheel);
-
     return shop;
   }
 
   function buildSafeHouse() {
     const cabin = new THREE.Group();
     const dict = L();
-    const cx = safeHouseCenterWorld.x; // -5.45
-    const cz = safeHouseCenterWorld.z; // -6.30
-    const w = hidingZone.maxX - hidingZone.minX; // 3.90
-    const d = hidingZone.maxZ - hidingZone.minZ; // 3.80
+    const cx = safeHouseCenterWorld.x;
+    const cz = safeHouseCenterWorld.z;
+    // hidingZone utgjør det faktiske innvendige gulvarealet; tømmerveggene ligger 0.16m utenfor på hver side
+    const w = (hidingZone.maxX - hidingZone.minX) + 0.32;
+    const d = (hidingZone.maxZ - hidingZone.minZ) + 0.32;
     cabin.position.set(cx, 0, cz);
 
     // Steinfundament og solid plankegulv
-    const plinth = new THREE.Mesh(new THREE.BoxGeometry(w + 0.52, 0.18, d + 0.52), stonePlinthMat);
+    const plinth = new THREE.Mesh(new THREE.BoxGeometry(w + 0.56, 0.18, d + 0.56), stonePlinthMat);
     plinth.position.y = 0.09;
     plinth.receiveShadow = true;
     plinth.castShadow = true;
     cabin.add(plinth);
 
-    const floor = new THREE.Mesh(new THREE.BoxGeometry(w + 0.16, 0.08, d + 0.16), darkWoodMat);
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(w + 0.22, 0.08, d + 0.22), darkWoodMat);
     floor.position.y = 0.20;
     floor.receiveShadow = true;
     cabin.add(floor);
 
-    // Tykke tømmerstokker rundt veggene (med lafteknuter i hjørnene)
+    // Tykke tømmerstokker rundt veggene (med lafteknuter i hjørnene) og fri døråpning >= 1,92 m
     const logRadius = 0.145;
     const logRows = 9;
     const wallHeightBase = 0.34;
     const logStepY = 0.255;
     const halfW = w * 0.5;
     const halfD = d * 0.5;
-    const doorWidth = 1.32;
+    const doorWidth = 1.96;
     const doorTopRow = 8; // rader 0..7 har døråpning på østveggen (+X)
 
     const fullLogXGeo = new THREE.CylinderGeometry(logRadius, logRadius, w + 0.68, 8);
@@ -566,6 +665,9 @@ export function buildTownBuildings(ctx) {
       new THREE.MeshStandardMaterial({
         color: 0x7c4b27,
         map: sharedWoodTex,
+        normalMap: sharedWoodNormalTex,
+        normalScale: new THREE.Vector2(0.72, 0.72),
+        roughnessMap: sharedWoodRoughTex,
         roughness: 0.65,
         metalness: 0.08
       })
@@ -598,14 +700,14 @@ export function buildTownBuildings(ctx) {
     safeHouseDoorPivot.add(handleRing);
     safeHouseDoorHitMeshes.push(handleRing);
 
-    // Innvendige detaljer: benk/køye og forsyningskasse langs bakveggen
-    const bunk = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.42, 2.1), lightWoodMat);
-    bunk.position.set(-halfW + 0.62, 0.44, -0.55);
+    // Innvendige detaljer: benk/køye og forsyningskasse tett langs bakveggen
+    const bunk = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.42, 1.84), lightWoodMat);
+    bunk.position.set(-halfW + 0.54, 0.44, -0.82);
     bunk.receiveShadow = true;
     cabin.add(bunk);
 
-    const supplyCrate = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.65, 0.72), woodWallMat);
-    supplyCrate.position.set(-halfW + 0.56, 0.55, 1.15);
+    const supplyCrate = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.65, 0.64), woodWallMat);
+    supplyCrate.position.set(-halfW + 0.48, 0.55, 1.28);
     supplyCrate.castShadow = true;
     cabin.add(supplyCrate);
 

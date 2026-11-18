@@ -1,10 +1,79 @@
 import * as THREE from 'three';
 
-export function initCreatureModels(M, tailorBlockHitMeshes) {
+export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null) {
   const {
     sharedWoodTex, sharedWoodBumpTex, sharedFoliageBumpTex,
     polishedBrassMat, sharedRedEyeGlowTex
   } = M;
+
+  function prepareGLTFTemplate(gltf, prefix) {
+    if (!gltf || !gltf.scene) return;
+    if (!gltf.userData) gltf.userData = {};
+    if (gltf.userData._prepared) return;
+    gltf.userData._prepared = true;
+
+    let autoIdx = 0;
+    const uuidToName = new Map();
+
+    gltf.scene.traverse((node) => {
+      if (!node.name) {
+        node.name = `${prefix}_node_${autoIdx++}`;
+      }
+      uuidToName.set(node.uuid, node.name);
+
+      if (node.isMesh && node.material) {
+        const mats = Array.isArray(node.material) ? node.material : [node.material];
+        for (let i = 0; i < mats.length; i++) {
+          const mat = mats[i];
+          if (!mat) continue;
+          if (mat.metalness !== undefined && mat.metalness > 0.45) {
+            mat.envMapIntensity = 1.35;
+          }
+          if (
+            mat.name === 'VampireGlowingRedEyes' ||
+            (mat.emissive && (mat.emissive.r > 0.35 || mat.emissive.g > 0.35))
+          ) {
+            mat.emissiveIntensity = Math.max(mat.emissiveIntensity || 1.0, 2.2);
+          }
+        }
+      }
+    });
+
+    if (gltf.animations && gltf.animations.length > 0) {
+      for (let a = 0; a < gltf.animations.length; a++) {
+        const clip = gltf.animations[a];
+        if (!clip || !clip.tracks) continue;
+        for (let t = 0; t < clip.tracks.length; t++) {
+          const track = clip.tracks[t];
+          const dotIdx = track.name.indexOf('.');
+          if (dotIdx > 0) {
+            const targetId = track.name.slice(0, dotIdx);
+            const mapped = uuidToName.get(targetId);
+            if (mapped) {
+              track.name = mapped + track.name.slice(dotIdx);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  function instantiateGLTFCreature(gltf, prefix) {
+    prepareGLTFTemplate(gltf, prefix);
+    const group = new THREE.Group();
+    const model = gltf.scene.clone(true);
+    model.traverse((node) => {
+      if (node.isMesh) {
+        node.castShadow = true;
+        node.receiveShadow = true;
+      }
+    });
+    group.add(model);
+    if (gltf.animations && gltf.animations.length > 0) {
+      group.userData.animations = gltf.animations;
+    }
+    return { group, model };
+  }
 
   // --- Felles skulpturert Cowboyhatt (LatheGeometry med ekte buet brem og krone-knekk) ---
   function buildSculptedCowboyHatGeo() {
@@ -70,6 +139,21 @@ export function initCreatureModels(M, tailorBlockHitMeshes) {
   }
 
   function createTailorNPC() {
+    const tailorNpcGLTF = loadedAssets && loadedAssets.tailorNpc;
+    if (tailorNpcGLTF && tailorNpcGLTF.scene) {
+      const { group: npc } = instantiateGLTFCreature(tailorNpcGLTF, 'tailorNpc');
+
+      const npcShield = new THREE.Mesh(
+        new THREE.BoxGeometry(0.85, 1.95, 0.6),
+        new THREE.MeshBasicMaterial({ visible: false })
+      );
+      npcShield.position.set(0, 1.0, 0);
+      npc.add(npcShield);
+      tailorBlockHitMeshes.push(npcShield);
+
+      return npc;
+    }
+
     const npc = new THREE.Group();
 
     const trouserMat = new THREE.MeshStandardMaterial({ color: 0x2f251d, roughness: 0.88 });
@@ -352,6 +436,15 @@ export function initCreatureModels(M, tailorBlockHitMeshes) {
   }
 
   function createDeerModel() {
+    const deerGLTF = loadedAssets && loadedAssets.deer;
+    if (deerGLTF && deerGLTF.scene) {
+      const { group, model } = instantiateGLTFCreature(deerGLTF, 'deer');
+      group.userData.legs = [0, 1, 2, 3]
+        .map((i) => model.getObjectByName(`leg${i}`))
+        .filter(Boolean);
+      return group;
+    }
+
     const group = new THREE.Group();
 
     const body = new THREE.Mesh(deerTorsoGeo, deerFurMat);
@@ -385,6 +478,7 @@ export function initCreatureModels(M, tailorBlockHitMeshes) {
     group.add(neck);
 
     const head = new THREE.Mesh(deerCraniumGeo, deerFurMat);
+    head.name = 'head';
     head.scale.set(0.88, 0.96, 1.25);
     head.position.set(0, 1.46, -0.77);
     head.castShadow = true;
@@ -418,6 +512,7 @@ export function initCreatureModels(M, tailorBlockHitMeshes) {
     [-1, 1].forEach((side) => {
       [-1, 1].forEach((end) => {
         const legPivot = new THREE.Group();
+        legPivot.name = `leg${legs.length}`;
         legPivot.position.set(side * 0.165, 0.82, end * 0.37);
 
         const upper = new THREE.Mesh(deerUpperLegGeo, deerFurMat);
@@ -487,6 +582,15 @@ export function initCreatureModels(M, tailorBlockHitMeshes) {
   const wolfTailGeo = new THREE.TubeGeometry(wolfTailCurve, 10, 0.068, 8, false);
 
   function createWolfModel() {
+    const wolfGLTF = loadedAssets && loadedAssets.wolf;
+    if (wolfGLTF && wolfGLTF.scene) {
+      const { group, model } = instantiateGLTFCreature(wolfGLTF, 'wolf');
+      group.userData.legs = [0, 1, 2, 3]
+        .map((i) => model.getObjectByName(`leg${i}`))
+        .filter(Boolean);
+      return group;
+    }
+
     const group = new THREE.Group();
 
     const body = new THREE.Mesh(wolfTorsoGeo, wolfFurMat);
@@ -518,6 +622,7 @@ export function initCreatureModels(M, tailorBlockHitMeshes) {
     group.add(ruffLight);
 
     const head = new THREE.Mesh(wolfSkullGeo, wolfFurMat);
+    head.name = 'head';
     head.scale.set(0.96, 0.92, 1.12);
     head.position.set(0, 0.74, -0.68);
     head.castShadow = true;
@@ -553,6 +658,7 @@ export function initCreatureModels(M, tailorBlockHitMeshes) {
     [-1, 1].forEach((side) => {
       [-1, 1].forEach((end) => {
         const legPivot = new THREE.Group();
+        legPivot.name = `leg${legs.length}`;
         legPivot.position.set(side * 0.14, 0.50, end * 0.31);
 
         const upper = new THREE.Mesh(wolfUpperLegGeo, wolfFurMat);
@@ -656,6 +762,22 @@ export function initCreatureModels(M, tailorBlockHitMeshes) {
   const banditGunDrumGeo = new THREE.CylinderGeometry(0.036, 0.036, 0.075, 10);
 
   function createBanditModel() {
+    const banditGLTF = loadedAssets && loadedAssets.bandit;
+    if (banditGLTF && banditGLTF.scene) {
+      const { group, model } = instantiateGLTFCreature(banditGLTF, 'bandit');
+      let muzzle =
+        model.getObjectByName('muzzle') ||
+        model.getObjectByName('Muzzle') ||
+        model.getObjectByName('MuzzlePoint');
+      if (!muzzle) {
+        muzzle = new THREE.Object3D();
+        muzzle.position.set(0.32, 1.28, -0.84);
+        group.add(muzzle);
+      }
+      group.userData.muzzle = muzzle;
+      return group;
+    }
+
     const group = new THREE.Group();
 
     // Skulpturerte støvler med hælsporer + bukseben
@@ -717,6 +839,7 @@ export function initCreatureModels(M, tailorBlockHitMeshes) {
 
     // Skulpturert hode, sinte øyenbryn og skjerf/bandana med knute i nakken
     const head = new THREE.Mesh(banditHeadGeo, banditSkinMat);
+    head.name = 'head';
     head.scale.set(0.95, 1.06, 0.98);
     head.position.set(0, 1.54, 0);
     head.castShadow = true;
@@ -752,6 +875,7 @@ export function initCreatureModels(M, tailorBlockHitMeshes) {
 
     // Venstre arm med albuknekk
     const leftUpper = new THREE.Mesh(banditUpperArmGeo, banditCoatMat);
+    leftUpper.name = 'leftUpper';
     leftUpper.position.set(-0.27, 1.21, 0.01);
     leftUpper.rotation.z = 0.22;
     leftUpper.rotation.x = 0.14;
@@ -759,6 +883,7 @@ export function initCreatureModels(M, tailorBlockHitMeshes) {
     group.add(leftUpper);
 
     const leftFore = new THREE.Mesh(banditForearmGeo, banditCoatMat);
+    leftFore.name = 'leftFore';
     leftFore.position.set(-0.32, 0.99, -0.04);
     leftFore.rotation.x = -0.35;
     group.add(leftFore);
@@ -769,6 +894,7 @@ export function initCreatureModels(M, tailorBlockHitMeshes) {
 
     // Høyre skytearm + detaljert revolver
     const rightUpper = new THREE.Mesh(banditUpperArmGeo, banditCoatMat);
+    rightUpper.name = 'rightUpper';
     rightUpper.position.set(0.27, 1.23, -0.08);
     rightUpper.rotation.x = -0.95;
     rightUpper.rotation.z = -0.12;
@@ -776,6 +902,7 @@ export function initCreatureModels(M, tailorBlockHitMeshes) {
     group.add(rightUpper);
 
     const rightFore = new THREE.Mesh(banditForearmGeo, banditCoatMat);
+    rightFore.name = 'rightFore';
     rightFore.position.set(0.31, 1.24, -0.29);
     rightFore.rotation.x = -1.48;
     group.add(rightFore);
@@ -880,6 +1007,21 @@ export function initCreatureModels(M, tailorBlockHitMeshes) {
   const nightClawGeo = new THREE.ConeGeometry(0.016, 0.145, 5);
 
   function createNightEnemyModel() {
+    const vampireGLTF = loadedAssets && loadedAssets.vampire;
+    if (vampireGLTF && vampireGLTF.scene) {
+      const { group, model } = instantiateGLTFCreature(vampireGLTF, 'vampire');
+
+      const eyeHalo = new THREE.Sprite(nightEyeHaloMat);
+      eyeHalo.scale.set(0.46, 0.26, 1);
+      eyeHalo.position.set(0, 1.48, -0.35);
+      group.add(eyeHalo);
+
+      const arm0 = model.getObjectByName('arm0');
+      const arm1 = model.getObjectByName('arm1');
+      group.userData.arms = [arm0, arm1].filter(Boolean);
+      return group;
+    }
+
     const group = new THREE.Group();
 
     const cloak = new THREE.Mesh(nightCloakGeo, nightCloakMat);
@@ -929,6 +1071,7 @@ export function initCreatureModels(M, tailorBlockHitMeshes) {
       group.add(vEar);
 
       const armPivot = new THREE.Group();
+      armPivot.name = `arm${armGroups.length}`;
       armPivot.position.set(side * 0.24, 1.26, -0.08);
 
       const upperArm = new THREE.Mesh(nightUpperArmGeo, nightCloakMat);
