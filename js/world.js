@@ -18,27 +18,75 @@ export function applySkyShaderParams(skyObj, nightAmt, outSunDir) {
   uniforms.sunPosition.value.copy(outSunDir);
 }
 
-export function getTerrainHeight(x, z) {
+export function getTerrainBaseHeight(x, z) {
   const cheb = Math.max(Math.abs(x), Math.abs(z));
-  if (cheb <= 22.0) return 0;
+  // Dustwood Town i sentrum (x: -24..24, z: -24..24) holdes 100 % flatt på y = 0
+  if (cheb <= 24.0) return 0;
 
-  const t = Math.min(1, (cheb - 22.0) / 9.0);
+  const t = Math.min(1, (cheb - 24.0) / 10.0);
   const blend = t * t * (3 - 2 * t);
 
   const dunePrimary =
-    Math.sin(x * 0.052 + Math.cos(z * 0.041) * 1.25) * 1.15 +
-    Math.cos(z * 0.064 - x * 0.028) * 0.85;
+    Math.sin(x * 0.044 + Math.cos(z * 0.036) * 1.2) * 1.05 +
+    Math.cos(z * 0.052 - x * 0.025) * 0.78;
   const duneSecondary =
-    Math.sin((x + z) * 0.115) * 0.28 +
-    Math.cos((x - z * 1.3) * 0.088) * 0.24;
+    Math.sin((x + z) * 0.095) * 0.24 +
+    Math.cos((x - z * 1.2) * 0.075) * 0.20;
 
-  const outerFactor = Math.max(0, (cheb - 48.0) / 55.0);
-  const rimLift = outerFactor * outerFactor * (1.8 + 0.9 * Math.sin(x * 0.07) * Math.cos(z * 0.07));
+  const outerFactor = Math.max(0, (cheb - 118.0) / 55.0);
+  const rimLift = outerFactor * outerFactor * (2.2 + 0.9 * Math.sin(x * 0.05) * Math.cos(z * 0.05));
 
-  return (dunePrimary + duneSecondary + rimLift + 0.22) * blend;
+  let h = (dunePrimary + duneSecondary + rimLift + 0.18) * blend;
+
+  // Grunt/tørt elveleie gjennom Whispering Woods (nord, rundt z = -78)
+  if (z < -62 && z > -94 && Math.abs(x) < 68) {
+    const riverCenterZ = -78.0 + Math.sin(x * 0.065) * 3.6;
+    const distRiver = Math.abs(z - riverCenterZ);
+    if (distRiver < 5.4) {
+      const rNorm = distRiver / 5.4;
+      const carve = (1 - rNorm * rNorm) * 0.95;
+      h -= carve;
+    }
+  }
+
+  // Jevn flate foran og inne i den forlatte gullgruven (x ~ 118..134, z ~ 0)
+  const dMine = Math.hypot((x - 122) * 0.7, z);
+  if (dMine < 15.0) {
+    const fMine = Math.max(0, Math.min(1, (dMine - 7.0) / 8.0));
+    const smoothMine = fMine * fMine * (3 - 2 * fMine);
+    h = THREE.MathUtils.lerp(0.65, h, smoothMine);
+  }
+
+  // Jevn kirkegårdsbakke rundt det ødelagte steinkapellet på Boot Hill (x ~ -120, z ~ 0)
+  const dChapel = Math.hypot((x + 118) * 0.7, z);
+  if (dChapel < 16.0) {
+    const fChap = Math.max(0, Math.min(1, (dChapel - 8.0) / 8.0));
+    const smoothChap = fChap * fChap * (3 - 2 * fChap);
+    h = THREE.MathUtils.lerp(0.55, h, smoothChap);
+  }
+
+  return h;
 }
 
-export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy, Sky: SkyClass = Sky }) {
+export function getBridgeDeckY(z) {
+  const southBank = getTerrainBaseHeight(0, -72.0) + 0.05;
+  const northBank = getTerrainBaseHeight(0, -84.0) + 0.05;
+  const u = THREE.MathUtils.clamp((-72.0 - z) / 12.0, 0, 1);
+  const baseLine = THREE.MathUtils.lerp(southBank, northBank, u);
+  const spanT = (z + 78.0) / 6.0; // -1..+1
+  return baseLine + Math.max(0, 1 - spanT * spanT) * 0.62;
+}
+
+export function getTerrainHeight(x, z) {
+  const baseH = getTerrainBaseHeight(x, z);
+  // Trebroen over elveleiet i Whispering Woods (x = -2.05..+2.05, z = -84.0..-72.0)
+  if (Math.abs(x) <= 2.05 && z >= -84.0 && z <= -72.0) {
+    return Math.max(baseH, getBridgeDeckY(z));
+  }
+  return baseH;
+}
+
+export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotropy, Sky: SkyClass = Sky }) {
   const {
     sharedDesertSandTex, sharedDesertSandNormalTex, sharedDesertSandRoughTex,
     sharedRoadSandTex, sharedRoadNormalTex, sharedRoadRoughTex,
@@ -47,21 +95,20 @@ export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy, 
     sharedBarkTex, sharedBarkNormalTex, sharedBarkRoughTex,
     sharedFoliageTex, sharedFoliageNormalTex, sharedFoliageRoughTex,
     woodWallMat, lightWoodMat, darkWoodMat,
-    weatheredPlankMatA, weatheredPlankMatB, shutterWoodMat,
-    wroughtIronMat, polishedBrassMat, stonePlinthMat, windowMat
+    weatheredPlankMatA, weatheredPlankMatB, shutterWoodMat, logTimberMat,
+    wroughtIronMat, polishedBrassMat, stonePlinthMat, crimsonRockMat, darkGraveStoneMat, windowMat,
+    sharedParticleGlowTex, sharedSparkGlowTex, sharedSmokePuffTex, createContactShadow
   } = M;
 
   // --- 3f. Atmosfærisk Sky-shader og forhåndsbakt PMREM PBR-miljølys ---
   const sky = new SkyClass();
-  sky.scale.setScalar(490);
+  sky.scale.setScalar(720);
   scene.add(sky);
 
   const skySunVec = new THREE.Vector3();
 
   applySkyShaderParams(sky, 0, skySunVec);
 
-  // Baker to lette PBR-miljøkart (dag og natt) én gang ved oppstart med PMREMGenerator.
-  // Dermed får stål, gull, messing, glass og vann ekte himmel-/ørkenrefleksjoner ved 0 ms per frame!
   const pmremGenerator = new THREE.PMREMGenerator(renderer);
   pmremGenerator.compileEquirectangularShader();
 
@@ -73,7 +120,6 @@ export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy, 
     applySkyShaderParams(envSky, nightAmt, tmpSun);
     envScene.add(envSky);
 
-    // Varm ørkenbunn i nedre halvkule for realistisk bakke-refleksjon på metall
     const bounceGround = new THREE.Mesh(
       new THREE.SphereGeometry(38, 16, 8, 0, Math.PI * 2, Math.PI * 0.5, Math.PI * 0.5),
       new THREE.MeshBasicMaterial({
@@ -106,32 +152,31 @@ export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy, 
   sunLight.castShadow = true;
   sunLight.shadow.mapSize.set(1024, 1024);
   sunLight.shadow.camera.near = 6;
-  sunLight.shadow.camera.far = 155;
-  sunLight.shadow.camera.left = -46;
-  sunLight.shadow.camera.right = 46;
-  sunLight.shadow.camera.top = 52;
-  sunLight.shadow.camera.bottom = -40;
+  sunLight.shadow.camera.far = 175;
+  sunLight.shadow.camera.left = -52;
+  sunLight.shadow.camera.right = 52;
+  sunLight.shadow.camera.top = 56;
+  sunLight.shadow.camera.bottom = -44;
   sunLight.shadow.bias = -0.0006;
   sunLight.shadow.normalBias = 0.035;
   scene.add(sunLight);
 
-  // Diskret solglorie som forsterker Sky-solskiven
   const sunMesh = new THREE.Mesh(
-    new THREE.SphereGeometry(4.8, 16, 16),
+    new THREE.SphereGeometry(5.8, 16, 16),
     new THREE.MeshBasicMaterial({ color: 0xfff0c4, fog: false, toneMapped: false })
   );
-  sunMesh.position.copy(skySunVec).multiplyScalar(210);
+  sunMesh.position.copy(skySunVec).multiplyScalar(295);
   scene.add(sunMesh);
 
-  // --- 3g. Ørkenlandskap med myke sanddyner (helt flatt y = 0 i byen [-22..22]) ---
-  const desertGroundGeo = new THREE.PlaneGeometry(360, 360, 128, 128);
+  // --- 3g. Utvidet ørkenlandskap (-160 til +160, flatt y = 0 i Dustwood [-24..24]) ---
+  const desertGroundGeo = new THREE.PlaneGeometry(390, 390, 160, 160);
   desertGroundGeo.rotateX(-Math.PI / 2);
   {
     const pos = desertGroundGeo.attributes.position;
     for (let i = 0; i < pos.count; i++) {
       const vx = pos.getX(i);
       const vz = pos.getZ(i);
-      pos.setY(i, getTerrainHeight(vx, vz));
+      pos.setY(i, getTerrainBaseHeight(vx, vz));
     }
     desertGroundGeo.computeVertexNormals();
   }
@@ -149,7 +194,7 @@ export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy, 
   desertGround.receiveShadow = true;
   scene.add(desertGround);
 
-  // Hovedgate i byen (ligger innenfor den flate sonen) + sti som følger terrenget inn i skogen
+  // Grusveier gjennom Dustwood og ut til alle 3 ytterregionene (Nord, Øst, Vest)
   const roadMat = new THREE.MeshStandardMaterial({
     color: 0xb8844f,
     map: sharedRoadSandTex,
@@ -160,29 +205,41 @@ export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy, 
     metalness: 0.01
   });
 
-  const mainRoad = new THREE.Mesh(new THREE.PlaneGeometry(7.2, 36), roadMat);
+  const mainRoad = new THREE.Mesh(new THREE.PlaneGeometry(7.4, 44), roadMat);
   mainRoad.rotation.x = -Math.PI / 2;
-  mainRoad.position.set(0, 0.016, 2);
+  mainRoad.position.set(0, 0.016, 0);
   mainRoad.receiveShadow = true;
   scene.add(mainRoad);
 
-  const trailGeo = new THREE.PlaneGeometry(3.5, 48, 8, 44);
-  trailGeo.rotateX(-Math.PI / 2);
-  {
-    const pos = trailGeo.attributes.position;
-    for (let i = 0; i < pos.count; i++) {
-      const wx = pos.getX(i);
-      const wz = pos.getZ(i) - 37;
-      pos.setY(i, getTerrainHeight(wx, wz) + 0.024);
-    }
-    trailGeo.computeVertexNormals();
-  }
-  const huntingTrail = new THREE.Mesh(trailGeo, roadMat);
-  huntingTrail.position.set(0, 0, -37);
-  huntingTrail.receiveShadow = true;
-  scene.add(huntingTrail);
+  const crossRoad = new THREE.Mesh(new THREE.PlaneGeometry(44, 5.2), roadMat);
+  crossRoad.rotation.x = -Math.PI / 2;
+  crossRoad.position.set(0, 0.015, -3.2);
+  crossRoad.receiveShadow = true;
+  scene.add(crossRoad);
 
-  // --- 3h. Monument Valley-inspirerte lagdelte sandsteinsplatåer (Mesas / Buttes) i horisonten ---
+  function buildTerrainTrail(cx, cz, width, length, alongX = false, segsLen = 72) {
+    const geo = new THREE.PlaneGeometry(alongX ? length : width, alongX ? width : length, alongX ? segsLen : 6, alongX ? 6 : segsLen);
+    geo.rotateX(-Math.PI / 2);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const wx = pos.getX(i) + cx;
+      const wz = pos.getZ(i) + cz;
+      pos.setY(i, getTerrainBaseHeight(wx, wz) + 0.028);
+    }
+    geo.computeVertexNormals();
+    const mesh = new THREE.Mesh(geo, roadMat);
+    mesh.position.set(cx, 0, cz);
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    return mesh;
+  }
+
+  // Nordvei til Whispering Woods, Østvei til Crimson Canyon & Gruven, Vestvei til Boot Hill
+  buildTerrainTrail(0, -82, 3.8, 124, false, 84);
+  buildTerrainTrail(71, -1.5, 4.0, 102, true, 72);
+  buildTerrainTrail(-69, -1.5, 3.8, 98, true, 72);
+
+  // --- 3h. Monument Valley-inspirerte lagdelte sandsteinsplatåer i horisontringen utenfor [-160..160] ---
   const mesaMat = new THREE.MeshStandardMaterial({
     color: 0xc9744a,
     map: sharedMesaTex,
@@ -275,32 +332,33 @@ export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy, 
     scene.add(g);
   }
 
-  // Plasser Monument Valley-platåer i en vid horisontring utenfor PLAY_AREA_LIMIT (85)
+  // Plasser Monument Valley-platåer i en vid horisontring utenfor PLAY_AREA_LIMIT (160)
   [
-    { x: -95, z: -145, r: 26, h: 36, seed: 101, spire: true },
-    { x: 18, z: -168, r: 34, h: 42, seed: 202, spire: false },
-    { x: 108, z: -138, r: 28, h: 38, seed: 303, spire: true },
-    { x: -145, z: -55, r: 24, h: 30, seed: 404, spire: false },
-    { x: 148, z: -42, r: 25, h: 32, seed: 505, spire: true },
-    { x: -136, z: 58, r: 22, h: 27, seed: 606, spire: false },
-    { x: 138, z: 66, r: 24, h: 29, seed: 707, spire: false },
-    { x: -64, z: 146, r: 28, h: 34, seed: 808, spire: true },
-    { x: 74, z: 152, r: 30, h: 35, seed: 909, spire: false }
+    { x: -135, z: -205, r: 30, h: 42, seed: 101, spire: true },
+    { x: 24, z: -218, r: 38, h: 48, seed: 202, spire: false },
+    { x: 155, z: -195, r: 32, h: 44, seed: 303, spire: true },
+    { x: -212, z: -75, r: 28, h: 36, seed: 404, spire: false },
+    { x: 215, z: -62, r: 30, h: 38, seed: 505, spire: true },
+    { x: -205, z: 78, r: 26, h: 33, seed: 606, spire: false },
+    { x: 208, z: 86, r: 28, h: 35, seed: 707, spire: false },
+    { x: -88, z: 206, r: 32, h: 40, seed: 808, spire: true },
+    { x: 96, z: 212, r: 34, h: 41, seed: 909, spire: false }
   ].forEach((m) => spawnMonumentMesa(m.x, m.z, m.r, m.h, m.seed, m.spire));
 
-  // Nærmere klipper/kampestein-formasjoner ved bandittpostene (målt med THREE.Box3)
+  // Klipper og røde sandsteinsformasjoner (målt nøyaktig med THREE.Box3)
   const rockColliders = [];
   const rockMeasureBox = new THREE.Box3();
   const cragBoulderGeo = new THREE.DodecahedronGeometry(1.0, 1);
-  function spawnBanditRockCluster(cx, cz, scale, seed) {
+  function spawnBanditRockCluster(cx, cz, scale, seed, useCrimson = false) {
     const rng = createSeededRng(seed);
     const cluster = new THREE.Group();
-    const baseGround = getTerrainHeight(cx, cz);
+    const baseGround = getTerrainBaseHeight(cx, cz);
+    const primaryMat = useCrimson && crimsonRockMat ? crimsonRockMat : mesaMat;
     const specs = [
-      { ox: 0, oz: 0, sx: 2.8, sy: 2.3, sz: 2.4, mat: mesaMat },
-      { ox: -1.9, oz: 1.1, sx: 1.9, sy: 1.4, sz: 1.7, mat: mesaCapMat },
-      { ox: 1.8, oz: -0.9, sx: 2.1, sy: 1.7, sz: 1.8, mat: mesaMat },
-      { ox: 0.4, oz: 1.7, sx: 1.5, sy: 0.95, sz: 1.4, mat: mesaCapMat }
+      { ox: 0, oz: 0, sx: 2.8, sy: 2.5, sz: 2.4, mat: primaryMat },
+      { ox: -1.9, oz: 1.1, sx: 1.9, sy: 1.5, sz: 1.7, mat: mesaCapMat },
+      { ox: 1.8, oz: -0.9, sx: 2.1, sy: 1.8, sz: 1.8, mat: primaryMat },
+      { ox: 0.4, oz: 1.7, sx: 1.5, sy: 1.0, sz: 1.4, mat: mesaCapMat }
     ];
     const boulders = [];
     specs.forEach((sp) => {
@@ -317,7 +375,6 @@ export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy, 
     scene.add(cluster);
     cluster.updateMatrixWorld(true);
 
-    // Nøyaktig verdensposisjon og størrelse per kampestein målt direkte med THREE.Box3
     for (let i = 0; i < boulders.length; i++) {
       rockMeasureBox.setFromObject(boulders[i]);
       const shrinkX = (rockMeasureBox.max.x - rockMeasureBox.min.x) * 0.10;
@@ -332,10 +389,19 @@ export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy, 
   }
 
   [
-    { x: -31.5, z: 4.5, s: 1.05, seed: 1111 },
-    { x: 33.5, z: -16.5, s: 1.15, seed: 1212 },
-    { x: -50.0, z: -45.0, s: 1.25, seed: 1313 }
-  ].forEach((oc) => spawnBanditRockCluster(oc.x, oc.z, oc.s, oc.seed));
+    { x: -31.5, z: 9.5, s: 1.05, seed: 1111, crimson: false },
+    { x: 33.5, z: -16.5, s: 1.15, seed: 1212, crimson: true },
+    { x: -50.0, z: -45.0, s: 1.25, seed: 1313, crimson: false },
+    // Crimson Canyon kløftvegger på begge sider av østveien (x: +45 til +135)
+    { x: 52.0, z: -13.5, s: 1.65, seed: 2101, crimson: true },
+    { x: 56.0, z: 12.5, s: 1.55, seed: 2102, crimson: true },
+    { x: 74.0, z: -17.0, s: 1.85, seed: 2103, crimson: true },
+    { x: 78.0, z: 16.5, s: 1.75, seed: 2104, crimson: true },
+    { x: 98.0, z: -16.0, s: 1.95, seed: 2105, crimson: true },
+    { x: 102.0, z: 15.5, s: 1.90, seed: 2106, crimson: true },
+    { x: 120.0, z: -14.5, s: 2.10, seed: 2107, crimson: true },
+    { x: 120.0, z: 14.5, s: 2.10, seed: 2108, crimson: true }
+  ].forEach((oc) => spawnBanditRockCluster(oc.x, oc.z, oc.s, oc.seed, oc.crimson));
 
   // =========================================================================
   // 4. OPPDATERBARE 3D-SKILT MED CANVASTEXTURE OG FELLES PBR-BYGNINGSMATERIALER
@@ -847,9 +913,9 @@ export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy, 
   townCampfire.position.set(5.1, 0, 7.6);
   scene.add(townCampfire);
 
-  const eastTownFence = createWoodenFence(4.2, 4);
-  eastTownFence.position.set(5.6, 0, -5.8);
-  eastTownFence.rotation.y = -Math.PI / 2 + 0.18;
+  const eastTownFence = createWoodenFence(3.6, 3);
+  eastTownFence.position.set(6.3, 0, 10.2);
+  eastTownFence.rotation.y = -0.35;
   scene.add(eastTownFence);
 
   const southWestFence = createWoodenFence(3.6, 3);
@@ -1120,7 +1186,7 @@ export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy, 
     t3.rotation.x = -0.04;
     tree.add(t3);
 
-    // Organiske sideklynger som gir naturlig silhuett i stedet for ren kjegle
+    // Organiske sideklynger + rund eikekrone-variant + myk kontaktsygge ved roten
     const clumpA = new THREE.Mesh(boughClumpGeo, leafMain);
     clumpA.position.set(-0.68, 2.65, 0.28);
     clumpA.scale.set(1.05, 0.72, 0.95);
@@ -1131,25 +1197,45 @@ export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy, 
     clumpB.scale.set(0.95, 0.68, 0.9);
     tree.add(clumpB);
 
-    tree.position.set(x, getTerrainHeight(x, z) - 0.04, z);
+    if (variant % 3 === 2) {
+      // Fyldig eikekrone som gir variasjon i Whispering Woods
+      const oakCrown = new THREE.Mesh(boughClumpGeo, foliageMatB);
+      oakCrown.position.set(0, 3.45, 0);
+      oakCrown.scale.set(1.95, 1.38, 1.88);
+      tree.add(oakCrown);
+    }
+
+    if (createContactShadow) {
+      tree.add(createContactShadow(1.35, 1.35, 0.06));
+    }
+
+    tree.position.set(x, getTerrainBaseHeight(x, z) - 0.04, z);
     tree.rotation.y = (variant * 1.9) % (Math.PI * 2);
     tree.scale.setScalar(scale);
     forestGroup.add(tree);
   }
 
   const treeCoords = [
-    [-6.5, -24, 1.05], [6.2, -25, 1.1], [-11.5, -27, 1.25], [10.8, -28, 0.95],
-    [-4.8, -30, 1.15], [5.0, -31, 1.2], [-15.0, -32, 1.3], [14.5, -33, 1.1],
-    [-8.5, -35, 1.35], [8.8, -36, 1.0], [-18.5, -38, 1.25], [18.0, -37, 1.3],
-    [-5.2, -40, 1.1], [5.6, -41, 1.25], [-12.5, -42, 1.4], [12.0, -43, 1.15],
-    [-21.0, -45, 1.2], [20.5, -44, 1.35], [-7.5, -47, 1.3], [7.2, -48, 1.05],
-    [-15.5, -50, 1.25], [15.8, -51, 1.4], [-3.8, -53, 1.15], [4.5, -54, 1.2],
-    [-10.5, -56, 1.35], [10.2, -57, 1.1], [-18.0, -58, 1.3], [17.2, -59, 1.25],
-    [-6.0, -62, 1.4], [6.4, -63, 1.2], [-13.0, -65, 1.15], [12.5, -66, 1.3]
+    [-6.5, -26, 1.05], [6.2, -27, 1.1], [-11.5, -29, 1.25], [10.8, -30, 0.95],
+    [-4.8, -33, 1.15], [5.0, -34, 1.2], [-15.0, -35, 1.3], [14.5, -36, 1.1],
+    [-8.5, -39, 1.35], [8.8, -40, 1.0], [-19.5, -41, 1.25], [19.0, -40, 1.3],
+    [-5.4, -44, 1.1], [5.8, -45, 1.25], [-13.5, -46, 1.4], [13.0, -47, 1.15],
+    [-23.0, -49, 1.2], [22.5, -48, 1.35], [-7.5, -52, 1.3], [7.2, -53, 1.05],
+    [-16.5, -55, 1.25], [16.8, -56, 1.4], [-4.8, -58, 1.15], [5.2, -59, 1.2],
+    [-11.5, -62, 1.35], [11.2, -63, 1.1], [-20.0, -64, 1.3], [19.2, -65, 1.25],
+    [-6.5, -68, 1.4], [6.8, -69, 1.2], [-14.0, -71, 1.15], [13.5, -71, 1.3],
+    // Nord for elven og trebroen (z: -86 til -142) – dype Whispering Woods med bjørnehi
+    [-6.5, -87, 1.35], [6.8, -88, 1.25], [-15.5, -90, 1.45], [15.2, -91, 1.3],
+    [-26.0, -92, 1.4], [25.5, -93, 1.35], [-9.2, -96, 1.5], [9.5, -97, 1.25],
+    [-19.5, -101, 1.4], [19.0, -102, 1.45], [-5.8, -105, 1.3], [6.2, -106, 1.35],
+    [-31.0, -108, 1.5], [30.5, -109, 1.4], [-13.5, -112, 1.45], [13.8, -113, 1.35],
+    [-23.5, -117, 1.55], [23.0, -118, 1.45], [-7.2, -121, 1.35], [7.5, -122, 1.4],
+    [-17.0, -126, 1.5], [17.5, -127, 1.45], [-29.0, -131, 1.55], [28.5, -132, 1.5],
+    [-10.5, -136, 1.45], [10.8, -137, 1.4], [-21.0, -140, 1.5], [20.5, -141, 1.5]
   ];
   treeCoords.forEach(([x, z, s], idx) => addTree(x, z, s, idx));
 
-  // Steiner med ru sandsteinstekstur, normalMap og roughnessMap som følger terrenghøyden
+  // Steiner med ru sandsteinstekstur, normalMap og roughnessMap
   const rockGeo = new THREE.DodecahedronGeometry(0.88, 1);
   const rockMatA = new THREE.MeshStandardMaterial({
     color: 0xa8927c,
@@ -1169,26 +1255,24 @@ export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy, 
   });
 
   const rockCoords = [
-    [-3.6, -23, 0.9, 0.6, 1.1], [4.1, -26, 1.2, 0.75, 0.95],
-    [-9.2, -29, 1.5, 0.9, 1.3], [8.4, -32, 1.1, 0.7, 1.2],
-    [-4.0, -36, 0.85, 0.55, 0.9], [6.8, -39, 1.4, 0.85, 1.15],
-    [-13.5, -39, 1.7, 1.05, 1.4], [13.2, -46, 1.6, 0.95, 1.3],
-    [-6.2, -44, 1.05, 0.65, 1.0], [3.9, -49, 0.95, 0.6, 1.15],
-    [-8.8, -52, 1.45, 0.8, 1.25], [9.5, -55, 1.3, 0.85, 1.1],
-    [-2.5, -59, 1.15, 0.7, 0.95], [5.2, -61, 1.5, 0.9, 1.35]
+    [-4.6, -26, 0.9, 0.6, 1.1], [4.8, -28, 1.2, 0.75, 0.95],
+    [-9.2, -31, 1.5, 0.9, 1.3], [8.4, -34, 1.1, 0.7, 1.2],
+    [-13.5, -42, 1.7, 1.05, 1.4], [13.2, -48, 1.6, 0.95, 1.3],
+    [-8.8, -56, 1.45, 0.8, 1.25], [9.5, -60, 1.3, 0.85, 1.1],
+    [-12.0, -95, 1.8, 1.1, 1.5], [12.5, -104, 1.7, 1.0, 1.4],
+    [-16.0, -124, 2.0, 1.25, 1.7], [15.5, -130, 1.9, 1.2, 1.6]
   ];
   rockCoords.forEach(([x, z, sx, sy, sz], idx) => {
     const rock = new THREE.Mesh(rockGeo, idx % 2 === 0 ? rockMatA : rockMatB);
-    rock.position.set(x, getTerrainHeight(x, z) + sy * 0.38, z);
+    rock.position.set(x, getTerrainBaseHeight(x, z) + sy * 0.38, z);
     rock.scale.set(sx, sy, sz);
     rock.rotation.set(idx * 0.5, idx * 1.1, 0);
     rock.castShadow = z > -42;
     rock.receiveShadow = true;
     forestGroup.add(rock);
 
-    // Dodecahedron-geometrien har ca. 0,88 m radius før skalering.
-    const halfX = sx * 0.95;
-    const halfZ = sz * 0.95;
+    const halfX = sx * 0.88;
+    const halfZ = sz * 0.88;
     rockColliders.push({
       minX: x - halfX,
       maxX: x + halfX,
@@ -1197,10 +1281,623 @@ export function buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy, 
     });
   });
 
+  // =========================================================================
+  // 6b. ELVELEIE & TREBRO I WHISPERING WOODS (z ~ -78)
+  // =========================================================================
+  const structureWallColliders = [];
+
+  function pushMeasuredWorldBoxCollider(meshOrGroup, maxY = 4.2, shrinkPad = 0.04) {
+    meshOrGroup.updateMatrixWorld(true);
+    rockMeasureBox.setFromObject(meshOrGroup);
+    structureWallColliders.push({
+      minX: rockMeasureBox.min.x + shrinkPad,
+      maxX: rockMeasureBox.max.x - shrinkPad,
+      minZ: rockMeasureBox.min.z + shrinkPad,
+      maxZ: rockMeasureBox.max.z - shrinkPad,
+      maxY
+    });
+  }
+
+  // Grunt glitrende elveløp (sømløs terrengfølgende elveflate) gjennom Whispering Woods under trebroen
+  const creekWaterMat = new THREE.MeshStandardMaterial({
+    color: 0x265466,
+    roughness: 0.07,
+    metalness: 0.2,
+    normalMap: sharedDesertSandNormalTex,
+    normalScale: new THREE.Vector2(0.12, 0.12),
+    envMapIntensity: 1.55
+  });
+  const creekGeo = new THREE.PlaneGeometry(116, 4.2, 72, 6);
+  creekGeo.rotateX(-Math.PI / 2);
+  {
+    const cPos = creekGeo.attributes.position;
+    for (let i = 0; i < cPos.count; i++) {
+      const wx = cPos.getX(i);
+      const localZ = cPos.getZ(i);
+      const centerZ = -78.0 + Math.sin(wx * 0.065) * 3.6;
+      const wz = centerZ + localZ;
+      const centerBedY = getTerrainBaseHeight(wx, centerZ);
+      cPos.setZ(i, wz);
+      cPos.setY(i, centerBedY + 0.26);
+    }
+    creekGeo.computeVertexNormals();
+  }
+  const creekMesh = new THREE.Mesh(creekGeo, creekWaterMat);
+  creekMesh.receiveShadow = true;
+  scene.add(creekMesh);
+
+  // Solid buet trebro ved (x = 0, z = -78) som flukter 100 % med elvebreddene + bærestolper ned i elva
+  const bridgeGroup = new THREE.Group();
+  for (let bz = -84.0; bz <= -72.0; bz += 0.48) {
+    const deckY = getBridgeDeckY(bz);
+    const plank = new THREE.Mesh(
+      new THREE.BoxGeometry(4.1, 0.10, 0.43),
+      Math.round(bz * 2) % 2 === 0 ? lightWoodMat : weatheredPlankMatA
+    );
+    plank.position.set(0, deckY - 0.04, bz);
+    plank.receiveShadow = true;
+    plank.castShadow = true;
+    bridgeGroup.add(plank);
+  }
+  [-1.95, 1.95].forEach((bx) => {
+    // Langsgående bærebjelker under brodekket
+    for (let bz = -83.5; bz <= -72.5; bz += 1.0) {
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 1.08), darkWoodMat);
+      beam.position.set(bx * 0.88, getBridgeDeckY(bz) - 0.15, bz);
+      bridgeGroup.add(beam);
+    }
+    for (let pz = -83.0; pz <= -73.0; pz += 2.5) {
+      const deckY = getBridgeDeckY(pz);
+      const bedY = getTerrainBaseHeight(bx, pz) - 0.25;
+      const postTop = deckY + 1.05;
+      const totalH = Math.max(1.2, postTop - bedY);
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.17, totalH, 0.17), darkWoodMat);
+      post.position.set(bx, bedY + totalH * 0.5, pz);
+      post.castShadow = true;
+      bridgeGroup.add(post);
+
+      if (pz < -73.0) {
+        const nextZ = pz + 2.5;
+        const y1 = deckY + 0.96;
+        const y2 = getBridgeDeckY(nextZ) + 0.96;
+        const dy = y2 - y1;
+        const segLen = Math.hypot(2.5, dy) + 0.06;
+        const railSeg = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.11, segLen), darkWoodMat);
+        railSeg.position.set(bx, (y1 + y2) * 0.5, pz + 1.25);
+        railSeg.rotation.x = -Math.atan2(dy, 2.5);
+        bridgeGroup.add(railSeg);
+      }
+    }
+    // Rekkverk-kollisjonsboks målt langs hver side av broen (fri bredde imellom = 3,58 m)
+    structureWallColliders.push({
+      minX: bx - 0.16,
+      maxX: bx + 0.16,
+      minZ: -84.0,
+      maxZ: -72.0,
+      maxY: 2.2
+    });
+  });
+  scene.add(bridgeGroup);
+
+  // =========================================================================
+  // 6c. CRIMSON CANYON BANDITTLEIR, FORLATT GULLGRUVE & GULLKLUMPER (Øst, x: +35..+145)
+  // =========================================================================
+  const canyonGroup = new THREE.Group();
+  scene.add(canyonGroup);
+
+  // Bandittleir rundt (x = 82, z = 4.5) med leirbål, barrikader og tønner
+  const outlawCampfire = createCampfire();
+  outlawCampfire.position.set(82.0, getTerrainBaseHeight(82.0, 4.5), 4.5);
+  canyonGroup.add(outlawCampfire);
+
+  [
+    { x: 76.5, z: -5.8, ry: 0.25 },
+    { x: 88.5, z: 7.2, ry: -0.35 },
+    { x: 96.0, z: -6.5, ry: 0.15 }
+  ].forEach((bar) => {
+    const barricade = createWoodenFence(3.8, 4);
+    barricade.position.set(bar.x, getTerrainBaseHeight(bar.x, bar.z), bar.z);
+    barricade.rotation.y = bar.ry;
+    canyonGroup.add(barricade);
+    pushMeasuredWorldBoxCollider(barricade, 1.4, 0.02);
+  });
+
+  [
+    [79.2, -5.2], [80.0, -4.5], [89.8, 6.2], [106.5, -4.8], [116.5, 4.4]
+  ].forEach(([bx, bz]) => {
+    const brl = createDetailedBarrel();
+    const gy = getTerrainBaseHeight(bx, bz);
+    brl.position.set(bx, gy + 0.41, bz);
+    canyonGroup.add(brl);
+    if (createContactShadow) {
+      const sh = createContactShadow(0.45, 0.45, gy + 0.03);
+      sh.position.x = bx;
+      sh.position.z = bz;
+      canyonGroup.add(sh);
+    }
+  });
+
+  // Forsterket gruveinngang (Abandoned Gold Mine) ved x = 124, z = -1.5 (vendt mot -X vest)
+  const mineOriginX = 124.0;
+  const mineOriginZ = -1.5;
+  const mineBaseY = getTerrainBaseHeight(mineOriginX, mineOriginZ); // 0.65
+  const mineGroup = new THREE.Group();
+  mineGroup.position.set(mineOriginX, mineBaseY, mineOriginZ);
+  canyonGroup.add(mineGroup);
+
+  // Røde klippeblokker rundt gruveåpningen (fri tunnelåpning z_local = -1.55..+1.55 -> 3,10 m!)
+  const mineCliffLeft = new THREE.Mesh(new THREE.BoxGeometry(8.5, 7.2, 6.2), crimsonRockMat || mesaMat);
+  mineCliffLeft.position.set(3.8, 3.5, -4.65);
+  mineCliffLeft.castShadow = true;
+  mineCliffLeft.receiveShadow = true;
+  mineGroup.add(mineCliffLeft);
+
+  const mineCliffRight = new THREE.Mesh(new THREE.BoxGeometry(8.5, 7.2, 6.2), crimsonRockMat || mesaMat);
+  mineCliffRight.position.set(3.8, 3.5, 4.65);
+  mineCliffRight.castShadow = true;
+  mineCliffRight.receiveShadow = true;
+  mineGroup.add(mineCliffRight);
+
+  const mineCliffTop = new THREE.Mesh(new THREE.BoxGeometry(8.6, 3.6, 4.2), crimsonRockMat || mesaMat);
+  mineCliffTop.position.set(3.8, 5.4, 0);
+  mineCliffTop.castShadow = true;
+  mineGroup.add(mineCliffTop);
+
+  const mineBackWall = new THREE.Mesh(new THREE.BoxGeometry(1.6, 5.2, 5.0), darkGraveStoneMat || mesaCapMat);
+  mineBackWall.position.set(7.6, 2.5, 0);
+  mineGroup.add(mineBackWall);
+
+  // Kraftige tømmerrammer innover i gruvetunnelen
+  for (let tx = -0.2; tx <= 6.2; tx += 2.1) {
+    [-1.62, 1.62].forEach((tz) => {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.32, 3.4, 0.32), logTimberMat);
+      post.position.set(tx, 1.7, tz);
+      post.castShadow = true;
+      mineGroup.add(post);
+    });
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.36, 3.8), logTimberMat);
+    beam.position.set(tx, 3.45, 0);
+    beam.castShadow = true;
+    mineGroup.add(beam);
+  }
+
+  // Gruveskinner (x_local = -20..+6.4) + stål-gruvevogn full av gullmalm!
+  [-0.48, 0.48].forEach((rz) => {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(26.0, 0.07, 0.07), wroughtIronMat);
+    rail.position.set(-6.5, 0.08, rz);
+    mineGroup.add(rail);
+  });
+  for (let sx = -19.0; sx <= 6.0; sx += 0.95) {
+    const sleeper = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.05, 1.38), darkWoodMat);
+    sleeper.position.set(sx, 0.03, 0);
+    mineGroup.add(sleeper);
+  }
+
+  // Gruvevogn (plassert på siden av sporet foran inngangen slik at midtgangen inn i gruven er åpen)
+  const minecart = new THREE.Group();
+  const cartTub = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.72, 0.96), wroughtIronMat);
+  cartTub.position.y = 0.62;
+  cartTub.castShadow = true;
+  minecart.add(cartTub);
+  [-0.48, 0.48].forEach((wx) => {
+    [-0.50, 0.50].forEach((wz) => {
+      const wh = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.08, 12), wroughtIronMat);
+      wh.rotation.x = Math.PI / 2;
+      wh.position.set(wx, 0.24, wz);
+      minecart.add(wh);
+    });
+  });
+  const oreMat = new THREE.MeshStandardMaterial({
+    color: 0xffd248,
+    emissive: 0x523600,
+    metalness: 0.92,
+    roughness: 0.2,
+    envMapIntensity: 1.6
+  });
+  for (let oi = 0; oi < 6; oi++) {
+    const nugget = new THREE.Mesh(new THREE.DodecahedronGeometry(0.18, 0), oreMat);
+    nugget.position.set((oi % 3 - 1) * 0.34, 1.02 + (oi % 2) * 0.08, (oi < 3 ? -0.16 : 0.16));
+    minecart.add(nugget);
+  }
+  minecart.position.set(-7.5, 0.04, 2.35);
+  minecart.rotation.y = 0.22;
+  mineGroup.add(minecart);
+
+  const dInit = L ? L() : {
+    signMineTitle: 'ABANDONED MINE', signMineSub: 'CRIMSON GOLD VEIN',
+    signChapelTitle: 'BOOT HILL CHAPEL', signChapelSub: 'ALTAR OF MALAKOR',
+    roadWoodsTitle: '↑ WHISPERING WOODS', roadWoodsSub: 'River Bridge • Deer • Grizzlies',
+    roadCanyonTitle: '→ CRIMSON CANYON', roadCanyonSub: 'Outlaw Camp & Gold Mine',
+    roadGraveyardTitle: '← BOOT HILL', roadGraveyardSub: 'Graveyard & Ruined Chapel',
+    roadTownTitle: 'DUSTWOOD TOWN', roadTownSub: 'Saloon • Gunsmith • Safe House'
+  };
+
+  const mineSignMesh = createWesternSign(dInit.signMineTitle, dInit.signMineSub, 3.8, 0.96);
+  mineSignMesh.position.set(-0.45, 4.25, 0);
+  mineSignMesh.rotation.y = -Math.PI / 2;
+  mineGroup.add(mineSignMesh);
+
+  // Varm gruvelykt med halo
+  const mineGlow = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map: sharedSparkGlowTex || sharedParticleGlowTex,
+      color: 0xffad42,
+      transparent: true,
+      opacity: 0.75,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    })
+  );
+  mineGlow.scale.set(1.9, 1.9, 1);
+  mineGlow.position.set(-0.35, 3.15, -1.55);
+  mineGroup.add(mineGlow);
+
+  // Mål gruvevegger nøyaktig med THREE.Box3 (fri inngang 3,10 m i midten!)
+  canyonGroup.updateMatrixWorld(true);
+  pushMeasuredWorldBoxCollider(mineCliffLeft, 7.2, 0.05);
+  pushMeasuredWorldBoxCollider(mineCliffRight, 7.2, 0.05);
+  pushMeasuredWorldBoxCollider(mineBackWall, 5.2, 0.05);
+  pushMeasuredWorldBoxCollider(minecart, 1.3, 0.04);
+
+  // 6 Glitrende gullklumper / skattekister i og ved gruven som gir Gull (Gold)
+  const goldPickups = [];
+  const goldHitMeshes = [];
+  [
+    { x: 129.2, z: -1.5, amount: 20, isChest: true },
+    { x: 126.4, z: -0.6, amount: 15, isChest: false },
+    { x: 122.2, z: -2.4, amount: 12, isChest: false },
+    { x: 114.5, z: 2.2, amount: 15, isChest: true },
+    { x: 91.5, z: -2.8, amount: 12, isChest: false },
+    { x: 83.8, z: 6.4, amount: 15, isChest: true }
+  ].forEach((gpSpec) => {
+    const gHolder = new THREE.Group();
+    const gy = getTerrainBaseHeight(gpSpec.x, gpSpec.z);
+    gHolder.position.set(gpSpec.x, gy, gpSpec.z);
+
+    let hitMesh;
+    if (gpSpec.isChest) {
+      const box = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.48, 0.52), darkWoodMat);
+      box.position.y = 0.24;
+      box.castShadow = true;
+      gHolder.add(box);
+      const lidGold = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.16, 0.42), oreMat);
+      lidGold.position.y = 0.50;
+      gHolder.add(lidGold);
+      hitMesh = box;
+    } else {
+      const rockGold = new THREE.Mesh(new THREE.DodecahedronGeometry(0.34, 0), oreMat);
+      rockGold.position.y = 0.28;
+      rockGold.castShadow = true;
+      gHolder.add(rockGold);
+      hitMesh = rockGold;
+    }
+
+    const halo = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: sharedSparkGlowTex || sharedParticleGlowTex,
+        color: 0xffe066,
+        transparent: true,
+        opacity: 0.72,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      })
+    );
+    halo.scale.set(1.15, 1.15, 1);
+    halo.position.y = 0.55;
+    gHolder.add(halo);
+
+    scene.add(gHolder);
+    const entry = {
+      group: gHolder,
+      hitMesh,
+      amount: gpSpec.amount,
+      collected: false,
+      respawnTimer: 0
+    };
+    hitMesh.userData.goldEntry = entry;
+    goldPickups.push(entry);
+    goldHitMeshes.push(hitMesh);
+  });
+
+  // =========================================================================
+  // 6d. BOOT HILL KIRKEGÅRD & ØDELAGT STEINKAPELL (Vest, x: -35 til -145)
+  // =========================================================================
+  const graveyardGroup = new THREE.Group();
+  scene.add(graveyardGroup);
+
+  // Smijernsgjerde ved inngangen til Boot Hill (x = -62, åpen port z = -3.7..-0.3 -> 4,4 m bred ved z = -1.5)
+  [
+    { zMin: -22.0, zMax: -4.0 },
+    { zMin: 1.0, zMax: 19.0 }
+  ].forEach((seg) => {
+    const len = seg.zMax - seg.zMin;
+    const midZ = (seg.zMin + seg.zMax) * 0.5;
+    const baseY = getTerrainBaseHeight(-62.0, midZ);
+    const fGroup = new THREE.Group();
+    fGroup.position.set(-62.0, baseY, midZ);
+
+    const railLow = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, len), wroughtIronMat);
+    railLow.position.y = 0.35;
+    fGroup.add(railLow);
+    const railHigh = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, len), wroughtIronMat);
+    railHigh.position.y = 1.45;
+    fGroup.add(railHigh);
+
+    for (let pz = -len * 0.5; pz <= len * 0.5 + 0.01; pz += 0.65) {
+      const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.026, 1.68, 6), wroughtIronMat);
+      bar.position.set(0, 0.84, pz);
+      fGroup.add(bar);
+    }
+    graveyardGroup.add(fGroup);
+    structureWallColliders.push({
+      minX: -62.25,
+      maxX: -61.75,
+      minZ: seg.zMin,
+      maxZ: seg.zMax,
+      maxY: 2.0
+    });
+  });
+
+  // Steinstolper og smijernsbue over kirkegårdsporten (x = -62, z = -4.0..+1.0, fri bredde 4,4 m)
+  [-4.1, 1.1].forEach((gz) => {
+    const py = getTerrainBaseHeight(-62.0, gz);
+    const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.75, 2.8, 0.75), darkGraveStoneMat || stonePlinthMat);
+    pillar.position.set(-62.0, py + 1.4, gz);
+    pillar.castShadow = true;
+    graveyardGroup.add(pillar);
+  });
+  const gateArch = new THREE.Mesh(new THREE.TorusGeometry(2.6, 0.08, 6, 16, Math.PI), wroughtIronMat);
+  gateArch.rotation.y = Math.PI / 2;
+  gateArch.position.set(-62.0, getTerrainBaseHeight(-62.0, -1.5) + 2.65, -1.5);
+  graveyardGroup.add(gateArch);
+
+  // Skjeve gravsteiner, steinkors og kontaktskygger på Boot Hill
+  const headstoneGeo = new THREE.BoxGeometry(0.68, 1.08, 0.16);
+  const headstoneTopGeo = new THREE.CylinderGeometry(0.34, 0.34, 0.16, 12);
+  headstoneTopGeo.rotateX(Math.PI / 2);
+  const deadTreeMat = new THREE.MeshStandardMaterial({ color: 0x3b2f28, roughness: 0.95 });
+
+  const graveRng = createSeededRng(1889);
+  for (let gi = 0; gi < 22; gi++) {
+    const gx = -68 - (gi % 6) * 7.2 + (graveRng() - 0.5) * 2.2;
+    const gzSide = gi % 2 === 0 ? -1 : 1;
+    const gz = -1.5 + gzSide * (4.8 + Math.floor(gi / 6) * 4.8 + graveRng() * 1.8);
+    const gy = getTerrainBaseHeight(gx, gz);
+
+    const grave = new THREE.Group();
+    grave.position.set(gx, gy, gz);
+    grave.rotation.set((graveRng() - 0.5) * 0.18, (graveRng() - 0.5) * 0.35, (graveRng() - 0.5) * 0.22);
+
+    if (gi % 3 === 0) {
+      // Keltisk/western steinkors
+      const vBar = new THREE.Mesh(new THREE.BoxGeometry(0.22, 1.38, 0.18), darkGraveStoneMat || stonePlinthMat);
+      vBar.position.y = 0.66;
+      vBar.castShadow = true;
+      grave.add(vBar);
+      const hBar = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.20, 0.18), darkGraveStoneMat || stonePlinthMat);
+      hBar.position.y = 0.96;
+      hBar.castShadow = true;
+      grave.add(hBar);
+    } else {
+      const slab = new THREE.Mesh(headstoneGeo, darkGraveStoneMat || stonePlinthMat);
+      slab.position.y = 0.50;
+      slab.castShadow = true;
+      grave.add(slab);
+      const cap = new THREE.Mesh(headstoneTopGeo, darkGraveStoneMat || stonePlinthMat);
+      cap.position.y = 1.04;
+      cap.rotation.z = Math.PI / 2;
+      grave.add(cap);
+    }
+
+    if (createContactShadow) {
+      grave.add(createContactShadow(0.58, 0.42, 0.03));
+    }
+    graveyardGroup.add(grave);
+  }
+
+  // Visne/døde trær på Boot Hill
+  [
+    [-70, -14], [-74, 12], [-86, -16], [-89, 14], [-102, -13], [-104, 11], [-128, -12], [-129, 10]
+  ].forEach(([dx, dz], idx) => {
+    const dtGroup = new THREE.Group();
+    const dy = getTerrainBaseHeight(dx, dz);
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.32, 3.4, 7), deadTreeMat);
+    trunk.position.y = 1.65;
+    trunk.rotation.z = ((idx % 2) * 2 - 1) * 0.09;
+    trunk.castShadow = true;
+    dtGroup.add(trunk);
+    [-1, 1].forEach((s) => {
+      const limb = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.10, 1.65, 6), deadTreeMat);
+      limb.position.set(s * 0.48, 2.55 + s * 0.18, 0.08);
+      limb.rotation.z = -s * 0.78;
+      dtGroup.add(limb);
+    });
+    if (createContactShadow) dtGroup.add(createContactShadow(0.95, 0.95, 0.04));
+    dtGroup.position.set(dx, dy, dz);
+    dtGroup.rotation.y = idx * 1.3;
+    graveyardGroup.add(dtGroup);
+  });
+
+  // Lav spøkelseståke som hviler over Boot Hill Kirkegård (0 ekstra draw-dybdekonflikt)
+  if (sharedSmokePuffTex) {
+    const mistMat = new THREE.MeshBasicMaterial({
+      map: sharedSmokePuffTex,
+      color: 0x9bb0c9,
+      transparent: true,
+      opacity: 0.24,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+    [
+      [-76, -6], [-84, 6], [-96, -4], [-108, 4], [-116, -5]
+    ].forEach(([mx, mz], idx) => {
+      const mist = new THREE.Mesh(new THREE.PlaneGeometry(18, 18), mistMat);
+      mist.rotation.x = -Math.PI / 2;
+      mist.position.set(mx, getTerrainBaseHeight(mx, mz) + 0.32 + (idx % 2) * 0.14, mz);
+      graveyardGroup.add(mist);
+    });
+  }
+
+  // Halvt sammenrast steinkapell ved (x = -120, z = -1.5), vendt mot +X øst med 2,80 m fri døråpning!
+  const chapelX = -120.0;
+  const chapelZ = -1.5;
+  const chapelBaseY = getTerrainBaseHeight(chapelX, chapelZ); // 0.55
+  const chapelGroup = new THREE.Group();
+  chapelGroup.position.set(chapelX, chapelBaseY, chapelZ);
+  graveyardGroup.add(chapelGroup);
+
+  const chapelStoneMat = darkGraveStoneMat || stonePlinthMat;
+  const chapelFloor = new THREE.Mesh(new THREE.BoxGeometry(9.6, 0.22, 8.6), chapelStoneMat);
+  chapelFloor.position.set(0, 0.11, 0);
+  chapelFloor.receiveShadow = true;
+  chapelGroup.add(chapelFloor);
+
+  // Nordvegg (-Z), Sørvegg (+Z), Vestvegg (-X bakvegg) og to Østvegg-fløyer (+X) rundt 2,80 m åpen dør (-1.40..+1.40)
+  const chNorthWall = new THREE.Mesh(new THREE.BoxGeometry(9.4, 3.9, 0.52), chapelStoneMat);
+  chNorthWall.position.set(0, 2.05, -4.04);
+  chNorthWall.castShadow = true;
+  chapelGroup.add(chNorthWall);
+
+  const chSouthWall = new THREE.Mesh(new THREE.BoxGeometry(9.4, 3.2, 0.52), chapelStoneMat);
+  chSouthWall.position.set(0, 1.70, 4.04);
+  chSouthWall.castShadow = true;
+  chapelGroup.add(chSouthWall);
+
+  const chBackWall = new THREE.Mesh(new THREE.BoxGeometry(0.56, 5.2, 8.6), chapelStoneMat);
+  chBackWall.position.set(-4.52, 2.70, 0);
+  chBackWall.castShadow = true;
+  chapelGroup.add(chBackWall);
+
+  const chFrontNorth = new THREE.Mesh(new THREE.BoxGeometry(0.56, 4.2, 2.90), chapelStoneMat);
+  chFrontNorth.position.set(4.52, 2.20, -2.85);
+  chFrontNorth.castShadow = true;
+  chapelGroup.add(chFrontNorth);
+
+  const chFrontSouth = new THREE.Mesh(new THREE.BoxGeometry(0.56, 4.2, 2.90), chapelStoneMat);
+  chFrontSouth.position.set(4.52, 2.20, 2.85);
+  chFrontSouth.castShadow = true;
+  chapelGroup.add(chFrontSouth);
+
+  const chFrontHeader = new THREE.Mesh(new THREE.BoxGeometry(0.58, 1.45, 3.2), chapelStoneMat);
+  chFrontHeader.position.set(4.52, 3.72, 0);
+  chapelGroup.add(chFrontHeader);
+
+  // Halvt sammenraste taksperrer over kapellet
+  for (let rx = -3.4; rx <= 3.5; rx += 2.2) {
+    [-1, 1].forEach((side) => {
+      if (rx > 0.5 && side > 0) return; // sammenrast hull mot nattehimmelen!
+      const rafter = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.22, 4.8), darkWoodMat);
+      rafter.position.set(rx, 4.45, side * 2.1);
+      rafter.rotation.x = side * 0.42;
+      chapelGroup.add(rafter);
+    });
+  }
+
+  const chapelSignMesh = createWesternSign(dInit.signChapelTitle, dInit.signChapelSub, 3.7, 0.94);
+  chapelSignMesh.position.set(4.86, 4.65, 0);
+  chapelSignMesh.rotation.y = Math.PI / 2;
+  chapelGroup.add(chapelSignMesh);
+
+  // Glødende Blodalter inne i kapellet (klikk/skyt for å fremkalle natt og Lord Malakor!)
+  const chapelAltarHitMeshes = [];
+  const altarPedestal = new THREE.Mesh(new THREE.BoxGeometry(1.15, 1.08, 1.65), chapelStoneMat);
+  altarPedestal.position.set(-2.95, 0.65, 0);
+  altarPedestal.castShadow = true;
+  chapelGroup.add(altarPedestal);
+  chapelAltarHitMeshes.push(altarPedestal);
+
+  const bloodOrbMat = new THREE.MeshStandardMaterial({
+    color: 0xff1e38,
+    emissive: 0xff122c,
+    emissiveIntensity: 2.2,
+    roughness: 0.18,
+    metalness: 0.35
+  });
+  const bloodChaliceOrb = new THREE.Mesh(new THREE.OctahedronGeometry(0.28, 1), bloodOrbMat);
+  bloodChaliceOrb.position.set(-2.95, 1.52, 0);
+  chapelGroup.add(bloodChaliceOrb);
+  chapelAltarHitMeshes.push(bloodChaliceOrb);
+
+  const altarHalo = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map: sharedSparkGlowTex || sharedParticleGlowTex,
+      color: 0xff1e3c,
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    })
+  );
+  altarHalo.scale.set(1.8, 1.8, 1);
+  altarHalo.position.set(-2.95, 1.52, 0);
+  chapelGroup.add(altarHalo);
+
+  graveyardGroup.updateMatrixWorld(true);
+  pushMeasuredWorldBoxCollider(chNorthWall, 4.5, 0.02);
+  pushMeasuredWorldBoxCollider(chSouthWall, 4.2, 0.02);
+  pushMeasuredWorldBoxCollider(chBackWall, 5.4, 0.02);
+  pushMeasuredWorldBoxCollider(chFrontNorth, 4.4, 0.02);
+  pushMeasuredWorldBoxCollider(chFrontSouth, 4.4, 0.02);
+  pushMeasuredWorldBoxCollider(altarPedestal, 1.4, 0.02);
+
+  // =========================================================================
+  // 6e. FIRE REGIONALE VEISKILT (CanvasTexture på EN/NO) LANGS GRUSVEIENE
+  // =========================================================================
+  const roadSignEntries = [];
+  function spawnRoadSignpost(x, z, rotY, titleKey, subKey) {
+    const postGroup = new THREE.Group();
+    const gy = getTerrainBaseHeight(x, z);
+    postGroup.position.set(x, gy, z);
+    postGroup.rotation.y = rotY;
+
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.105, 2.65, 8), darkWoodMat);
+    pole.position.y = 1.32;
+    pole.castShadow = true;
+    postGroup.add(pole);
+
+    const signA = createWesternSign(dInit[titleKey] || '', dInit[subKey] || '', 2.55, 0.66);
+    signA.position.set(0, 2.32, 0.11);
+    postGroup.add(signA);
+
+    const signB = createWesternSign(dInit[titleKey] || '', dInit[subKey] || '', 2.55, 0.66);
+    signB.position.set(0, 2.32, -0.11);
+    signB.rotation.y = Math.PI;
+    postGroup.add(signB);
+
+    if (createContactShadow) postGroup.add(createContactShadow(0.42, 0.42, 0.03));
+    scene.add(postGroup);
+    roadSignEntries.push({ signA, signB, titleKey, subKey });
+  }
+
+  spawnRoadSignpost(3.2, -21.5, 0.0, 'roadWoodsTitle', 'roadWoodsSub');
+  spawnRoadSignpost(21.5, -4.6, -Math.PI / 2, 'roadCanyonTitle', 'roadCanyonSub');
+  spawnRoadSignpost(-21.5, -4.6, Math.PI / 2, 'roadGraveyardTitle', 'roadGraveyardSub');
+  spawnRoadSignpost(3.4, 15.2, 0.0, 'roadTownTitle', 'roadTownSub');
+
+  function refreshRegionSigns() {
+    if (!L) return;
+    const d = L();
+    mineSignMesh.userData.updateSign(d.signMineTitle, d.signMineSub);
+    chapelSignMesh.userData.updateSign(d.signChapelTitle, d.signChapelSub);
+    for (let i = 0; i < roadSignEntries.length; i++) {
+      const rs = roadSignEntries[i];
+      rs.signA.userData.updateSign(d[rs.titleKey], d[rs.subKey]);
+      rs.signB.userData.updateSign(d[rs.titleKey], d[rs.subKey]);
+    }
+  }
+
   return {
     sky, skySunVec, dayEnvRT, nightEnvRT,
     hemiLight, sunLight, sunMesh,
     rockColliders,
+    structureWallColliders,
+    goldPickups,
+    goldHitMeshes,
+    chapelAltarHitMeshes,
+    bloodChaliceOrb,
+    mineGroup,
+    chapelGroup,
+    refreshRegionSigns,
     createWesternSign, createDetailedBarrel, createWagonWheel,
     createFramedWindow, addWeatheredFacadePlanks, createWoodenFence,
     createCarvedBatwingDoor,
