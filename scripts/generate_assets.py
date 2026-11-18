@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Master asset pipeline for Western Cowboy VR (WebXR).
-Invokes all 6 procedural glTF 2.0 (.glb) builders to generate the 8 game-ready 3D assets
+Invokes all procedural glTF 2.0 (.glb) builders to generate all 16 game-ready 3D assets
 in ./assets/*.glb with zero external dependencies.
 """
 
@@ -22,22 +22,42 @@ from build_weapons_and_buildings import (  # noqa: E402
     build_saloon_glb,
     build_tailor_glb,
 )
+from build_arsenal import (  # noqa: E402
+    build_shotgun_glb,
+    build_rifle_glb,
+    build_crossbow_glb,
+    build_dynamite_glb,
+)
+from build_gunsmith_and_npc import (  # noqa: E402
+    build_gunsmith_glb,
+    build_gunsmith_npc_glb,
+)
 from build_bandit import build_bandit_glb  # noqa: E402
 from build_tailor_npc import build_tailor_npc_glb  # noqa: E402
 from build_vampire import build_vampire_glb  # noqa: E402
 from build_deer import build_deer_glb  # noqa: E402
 from build_wolf import build_wolf_glb  # noqa: E402
+from build_bear import build_bear_glb  # noqa: E402
+from build_boss_vampire import build_boss_vampire_glb  # noqa: E402
 
 
 ASSET_JOBS = [
     ("revolver.glb", build_revolver_glb),
+    ("shotgun.glb", build_shotgun_glb),
+    ("rifle.glb", build_rifle_glb),
+    ("crossbow.glb", build_crossbow_glb),
+    ("dynamite.glb", build_dynamite_glb),
     ("saloon.glb", build_saloon_glb),
     ("tailor.glb", build_tailor_glb),
+    ("gunsmith.glb", build_gunsmith_glb),
     ("bandit.glb", build_bandit_glb),
     ("tailor_npc.glb", build_tailor_npc_glb),
+    ("gunsmith_npc.glb", build_gunsmith_npc_glb),
     ("vampire.glb", build_vampire_glb),
     ("deer.glb", build_deer_glb),
     ("wolf.glb", build_wolf_glb),
+    ("bear.glb", build_bear_glb),
+    ("boss_vampire.glb", build_boss_vampire_glb),
 ]
 
 
@@ -62,7 +82,7 @@ def main():
 
     print(f"Generating {len(ASSET_JOBS)} WebXR .glb assets into: {ASSETS_DIR}")
     print("-" * 78)
-    print(f"{'Asset':<18} {'Size (KB)':>10} {'Vertices':>10} {'Triangles':>11} {'Nodes':>7} {'Anims':>7}")
+    print(f"{'Asset':<20} {'Size (KB)':>10} {'Vertices':>10} {'Triangles':>11} {'Nodes':>7} {'Anims':>7}")
     print("-" * 78)
 
     total_bytes = 0
@@ -79,7 +99,7 @@ def main():
         total_bytes += size
         total_tris += tris
         print(
-            f"{filename:<18} {size / 1024.0:>10.1f} {verts:>10,d} {tris:>11,d} {nodes:>7d} {anims:>7d}"
+            f"{filename:<20} {size / 1024.0:>10.1f} {verts:>10,d} {tris:>11,d} {nodes:>7d} {anims:>7d}"
         )
 
     elapsed = time.perf_counter() - t0
