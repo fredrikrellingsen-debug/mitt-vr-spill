@@ -1,15 +1,88 @@
 <!DOCTYPE html>
-<html lang="no">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VR Blink-Spill (WebXR)</title>
+  <title>Western Cowboy VR (WebXR)</title>
   <style>
-    body { margin: 0; overflow: hidden; background: #050814; font-family: sans-serif; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #8ec5e8;
+      font-family: Georgia, 'Times New Roman', serif;
+      user-select: none;
+    }
+    #top-left-ui {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+      pointer-events: none;
+      z-index: 10;
+    }
+    #hud-row {
+      display: flex;
+      align-items: stretch;
+      gap: 8px;
+    }
     #hud {
-      position: fixed; top: 16px; left: 16px; color: #00f0ff;
-      background: rgba(5, 8, 20, 0.75); padding: 12px 16px;
-      border: 1px solid #00f0ff; border-radius: 8px; pointer-events: none;
+      color: #fff4dc;
+      background: rgba(42, 24, 12, 0.9);
+      padding: 10px 18px;
+      border: 2px solid #d9a04e;
+      border-radius: 8px;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+      font-size: 15px;
+      line-height: 1.45;
+      letter-spacing: 0.3px;
+      white-space: pre-line;
+    }
+    #lang-btn {
+      pointer-events: auto;
+      cursor: pointer;
+      color: #fff4dc;
+      background: rgba(58, 33, 16, 0.94);
+      padding: 8px 14px;
+      border: 2px solid #e5b25d;
+      border-radius: 8px;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 14px;
+      font-weight: bold;
+      letter-spacing: 0.4px;
+      transition: background 0.15s ease, transform 0.1s ease;
+    }
+    #lang-btn:hover {
+      background: rgba(86, 50, 24, 0.98);
+    }
+    #lang-btn:active {
+      transform: scale(0.97);
+    }
+    #pc-hint {
+      color: #fff4dc;
+      background: rgba(42, 24, 12, 0.75);
+      padding: 6px 12px;
+      border: 1px solid rgba(217, 160, 78, 0.65);
+      border-radius: 6px;
+      font-family: sans-serif;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    #crosshair {
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      width: 10px;
+      height: 10px;
+      margin: -5px 0 0 -5px;
+      border: 2px solid rgba(255, 238, 190, 0.85);
+      border-radius: 50%;
+      box-shadow: 0 0 6px rgba(0, 0, 0, 0.45);
+      pointer-events: none;
+      z-index: 9;
     }
   </style>
   <script type="importmap">
@@ -22,120 +95,2941 @@
   </script>
 </head>
 <body>
-  <div id="hud">Poeng: <span id="score">0</span> | Klikk med mus eller trykk «ENTER VR»</div>
+  <div id="top-left-ui">
+    <div id="hud-row">
+      <div id="hud">Health: 100 | Food: 0 (E = eat) | Pelts: 0 | Outfit: Plain | Time: Day</div>
+      <button id="lang-btn" type="button" title="Switch language (EN / NO)">Language: EN / NO</button>
+    </div>
+    <div id="pc-hint"></div>
+  </div>
+  <div id="crosshair"></div>
 
   <script type="module">
     import * as THREE from 'three';
     import { VRButton } from 'three/addons/webxr/VRButton.js';
+    import { I18N, drawRoundedRect, drawSheriffStar2D } from './js/i18n.js';
+    import { initTexturesAndMaterials } from './js/textures.js';
+    import { initCreatureModels } from './js/creatures.js';
+    import { applySkyShaderParams, getTerrainHeight, buildEnvironmentAndScenery } from './js/world.js';
+    import { buildTownBuildings } from './js/buildings.js';
+    import { initWesternAudio } from './js/audio.js';
+    import { initRevolverAndAtmosphereFX } from './js/revolver-fx.js';
 
-    // 1. Scene, kamera og renderer
+    // =========================================================================
+    // 1. SCENE, RENDERER OG SPILLER-RIGG (playerRig)
+    // =========================================================================
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x070b19);
-    scene.fog = new THREE.FogExp2(0x070b19, 0.035);
+    scene.background = new THREE.Color(0xd99b66);
+    scene.fog = new THREE.Fog(0xe2b483, 48, 285);
 
-    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
-    camera.position.set(0, 1.6, 0);
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 560);
+    camera.position.set(0, 1.65, 0);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.08;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.xr.enabled = true;
     document.body.appendChild(renderer.domElement);
     document.body.appendChild(VRButton.createButton(renderer));
 
-    // 2. Lys og rutenett-gulv
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x223355, 1.2));
-    const dirLight = new THREE.DirectionalLight(0x00f0ff, 1.5);
-    dirLight.position.set(3, 8, 4);
-    scene.add(dirLight);
+    // Spiller-rigg som samler kamera og begge VR-kontrollerne
+    const playerRig = new THREE.Group();
+    playerRig.position.set(0, 0, 14.5);
+    playerRig.add(camera);
+    scene.add(playerRig);
 
-    const grid = new THREE.GridHelper(40, 40, 0x00f0ff, 0x162244);
-    scene.add(grid);
-
-    // 3. Lydgenerator (ingen eksterne lydfiler nødvendig)
+    // Lydkontekst klar for videre spillmekanikk
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    function playHitSound() {
-      if (audioCtx.state === 'suspended') audioCtx.resume();
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(520, audioCtx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(140, audioCtx.currentTime + 0.15);
-      gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.start();
-      osc.stop(audioCtx.currentTime + 0.15);
+    const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
+
+    // =========================================================================
+    // 2. SENTRALT SPRÅKSYSTEM (EN STANDARD / NO VALG), STATUS OG WRISTBOARD
+    // =========================================================================
+    let currentLang = 'en';
+
+    function L() {
+      return I18N[currentLang] || I18N.en;
     }
 
-    // 4. Blinker (targets)
-    const targets = [];
-    const targetGeo = new THREE.OctahedronGeometry(0.35, 1);
-    let score = 0;
-    const scoreEl = document.getElementById('score');
+    const playerState = {
+      health: 100,
+      food: 0,
+      pelt: 0,
+      outfit: 'Plain',
+      timeOfDay: 'Day',
+      targets: 0,
+      title: ''
+    };
 
-    function spawnTarget() {
-      const mat = new THREE.MeshStandardMaterial({
-        color: 0xff2a85, emissive: 0x660033, roughness: 0.2, metalness: 0.5
-      });
-      const mesh = new THREE.Mesh(targetGeo, mat);
-      mesh.position.set(
-        (Math.random() - 0.5) * 6,
-        1.0 + Math.random() * 2.2,
-        -3.5 - Math.random() * 4.5
-      );
-      mesh.userData.speed = 0.5 + Math.random() * 1.2;
-      mesh.userData.offset = Math.random() * Math.PI * 2;
-      scene.add(mesh);
-      targets.push(mesh);
+    // Globale kamp-, våpen-, rustnings- og oppdragsvariabler
+    let damageMultiplier = 1.0;
+    let nightMonsterDamage = 1;
+    let currentOutfitTier = 0;
+
+    let weaponDamage = 1;
+    let activeQuest = null;
+    let questProgress = 0;
+    const completedQuests = [];
+    const questProgressMap = Object.create(null);
+    let hasSheriffStar = false;
+    let hasGoldenRevolver = false;
+    let hasLegendTitle = false;
+    let isNightStateFlag = false;
+
+    const hudEl = document.getElementById('hud');
+    const pcHintEl = document.getElementById('pc-hint');
+    const langBtnEl = document.getElementById('lang-btn');
+
+    function syncLocalizedStateStrings() {
+      const dict = L();
+      playerState.outfit = dict.outfits[currentOutfitTier] || dict.outfits[0];
+      playerState.timeOfDay = isNightStateFlag ? dict.night : dict.day;
+      playerState.title = hasLegendTitle ? dict.legendTitle : '';
     }
 
-    for (let i = 0; i < 6; i++) spawnTarget();
+    // Venstre håndleddsgruppe: inneholder erme/mansjett, Sheriff-stjerne, wristBoard, spiseknapp og språkknapp
+    const leftWristRig = new THREE.Group();
 
-    // 5. VR-kontrollere med laserstråle
-    const raycaster = new THREE.Raycaster();
-    const tempMatrix = new THREE.Matrix4();
+    const leftSleeveMat = new THREE.MeshLambertMaterial({ color: 0xc8b28e });
+    const leftCuffMat = new THREE.MeshLambertMaterial({ color: 0x8c6d46 });
 
-    function checkHit(ray) {
-      const hits = ray.intersectObjects(targets);
-      if (hits.length > 0) {
-        const hitObj = hits[0].object;
-        scene.remove(hitObj);
-        targets.splice(targets.indexOf(hitObj), 1);
-        score += 10;
-        scoreEl.textContent = score;
-        playHitSound();
-        spawnTarget();
+    const leftSleeveMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.045, 0.056, 0.21, 10),
+      leftSleeveMat
+    );
+    leftSleeveMesh.rotation.x = Math.PI / 2;
+    leftSleeveMesh.position.set(0, -0.015, 0.115);
+    leftWristRig.add(leftSleeveMesh);
+
+    const leftCuffMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.049, 0.049, 0.032, 10),
+      leftCuffMat
+    );
+    leftCuffMesh.rotation.x = Math.PI / 2;
+    leftCuffMesh.position.set(0, -0.015, 0.02);
+    leftWristRig.add(leftCuffMesh);
+
+    // Gullfarget 3D Sheriff-stjerne på venstre håndledd (låses opp av Oppdrag 1)
+    const sheriffStarBadge = new THREE.Group();
+    const sheriffGoldMat = new THREE.MeshStandardMaterial({
+      color: 0xffd24a,
+      emissive: 0x3b2600,
+      metalness: 0.88,
+      roughness: 0.22
+    });
+    const starTriGeo = new THREE.CylinderGeometry(0.024, 0.024, 0.005, 3);
+    const starTriA = new THREE.Mesh(starTriGeo, sheriffGoldMat);
+    const starTriB = new THREE.Mesh(starTriGeo, sheriffGoldMat);
+    starTriB.rotation.y = Math.PI;
+    sheriffStarBadge.add(starTriA);
+    sheriffStarBadge.add(starTriB);
+
+    const starCenterBoss = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.009, 0.009, 0.007, 10),
+      sheriffGoldMat
+    );
+    sheriffStarBadge.add(starCenterBoss);
+
+    const starTipGeo = new THREE.SphereGeometry(0.0032, 6, 5);
+    for (let i = 0; i < 6; i++) {
+      const tipAngle = (i * Math.PI) / 3;
+      const tip = new THREE.Mesh(starTipGeo, sheriffGoldMat);
+      tip.position.set(Math.sin(tipAngle) * 0.024, 0, Math.cos(tipAngle) * 0.024);
+      sheriffStarBadge.add(tip);
+    }
+    sheriffStarBadge.position.set(-0.018, 0.036, 0.045);
+    sheriffStarBadge.rotation.set(0.2, 0, 0.28);
+    sheriffStarBadge.visible = false;
+    leftWristRig.add(sheriffStarBadge);
+
+    function updateLeftSleeveAppearance(tier) {
+      if (tier === 1) {
+        leftSleeveMat.color.setHex(0x8f491d);
+        leftCuffMat.color.setHex(0xd49b4b);
+      } else if (tier === 2) {
+        leftSleeveMat.color.setHex(0x636d7a);
+        leftCuffMat.color.setHex(0xdce2ec);
+      } else if (tier === 3) {
+        leftSleeveMat.color.setHex(0x5e1124);
+        leftCuffMat.color.setHex(0xe8bd54);
+      } else {
+        leftSleeveMat.color.setHex(0xc8b28e);
+        leftCuffMat.color.setHex(0x8c6d46);
       }
     }
 
-    for (let i = 0; i < 2; i++) {
-      const controller = renderer.xr.getController(i);
-      const lineGeo = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(0, 0, 0),
-        new THREE.Vector3(0, 0, -8)
-      ]);
-      const line = new THREE.Line(lineGeo, new THREE.LineBasicMaterial({ color: 0x00f0ff }));
-      controller.add(line);
+    const wristCanvas = document.createElement('canvas');
+    wristCanvas.width = 640;
+    wristCanvas.height = 384;
+    const wristCtx = wristCanvas.getContext('2d');
 
-      controller.addEventListener('selectstart', () => {
-        tempMatrix.identity().extractRotation(controller.matrixWorld);
-        raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
-        raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
-        checkHit(raycaster);
-      });
-      scene.add(controller);
+    const wristTexture = new THREE.CanvasTexture(wristCanvas);
+    wristTexture.colorSpace = THREE.SRGBColorSpace;
+    wristTexture.anisotropy = maxAnisotropy;
+
+    const wristBoard = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.28, 0.168),
+      new THREE.MeshBasicMaterial({
+        map: wristTexture,
+        transparent: true,
+        side: THREE.DoubleSide,
+        fog: false,
+        toneMapped: false
+      })
+    );
+    wristBoard.position.set(0.055, 0.06, -0.04);
+    wristBoard.rotation.set(-0.65, 0.25, 0.15);
+    leftWristRig.add(wristBoard);
+
+    // Klikkbar 3D-spiseknapp rett under wristBoard på venstre håndledd
+    const eatBtnCanvas = document.createElement('canvas');
+    eatBtnCanvas.width = 384;
+    eatBtnCanvas.height = 96;
+    const eatBtnCtx = eatBtnCanvas.getContext('2d');
+
+    const eatBtnTexture = new THREE.CanvasTexture(eatBtnCanvas);
+    eatBtnTexture.colorSpace = THREE.SRGBColorSpace;
+    eatBtnTexture.anisotropy = maxAnisotropy;
+
+    const eatWristButton = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.192, 0.05),
+      new THREE.MeshBasicMaterial({
+        map: eatBtnTexture,
+        transparent: true,
+        side: THREE.DoubleSide,
+        fog: false,
+        toneMapped: false
+      })
+    );
+    eatWristButton.position.set(-0.044, -0.116, 0.002);
+    wristBoard.add(eatWristButton);
+
+    // Klikkbar 3D-språkknapp (EN / NO) ved siden av spiseknappen på wristBoard i VR
+    const langWristCanvas = document.createElement('canvas');
+    langWristCanvas.width = 192;
+    langWristCanvas.height = 96;
+    const langWristCtx = langWristCanvas.getContext('2d');
+
+    const langWristTexture = new THREE.CanvasTexture(langWristCanvas);
+    langWristTexture.colorSpace = THREE.SRGBColorSpace;
+    langWristTexture.anisotropy = maxAnisotropy;
+
+    const langWristButton = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.082, 0.05),
+      new THREE.MeshBasicMaterial({
+        map: langWristTexture,
+        transparent: true,
+        side: THREE.DoubleSide,
+        fog: false,
+        toneMapped: false
+      })
+    );
+    langWristButton.position.set(0.099, -0.116, 0.002);
+    wristBoard.add(langWristButton);
+
+    function updateEatWristButton() {
+      const dict = L();
+      const canEat = playerState.food > 0 && playerState.health < 100;
+      eatBtnCtx.clearRect(0, 0, eatBtnCanvas.width, eatBtnCanvas.height);
+
+      drawRoundedRect(eatBtnCtx, 6, 6, eatBtnCanvas.width - 12, 84, 18);
+      eatBtnCtx.fillStyle = canEat ? 'rgba(34, 82, 34, 0.96)' : 'rgba(46, 30, 18, 0.92)';
+      eatBtnCtx.fill();
+      eatBtnCtx.lineWidth = 5;
+      eatBtnCtx.strokeStyle = canEat ? '#8be27b' : '#9c7848';
+      eatBtnCtx.stroke();
+
+      eatBtnCtx.textAlign = 'center';
+      eatBtnCtx.textBaseline = 'middle';
+      eatBtnCtx.font = 'bold 28px sans-serif';
+      eatBtnCtx.fillStyle = canEat ? '#f3ffe8' : '#cbb698';
+      eatBtnCtx.fillText(dict.eatBtn, eatBtnCanvas.width / 2, 50);
+
+      eatBtnTexture.needsUpdate = true;
+
+      // Oppdater 3D EN/NO-knappen på håndleddet
+      langWristCtx.clearRect(0, 0, langWristCanvas.width, langWristCanvas.height);
+      drawRoundedRect(langWristCtx, 6, 6, langWristCanvas.width - 12, 84, 18);
+      langWristCtx.fillStyle = 'rgba(66, 38, 16, 0.96)';
+      langWristCtx.fill();
+      langWristCtx.lineWidth = 5;
+      langWristCtx.strokeStyle = '#ffd275';
+      langWristCtx.stroke();
+
+      langWristCtx.textAlign = 'center';
+      langWristCtx.textBaseline = 'middle';
+      langWristCtx.font = 'bold 26px sans-serif';
+      langWristCtx.fillStyle = '#fff5db';
+      langWristCtx.fillText(dict.wristLangBtn, langWristCanvas.width / 2, 50);
+      langWristTexture.needsUpdate = true;
     }
 
-    // 6. Museklikk-støtte for testing på vanlig PC-skjerm
-    const pointer = new THREE.Vector2();
+    let refreshTailorWorkshopHook = null;
+    let refreshQuestBoardHook = null;
+    let refreshWorldSignsHook = null;
+    const TOTAL_QUEST_COUNT = 3;
+
+    function getActiveQuestStatusLine() {
+      const dict = L();
+      if (activeQuest) {
+        const qInfo = dict.quests[activeQuest.id];
+        const qTitle = qInfo ? qInfo.title : activeQuest.title;
+        return `${dict.questPrefix}: ${qTitle} (${questProgress}/${activeQuest.goal})`;
+      }
+      if (completedQuests.length >= TOTAL_QUEST_COUNT) {
+        return dict.questAllDone;
+      }
+      return dict.questNone;
+    }
+
+    function updateStatusUI() {
+      syncLocalizedStateStrings();
+      const dict = L();
+      document.documentElement.lang = currentLang === 'no' ? 'no' : 'en';
+      if (langBtnEl) langBtnEl.textContent = dict.langBtn;
+      if (pcHintEl) pcHintEl.innerHTML = dict.pcHintHtml;
+
+      const titleSuffix = playerState.title ? ` | ${dict.hudTitle}: ${playerState.title}` : '';
+      const questLine = getActiveQuestStatusLine();
+      const summaryText =
+        `${dict.hudHealth}: ${playerState.health} | ${dict.hudFood}: ${playerState.food} ${dict.hudEatHint} | ` +
+        `${dict.hudPelts}: ${playerState.pelt} | ${dict.hudOutfit}: ${playerState.outfit} | ${dict.hudTime}: ${playerState.timeOfDay} | ` +
+        `${dict.hudTargets}: ${playerState.targets}/5${titleSuffix}\n${questLine}`;
+      hudEl.textContent = summaryText;
+
+      wristCtx.clearRect(0, 0, wristCanvas.width, wristCanvas.height);
+
+      // Mørk lær-/trebakgrunn med messingramme
+      drawRoundedRect(wristCtx, 8, 8, 624, 368, 24);
+      wristCtx.fillStyle = 'rgba(38, 22, 11, 0.95)';
+      wristCtx.fill();
+      wristCtx.lineWidth = 6;
+      wristCtx.strokeStyle = '#d9a04e';
+      wristCtx.stroke();
+
+      wristCtx.textAlign = 'left';
+      wristCtx.textBaseline = 'middle';
+
+      wristCtx.font = 'bold 25px Georgia, serif';
+      wristCtx.fillStyle = playerState.title ? '#ffe07a' : '#f2c16b';
+      const headerLabel = playerState.title
+        ? `${dict.wristLegendPrefix}${playerState.title.toUpperCase()}`
+        : dict.wristHeader;
+      wristCtx.fillText(headerLabel, 36, 48);
+
+      if (hasSheriffStar) {
+        drawSheriffStar2D(wristCtx, 582, 48, 20, 10);
+      }
+
+      wristCtx.strokeStyle = 'rgba(217, 160, 78, 0.4)';
+      wristCtx.lineWidth = 2;
+      wristCtx.beginPath();
+      wristCtx.moveTo(36, 78);
+      wristCtx.lineTo(604, 78);
+      wristCtx.stroke();
+
+      wristCtx.font = 'bold 33px sans-serif';
+      wristCtx.fillStyle = '#fff4dc';
+      wristCtx.fillText(`${dict.hudHealth}: ${playerState.health}`, 36, 118);
+      wristCtx.fillText(`${dict.hudTime}: ${playerState.timeOfDay}`, 350, 118);
+
+      wristCtx.fillText(`${dict.hudFood}: ${playerState.food}`, 36, 174);
+      wristCtx.fillText(`${dict.hudPelts}: ${playerState.pelt}`, 350, 174);
+
+      wristCtx.font = 'bold 29px sans-serif';
+      wristCtx.fillStyle = '#ffd98e';
+      wristCtx.fillText(`${dict.hudOutfit}: ${playerState.outfit}`, 36, 232);
+
+      // Skillelinje før oppdragslinje nederst på wristBoard
+      wristCtx.strokeStyle = 'rgba(217, 160, 78, 0.35)';
+      wristCtx.beginPath();
+      wristCtx.moveTo(36, 272);
+      wristCtx.lineTo(604, 272);
+      wristCtx.stroke();
+
+      let questFontSize = 27;
+      wristCtx.font = `bold ${questFontSize}px sans-serif`;
+      while (questFontSize > 19 && wristCtx.measureText(questLine).width > 568) {
+        questFontSize -= 1;
+        wristCtx.font = `bold ${questFontSize}px sans-serif`;
+      }
+      wristCtx.fillStyle = activeQuest ? '#a6f096' : '#f5d284';
+      wristCtx.fillText(questLine, 36, 320);
+
+      wristTexture.needsUpdate = true;
+
+      updateEatWristButton();
+      if (refreshTailorWorkshopHook) refreshTailorWorkshopHook();
+      if (refreshQuestBoardHook) refreshQuestBoardHook();
+      if (refreshWorldSignsHook) refreshWorldSignsHook();
+    }
+
+    function setLanguage(lang) {
+      currentLang = lang === 'no' ? 'no' : 'en';
+      updateStatusUI();
+    }
+
+    function toggleLanguage() {
+      setLanguage(currentLang === 'en' ? 'no' : 'en');
+    }
+
+    if (langBtnEl) {
+      langBtnEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleLanguage();
+      });
+    }
+
+    updateStatusUI();
+
+    // Opprett begge VR-kontrollerne og legg dem i playerRig
+    const controllers = [];
+    const gripMat = new THREE.MeshStandardMaterial({ color: 0x4a2e18, roughness: 0.8 });
+    const barrelMat = new THREE.MeshStandardMaterial({ color: 0x555b62, roughness: 0.4, metalness: 0.6 });
+
+    for (let i = 0; i < 2; i++) {
+      const controller = renderer.xr.getController(i);
+
+      // Enkel synlig hånd-/revolvermarkør og siktestråle i VR
+      const handMarker = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.14), barrelMat);
+      handMarker.name = 'handMarker';
+      handMarker.position.set(0, 0, -0.04);
+      controller.add(handMarker);
+
+      const handleMesh = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.08, 0.045), gripMat);
+      handleMesh.name = 'handleMesh';
+      handleMesh.position.set(0, -0.045, 0.01);
+      handleMesh.rotation.x = 0.3;
+      controller.add(handleMesh);
+
+      const rayGeo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, -0.1),
+        new THREE.Vector3(0, 0, -8)
+      ]);
+      const rayLine = new THREE.Line(
+        rayGeo,
+        new THREE.LineBasicMaterial({ color: 0xffe2a0, transparent: true, opacity: 0.65 })
+      );
+      controller.add(rayLine);
+
+      // Fest håndleddsgruppen (erme, wristBoard og spiseknapp) til kontroller 0 som standard,
+      // og flytt automatisk til den kontrolleren WebXR rapporterer som venstre hånd ('left')
+      if (i === 0) {
+        controller.add(leftWristRig);
+      }
+      controller.addEventListener('connected', (e) => {
+        if (e.data && e.data.handedness === 'left') {
+          controller.add(leftWristRig);
+        }
+      });
+
+      // Vis kontroller-modeller og håndleddstavle i VR (unngår løs stråle på bakken på PC)
+      controller.visible = false;
+
+      playerRig.add(controller);
+      controllers.push(controller);
+    }
+
+    renderer.xr.addEventListener('sessionstart', () => {
+      controllers.forEach((c) => { c.visible = true; });
+    });
+    renderer.xr.addEventListener('sessionend', () => {
+      controllers.forEach((c) => { c.visible = false; });
+    });
+
+    // =========================================================================
+    // 3–6. PBR-TEKSTURER, SKY/PMREM, ØRKENLANDSKAP, SKULPTURERTE MODELLER OG BY
+    // =========================================================================
+    const M = initTexturesAndMaterials(maxAnisotropy);
+    const { windowMat } = M;
+
+    const W = buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy });
+    const {
+      sky, skySunVec, dayEnvRT, nightEnvRT,
+      hemiLight, sunLight, sunMesh,
+      campfireFlameMeshes, campfireLight, campfireEmberMat
+    } = W;
+
+    // --- 5a. Saloon / Oppdragsbygg og «SHERIFF'S BOUNTY BOARD» ---
+    const SALOON_QUESTS = [
+      { id: 'deer_hunt', goal: 2, targetType: 'deer' },
+      { id: 'bandit_clear', goal: 3, targetType: 'bandit' },
+      { id: 'night_guardian', goal: 4, targetType: 'night' }
+    ];
+
+    let saloonMainSignMesh = null;
+    let tailorMainSignMesh = null;
+    let safeHouseMainSignMesh = null;
+    let safeHouseStreetSignMesh = null;
+    let saloonLangSignMesh = null;
+    const worldLangButtonMeshes = [];
+
+    let saloonQuestAnchorMesh = null;
+    const saloonQuestButtonMeshes = [];
+    const saloonQuestBlockMeshes = [];
+    let questBoardMessageKey = '';
+    let questBoardMessageArg = null;
+    let questBoardMessageSuccess = true;
+    let questBoardTimer = 0;
+
+    const saloonQuestCanvas = document.createElement('canvas');
+    saloonQuestCanvas.width = 1024;
+    saloonQuestCanvas.height = 512;
+    const saloonQuestCtx = saloonQuestCanvas.getContext('2d');
+    const saloonQuestTexture = new THREE.CanvasTexture(saloonQuestCanvas);
+    saloonQuestTexture.colorSpace = THREE.SRGBColorSpace;
+    saloonQuestTexture.anisotropy = maxAnisotropy;
+
+    function createQuestButtonEntry(quest) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1024;
+      canvas.height = 126;
+      const ctx = canvas.getContext('2d');
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = maxAnisotropy;
+
+      const mesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(2.58, 0.31),
+        new THREE.MeshBasicMaterial({ map: texture, transparent: true, fog: false, toneMapped: false })
+      );
+      mesh.userData.quest = quest;
+      return { quest, canvas, ctx, texture, mesh };
+    }
+
+    const saloonQuestButtonEntries = SALOON_QUESTS.map((q) => createQuestButtonEntry(q));
+
+    function resolveQuestBoardMessage() {
+      const dict = L();
+      if (!questBoardMessageKey) return '';
+      if (questBoardMessageKey === 'done_already') return dict.questMsgDoneAlready;
+      if (questBoardMessageKey === 'active_now' && questBoardMessageArg) {
+        const q = questBoardMessageArg;
+        const qTitle = (dict.quests[q.id] && dict.quests[q.id].title) || q.id;
+        return dict.questMsgActiveNow(qTitle, questProgress, q.goal);
+      }
+      if (questBoardMessageKey === 'accepted' && questBoardMessageArg) {
+        const q = questBoardMessageArg;
+        const qTitle = (dict.quests[q.id] && dict.quests[q.id].title) || q.id;
+        return dict.questMsgAccepted(qTitle);
+      }
+      if (questBoardMessageKey === 'reward_deer') return dict.questMsgRewardDeer;
+      if (questBoardMessageKey === 'reward_bandit') return dict.questMsgRewardBandit;
+      if (questBoardMessageKey === 'reward_night') return dict.questMsgRewardNight;
+      return questBoardMessageKey;
+    }
+
+    function updateSaloonQuestBoardUI() {
+      const dict = L();
+      saloonQuestCtx.clearRect(0, 0, saloonQuestCanvas.width, saloonQuestCanvas.height);
+
+      drawRoundedRect(saloonQuestCtx, 8, 8, 1008, 496, 22);
+      saloonQuestCtx.fillStyle = 'rgba(42, 24, 12, 0.97)';
+      saloonQuestCtx.fill();
+      saloonQuestCtx.lineWidth = 8;
+      saloonQuestCtx.strokeStyle = '#d9a04e';
+      saloonQuestCtx.stroke();
+
+      drawRoundedRect(saloonQuestCtx, 22, 22, 980, 468, 14);
+      saloonQuestCtx.lineWidth = 2;
+      saloonQuestCtx.strokeStyle = 'rgba(245, 205, 130, 0.45)';
+      saloonQuestCtx.stroke();
+
+      drawSheriffStar2D(saloonQuestCtx, 92, 58, 22, 11);
+      drawSheriffStar2D(saloonQuestCtx, 932, 58, 22, 11);
+
+      saloonQuestCtx.textAlign = 'center';
+      saloonQuestCtx.textBaseline = 'middle';
+      saloonQuestCtx.font = 'bold 42px Georgia, serif';
+      saloonQuestCtx.fillStyle = '#fff1cf';
+      saloonQuestCtx.fillText(dict.questBoardTitle, 512, 58);
+
+      const bannerMsg = resolveQuestBoardMessage();
+      if (questBoardTimer > 0 && bannerMsg) {
+        drawRoundedRect(saloonQuestCtx, 56, 90, 912, 50, 12);
+        saloonQuestCtx.fillStyle = questBoardMessageSuccess
+          ? 'rgba(36, 98, 42, 0.96)'
+          : 'rgba(132, 34, 26, 0.96)';
+        saloonQuestCtx.fill();
+        saloonQuestCtx.lineWidth = 3;
+        saloonQuestCtx.strokeStyle = questBoardMessageSuccess ? '#9bf08a' : '#ff9a8a';
+        saloonQuestCtx.stroke();
+
+        saloonQuestCtx.font = 'bold 26px sans-serif';
+        saloonQuestCtx.fillStyle = '#ffffff';
+        saloonQuestCtx.fillText(bannerMsg, 512, 116);
+      } else {
+        saloonQuestCtx.font = 'bold 24px sans-serif';
+        saloonQuestCtx.fillStyle = '#f2c16b';
+        const activeTitle =
+          activeQuest && dict.quests[activeQuest.id]
+            ? dict.quests[activeQuest.id].title
+            : '';
+        const subText = activeQuest
+          ? dict.questBoardActiveSub(
+              activeTitle,
+              questProgress,
+              activeQuest.goal,
+              completedQuests.length,
+              SALOON_QUESTS.length
+            )
+          : dict.questBoardIdleSub(completedQuests.length, SALOON_QUESTS.length);
+        saloonQuestCtx.fillText(subText, 512, 116);
+      }
+
+      saloonQuestTexture.needsUpdate = true;
+
+      saloonQuestButtonEntries.forEach((entry) => {
+        const { quest, canvas, ctx, texture } = entry;
+        const qText = dict.quests[quest.id];
+        const isDone = completedQuests.includes(quest.id);
+        const isActive = activeQuest && activeQuest.id === quest.id;
+        const savedProg = questProgressMap[quest.id] || 0;
+        const shownProg = isActive ? questProgress : savedProg;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        drawRoundedRect(ctx, 6, 6, canvas.width - 12, canvas.height - 12, 16);
+        if (isDone) {
+          ctx.fillStyle = '#1f4a24';
+          ctx.strokeStyle = '#8ce881';
+        } else if (isActive) {
+          ctx.fillStyle = '#633c12';
+          ctx.strokeStyle = '#ffe074';
+        } else {
+          ctx.fillStyle = '#4c2c15';
+          ctx.strokeStyle = '#cc9548';
+        }
+        ctx.fill();
+        ctx.lineWidth = 5;
+        ctx.stroke();
+
+        let statusLabel = dict.badgeOpen;
+        let badgeBg = 'rgba(217, 160, 78, 0.22)';
+        let badgeTextCol = '#ffe3a3';
+        if (isDone) {
+          statusLabel = dict.badgeDone;
+          badgeBg = 'rgba(90, 200, 95, 0.28)';
+          badgeTextCol = '#b8ffaf';
+        } else if (isActive) {
+          statusLabel = `${dict.badgeActive} (${shownProg}/${quest.goal})`;
+          badgeBg = 'rgba(255, 214, 90, 0.28)';
+          badgeTextCol = '#fff3a6';
+        } else if (savedProg > 0) {
+          statusLabel = `${dict.badgeOpen} (${savedProg}/${quest.goal})`;
+        }
+
+        drawRoundedRect(ctx, 758, 18, 242, 44, 10);
+        ctx.fillStyle = badgeBg;
+        ctx.fill();
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = 'bold 22px sans-serif';
+        ctx.fillStyle = badgeTextCol;
+        ctx.fillText(statusLabel, 879, 41);
+
+        ctx.textAlign = 'left';
+        let titleFont = 27;
+        ctx.font = `bold ${titleFont}px sans-serif`;
+        while (titleFont > 19 && ctx.measureText(qText.taskText).width > 718) {
+          titleFont -= 1;
+          ctx.font = `bold ${titleFont}px sans-serif`;
+        }
+        ctx.fillStyle = isDone ? '#dcffd8' : '#fff7e5';
+        ctx.fillText(qText.taskText, 28, 41);
+
+        ctx.font = 'bold 22px sans-serif';
+        ctx.fillStyle = isDone ? '#a7e8a1' : '#f5c76e';
+        ctx.fillText(qText.rewardText, 28, 88);
+
+        texture.needsUpdate = true;
+      });
+    }
+
+    refreshQuestBoardHook = updateSaloonQuestBoardUI;
+
+    // --- 5b. Skredder-butikk med disk, skulpturert skredder-NPC og interaktivt verksted ---
+    const TAILOR_OUTFITS = [
+      { level: 1, cost: 2, damageMultiplier: 0.75, nightMonsterDamage: 1 },
+      { level: 2, cost: 4, damageMultiplier: 0.50, nightMonsterDamage: 1 },
+      { level: 3, cost: 6, damageMultiplier: 0.30, nightMonsterDamage: 2 }
+    ];
+
+    let tailorCounterMesh = null;
+    let tailorNPCGroup = null;
+    const tailorButtonMeshes = [];
+    const tailorBlockHitMeshes = [];
+    let tailorStatusMessageKey = '';
+    let tailorStatusIsSuccess = true;
+    let tailorStatusTimer = 0;
+
+    const workshopBoardCanvas = document.createElement('canvas');
+    workshopBoardCanvas.width = 1024;
+    workshopBoardCanvas.height = 460;
+    const workshopBoardCtx = workshopBoardCanvas.getContext('2d');
+    const workshopBoardTexture = new THREE.CanvasTexture(workshopBoardCanvas);
+    workshopBoardTexture.colorSpace = THREE.SRGBColorSpace;
+    workshopBoardTexture.anisotropy = maxAnisotropy;
+
+    function createTailorButtonEntry(outfit) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1024;
+      canvas.height = 96;
+      const ctx = canvas.getContext('2d');
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = maxAnisotropy;
+
+      const mesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(3.38, 0.30),
+        new THREE.MeshBasicMaterial({ map: texture, transparent: true, fog: false, toneMapped: false })
+      );
+      mesh.userData.outfit = outfit;
+      return { outfit, canvas, ctx, texture, mesh };
+    }
+
+    const tailorButtonEntries = TAILOR_OUTFITS.map((outfit) => createTailorButtonEntry(outfit));
+
+    function resolveTailorStatusMessage() {
+      const dict = L();
+      if (!tailorStatusMessageKey) return '';
+      if (tailorStatusMessageKey === 'same') return dict.tailorMsgSame;
+      if (tailorStatusMessageKey === 'better') return dict.tailorMsgBetter;
+      if (tailorStatusMessageKey === 'no_pelts') return dict.tailorMsgNoPelts;
+      if (tailorStatusMessageKey === 'crafted') return dict.tailorMsgCrafted;
+      return tailorStatusMessageKey;
+    }
+
+    function updateTailorWorkshopUI() {
+      const dict = L();
+      syncLocalizedStateStrings();
+
+      workshopBoardCtx.clearRect(0, 0, workshopBoardCanvas.width, workshopBoardCanvas.height);
+
+      drawRoundedRect(workshopBoardCtx, 8, 8, 1008, 444, 22);
+      workshopBoardCtx.fillStyle = 'rgba(40, 23, 12, 0.97)';
+      workshopBoardCtx.fill();
+      workshopBoardCtx.lineWidth = 8;
+      workshopBoardCtx.strokeStyle = '#d9a04e';
+      workshopBoardCtx.stroke();
+
+      drawRoundedRect(workshopBoardCtx, 22, 22, 980, 416, 14);
+      workshopBoardCtx.lineWidth = 2;
+      workshopBoardCtx.strokeStyle = 'rgba(245, 205, 130, 0.45)';
+      workshopBoardCtx.stroke();
+
+      workshopBoardCtx.textAlign = 'center';
+      workshopBoardCtx.textBaseline = 'middle';
+      workshopBoardCtx.font = 'bold 44px Georgia, serif';
+      workshopBoardCtx.fillStyle = '#fff1cf';
+      workshopBoardCtx.fillText(dict.tailorBoardTitle, 512, 58);
+
+      const statusMsg = resolveTailorStatusMessage();
+      if (tailorStatusTimer > 0 && statusMsg) {
+        drawRoundedRect(workshopBoardCtx, 56, 88, 912, 48, 12);
+        workshopBoardCtx.fillStyle = tailorStatusIsSuccess
+          ? 'rgba(36, 98, 42, 0.95)'
+          : 'rgba(132, 34, 26, 0.95)';
+        workshopBoardCtx.fill();
+        workshopBoardCtx.lineWidth = 3;
+        workshopBoardCtx.strokeStyle = tailorStatusIsSuccess ? '#9bf08a' : '#ff9a8a';
+        workshopBoardCtx.stroke();
+
+        workshopBoardCtx.font = 'bold 27px sans-serif';
+        workshopBoardCtx.fillStyle = '#ffffff';
+        workshopBoardCtx.fillText(statusMsg, 512, 113);
+      } else {
+        workshopBoardCtx.font = 'bold 24px sans-serif';
+        workshopBoardCtx.fillStyle = '#f2c16b';
+        workshopBoardCtx.fillText(
+          dict.tailorInfo(playerState.pelt, playerState.outfit),
+          512,
+          112
+        );
+      }
+
+      workshopBoardTexture.needsUpdate = true;
+
+      tailorButtonEntries.forEach((entry, idx) => {
+        const { outfit, canvas, ctx, texture } = entry;
+        const isEquipped = currentOutfitTier === outfit.level;
+        const isLowerTier = currentOutfitTier > outfit.level;
+        const canAfford = playerState.pelt >= outfit.cost && !isEquipped && !isLowerTier;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        drawRoundedRect(ctx, 6, 6, canvas.width - 12, canvas.height - 12, 16);
+        if (isEquipped) {
+          ctx.fillStyle = '#245228';
+          ctx.strokeStyle = '#92e686';
+        } else if (isLowerTier) {
+          ctx.fillStyle = '#38291d';
+          ctx.strokeStyle = '#7c6549';
+        } else if (canAfford) {
+          ctx.fillStyle = '#5c3416';
+          ctx.strokeStyle = '#ffd275';
+        } else {
+          ctx.fillStyle = '#472814';
+          ctx.strokeStyle = '#c48d42';
+        }
+        ctx.fill();
+        ctx.lineWidth = 5;
+        ctx.stroke();
+
+        const baseLabel = dict.tailorButtons[idx] || '';
+        const displayLabel = isEquipped ? `${baseLabel} ${dict.equippedTag}` : baseLabel;
+
+        let fontSize = 29;
+        ctx.font = `bold ${fontSize}px sans-serif`;
+        while (fontSize > 19 && ctx.measureText(displayLabel).width > 968) {
+          fontSize -= 1;
+          ctx.font = `bold ${fontSize}px sans-serif`;
+        }
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = isLowerTier ? '#b5a28c' : '#fff6e3';
+        ctx.fillText(displayLabel, canvas.width / 2, canvas.height / 2 + 1);
+
+        texture.needsUpdate = true;
+      });
+    }
+
+    refreshTailorWorkshopHook = updateTailorWorkshopUI;
+
+    // --- 5c. FYSISK GJEMMESTED (SAFE HOUSE / HIDEOUT) VED SIDEN AV SALOONEN ---
+    // Aksejustert sone som zombie-AI og kollisjoner kan bruke direkte i neste steg.
+    const hidingZone = {
+      minX: -7.4,
+      maxX: -3.5,
+      minZ: -8.2,
+      maxZ: -4.4
+    };
+
+    let safeHouseDoorOpen = true;
+    let safeHouseDoorAngle = 1.62;
+    let safeHouseDoorPivot = null;
+    const safeHouseDoorHitMeshes = [];
+    const safeHouseCenterWorld = new THREE.Vector3(
+      (hidingZone.minX + hidingZone.maxX) * 0.5,
+      0,
+      (hidingZone.minZ + hidingZone.maxZ) * 0.5
+    );
+    const safeHouseDoorwayWorld = new THREE.Vector3(
+      hidingZone.maxX,
+      1.2,
+      (hidingZone.minZ + hidingZone.maxZ) * 0.5
+    );
+
+    function isPlayerInHidingZone() {
+      const px = playerRig.position.x;
+      const pz = playerRig.position.z;
+      return (
+        px >= hidingZone.minX &&
+        px <= hidingZone.maxX &&
+        pz >= hidingZone.minZ &&
+        pz <= hidingZone.maxZ
+      );
+    }
+
+    const C = initCreatureModels(M, tailorBlockHitMeshes);
+    const {
+      createDeerModel,
+      createWolfModel,
+      createBanditModel,
+      createNightEnemyModel,
+      animateQuadrupedLegs
+    } = C;
+
+    const townBuilt = buildTownBuildings({
+      L, M, W, C,
+      saloonQuestTexture, saloonQuestButtonEntries, saloonQuestButtonMeshes, saloonQuestBlockMeshes,
+      worldLangButtonMeshes,
+      workshopBoardTexture, tailorButtonEntries, tailorButtonMeshes, tailorBlockHitMeshes,
+      hidingZone, safeHouseCenterWorld, safeHouseDoorAngle, safeHouseDoorHitMeshes
+    });
+
+    const saloonBuilding = townBuilt.saloonBuilding;
+    saloonMainSignMesh = townBuilt.saloonMainSignMesh;
+    saloonLangSignMesh = townBuilt.saloonLangSignMesh;
+    saloonQuestAnchorMesh = townBuilt.saloonQuestAnchorMesh;
+    saloonBuilding.position.set(-6.8, 0, 1.0);
+    saloonBuilding.rotation.y = 0.45;
+    scene.add(saloonBuilding);
+    updateSaloonQuestBoardUI();
+
+    const tailorBuilding = townBuilt.tailorBuilding;
+    tailorMainSignMesh = townBuilt.tailorMainSignMesh;
+    tailorCounterMesh = townBuilt.tailorCounterMesh;
+    tailorNPCGroup = townBuilt.tailorNPCGroup;
+    tailorBuilding.position.set(6.8, 0, 1.0);
+    tailorBuilding.rotation.y = -0.45;
+    scene.add(tailorBuilding);
+    updateTailorWorkshopUI();
+
+    const safeHouseBuilding = townBuilt.safeHouseBuilding;
+    safeHouseDoorPivot = townBuilt.safeHouseDoorPivot;
+    safeHouseMainSignMesh = townBuilt.safeHouseMainSignMesh;
+    safeHouseStreetSignMesh = townBuilt.safeHouseStreetSignMesh;
+    scene.add(safeHouseBuilding);
+
+    refreshWorldSignsHook = () => {
+      const dict = L();
+      if (saloonMainSignMesh) saloonMainSignMesh.userData.updateSign(dict.signSaloonTitle, dict.signSaloonSub);
+      if (tailorMainSignMesh) tailorMainSignMesh.userData.updateSign(dict.signTailorTitle, dict.signTailorSub);
+      if (safeHouseMainSignMesh) safeHouseMainSignMesh.userData.updateSign(dict.signSafeHouseTitle, dict.signSafeHouseSub);
+      if (safeHouseStreetSignMesh) {
+        safeHouseStreetSignMesh.userData.updateSign(dict.signSafeHouseTitle, dict.signSafeHouseSub);
+        if (safeHouseStreetSignMesh.userData.mirrorSign) {
+          safeHouseStreetSignMesh.userData.mirrorSign.userData.updateSign(dict.signSafeHouseTitle, dict.signSafeHouseSub);
+        }
+      }
+      if (saloonLangSignMesh) saloonLangSignMesh.userData.updateSign(dict.saloonLangSign, dict.saloonLangSub);
+    };
+
+
+    const UP = new THREE.Vector3(0, 1, 0);
+    const FORWARD = new THREE.Vector3(0, 0, -1);
+
+    const vrHands = { left: null, right: null };
+    let vrRevolver = null;
+
+    function getHandGamepad(handedness) {
+      const session = renderer.xr.getSession();
+      if (!session || !session.inputSources) return null;
+      for (const source of session.inputSources) {
+        if (source.handedness === handedness && source.gamepad) return source.gamepad;
+      }
+      return null;
+    }
+
+    const FX = initRevolverAndAtmosphereFX({
+      scene, camera, M, saloonBuilding, tailorBuilding, safeHouseBuilding
+    });
+    const {
+      createRevolver,
+      upgradeRevolverToGold,
+      practiceBottles,
+      moonMesh,
+      moonHaloMat,
+      moonGroup,
+      starMat,
+      stars,
+      lanternGlassMat,
+      lanternGlowMat,
+      saloonLantern,
+      tailorLantern,
+      safeHouseLantern,
+      updateAmbientParticles,
+      flashDamageVignette,
+      updateDamageVignette
+    } = FX;
+
+    // PC-revolver nede til høyre for kameraet
+    const pcRevolver = createRevolver();
+    pcRevolver.scale.setScalar(0.82);
+    pcRevolver.position.set(0.33, -0.245, -0.78);
+    pcRevolver.rotation.set(0.018, 0.07, 0.02);
+    camera.add(pcRevolver);
+
+    // VR-revolver festes til høyre kontroller når den kobles til
+    function attachRevolverToHand(controller) {
+      if (!controller.userData.revolver) {
+        const rev = createRevolver();
+        rev.scale.setScalar(0.95);
+        rev.position.set(0, -0.02, -0.03);
+        controller.add(rev);
+        controller.userData.revolver = rev;
+      }
+      vrRevolver = controller.userData.revolver;
+
+      // Skjul den enkle plassholderen slik at revolveren blir tydelig
+      const marker = controller.getObjectByName('handMarker');
+      if (marker) marker.visible = false;
+      const handle = controller.getObjectByName('handleMesh');
+      if (handle) handle.visible = false;
+    }
+
+    controllers.forEach((controller) => {
+      controller.addEventListener('connected', (e) => {
+        const data = e.data || {};
+        controller.userData.gamepad = data.gamepad || null;
+
+        if (data.handedness === 'left') vrHands.left = controller;
+        if (data.handedness === 'right') {
+          vrHands.right = controller;
+          attachRevolverToHand(controller);
+        }
+      });
+
+      controller.addEventListener('disconnected', (e) => {
+        const data = e.data || {};
+        if (data.handedness === 'right' && vrHands.right === controller) {
+          vrHands.right = null;
+          vrRevolver = null;
+        }
+        if (data.handedness === 'left' && vrHands.left === controller) {
+          vrHands.left = null;
+        }
+      });
+
+      // Høyre avtrekker = velg 3D-knapp (håndledd/skredder) eller skyt
+      controller.addEventListener('selectstart', (e) => {
+        if (!renderer.xr.isPresenting) return;
+        const data = e.data || {};
+        if (data.handedness === 'right' || (!data.handedness && controller === vrHands.right)) {
+          if (tryVRRightTriggerUI(controller)) return;
+          shoot();
+        }
+      });
+    });
+
+    renderer.xr.addEventListener('sessionstart', () => {
+      pcRevolver.visible = false;
+      const crosshair = document.getElementById('crosshair');
+      if (crosshair) crosshair.style.display = 'none';
+    });
+
+    renderer.xr.addEventListener('sessionend', () => {
+      pcRevolver.visible = true;
+      const crosshair = document.getElementById('crosshair');
+      if (crosshair) crosshair.style.display = 'block';
+    });
+
+    // --- 7b. Skyting: kule, rekyl, munningsglimt og haptikk ---
+    const shotQuat = new THREE.Quaternion();
+    const shotPos = new THREE.Vector3();
+    const shotDir = new THREE.Vector3();
+    const aimCamPos = new THREE.Vector3();
+    const aimCamDir = new THREE.Vector3();
+    const aimPoint = new THREE.Vector3();
+
+    function shoot() {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+
+      const useVR = renderer.xr.isPresenting && vrRevolver;
+      const rev = useVR ? vrRevolver : pcRevolver;
+      rev.userData.muzzle.getWorldPosition(shotPos);
+      shotDir.set(0, 0, 0);
+
+      if (useVR) {
+        rev.getWorldQuaternion(shotQuat);
+        shotDir.copy(FORWARD).applyQuaternion(shotQuat).normalize();
+      } else {
+        // På PC samles siktelinjen mot midten av skjermen
+        camera.getWorldPosition(aimCamPos);
+        camera.getWorldDirection(aimCamDir);
+        aimPoint.copy(aimCamPos).addScaledVector(aimCamDir, 14);
+        shotDir.copy(aimPoint).sub(shotPos).normalize();
+      }
+
+      spawnBullet(shotPos, shotDir);
+      notifyGunshot(shotPos);
+      fireRevolver(rev);
+      playGunshot();
+      pulseRightHaptic();
+    }
+
+    function fireRevolver(rev) {
+      if (!rev) return;
+      const data = rev.userData;
+      data.recoilVel += 7.5;
+      data.flashTimer = 0.08;
+      data.flash.visible = true;
+      data.flashLight.intensity = 22;
+    }
+
+    function updateRevolverFX(rev, dt) {
+      const data = rev.userData;
+      const spring = 320;
+      const damping = 24;
+
+      // Fjær/demper gir en kjapp rekyl som vipper opp og faller tilbake.
+      // Faste substeg gjør animasjonen stabil også på trege bildefrekvenser.
+      let remaining = Math.min(dt, 0.1);
+      while (remaining > 0) {
+        const step = Math.min(remaining, 1 / 120);
+        data.recoilVel += (-spring * data.recoilAngle - damping * data.recoilVel) * step;
+        data.recoilAngle += data.recoilVel * step;
+        remaining -= step;
+      }
+      data.recoilAngle = THREE.MathUtils.clamp(data.recoilAngle, -0.08, 0.5);
+      data.body.rotation.x = data.recoilAngle;
+      data.body.position.z = data.recoilAngle * 0.05;
+
+      if (data.flashTimer > 0) {
+        data.flashTimer = Math.max(0, data.flashTimer - dt);
+        const t = data.flashTimer / 0.08;
+        data.flash.visible = t > 0.02;
+        data.flashMat.opacity = t;
+        data.flashLight.intensity = 22 * t * t;
+        data.flash.scale.setScalar(0.7 + 0.9 * t);
+      } else if (data.flash.visible) {
+        data.flash.visible = false;
+        data.flashLight.intensity = 0;
+        data.flashMat.opacity = 0;
+      }
+    }
+
+    // Prosjektiler fjernes ved treff, bakken, livstid eller maks rekkevidde.
+    const PROJECTILE_MAX_HORIZONTAL = 120;
+    const PROJECTILE_MAX_HEIGHT = 90;
+    const bullets = [];
+    const bulletGeo = new THREE.CylinderGeometry(0.018, 0.018, 0.42, 6);
+    bulletGeo.rotateX(Math.PI / 2);
+    const bulletMat = new THREE.MeshBasicMaterial({ color: 0xffd66b, fog: false });
+    const bulletGlowGeo = new THREE.SphereGeometry(0.06, 8, 6);
+    const bulletGlowMat = new THREE.MeshBasicMaterial({
+      color: 0xffe9a8,
+      transparent: true,
+      opacity: 0.35,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      fog: false
+    });
+
+    function spawnBullet(origin, direction) {
+      const mesh = new THREE.Group();
+      mesh.add(new THREE.Mesh(bulletGeo, bulletMat));
+      const glow = new THREE.Mesh(bulletGlowGeo, bulletGlowMat);
+      glow.position.z = 0.13;
+      mesh.add(glow);
+
+      mesh.position.copy(origin);
+      mesh.quaternion.setFromUnitVectors(FORWARD, direction);
+      scene.add(mesh);
+
+      bullets.push({
+        mesh,
+        dir: direction.clone(),
+        prev: origin.clone(),
+        speed: 62,
+        life: 2.5
+      });
+    }
+
+    function removeBullet(index) {
+      // Geometri og materiale er delt mellom alle kuler, så bare scenenoden fjernes.
+      scene.remove(bullets[index].mesh);
+      bullets.splice(index, 1);
+    }
+
+    const impactPuffs = [];
+    const impactGeo = new THREE.SphereGeometry(1, 6, 5);
+
+    function spawnImpact(position, color = 0xffdf9c, size = 0.18) {
+      const mat = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.9,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        fog: false
+      });
+      const mesh = new THREE.Mesh(impactGeo, mat);
+      mesh.position.copy(position);
+      mesh.scale.setScalar(0.04);
+      scene.add(mesh);
+      impactPuffs.push({ mesh, mat, life: 0.22, maxLife: 0.22, size });
+    }
+
+    function updateImpacts(dt) {
+      for (let i = impactPuffs.length - 1; i >= 0; i--) {
+        const puff = impactPuffs[i];
+        puff.life -= dt;
+        const t = 1 - Math.max(0, puff.life) / puff.maxLife;
+        puff.mesh.scale.setScalar(0.04 + t * puff.size);
+        puff.mat.opacity = Math.max(0, 1 - t) * 0.9;
+        puff.mesh.position.y += dt * 0.4;
+        if (puff.life <= 0) {
+          // Treffeffekten fjernes helt; materialet er unikt, geometrien er delt.
+          scene.remove(puff.mesh);
+          puff.mat.dispose();
+          impactPuffs.splice(i, 1);
+        }
+      }
+    }
+
+    let targetResetTimer = 0;
+
+    function resetTargets() {
+      targetResetTimer = 0;
+      playerState.targets = 0;
+      practiceBottles.forEach((bottle) => {
+        const data = bottle.userData;
+        data.knocked = false;
+        data.vel.set(0, 0, 0);
+        data.angVel.set(0, 0, 0);
+        bottle.position.copy(data.home);
+        bottle.quaternion.copy(data.homeQuat);
+      });
+      updateStatusUI();
+    }
+
+    const segA = new THREE.Vector3();
+    const segB = new THREE.Vector3();
+    const segC = new THREE.Vector3();
+
+    function segmentPointDistance(a, b, p) {
+      segA.subVectors(b, a);
+      const lenSq = segA.lengthSq();
+      const t = lenSq > 0 ? THREE.MathUtils.clamp(segB.subVectors(p, a).dot(segA) / lenSq, 0, 1) : 0;
+      return segC.copy(a).addScaledVector(segA, t).distanceTo(p);
+    }
+
+    function knockBottle(bottle, direction) {
+      const data = bottle.userData;
+      data.knocked = true;
+      data.vel.copy(direction).multiplyScalar(2.8);
+      data.vel.y = 2.9;
+      data.vel.x += (Math.random() - 0.5) * 1.6;
+      data.vel.z += (Math.random() - 0.5) * 1.6;
+      data.angVel.set(
+        (Math.random() - 0.5) * 14,
+        (Math.random() - 0.5) * 9,
+        (Math.random() - 0.5) * 14
+      );
+
+      playerState.targets += 1;
+      updateStatusUI();
+      playBottleHit();
+
+      if (playerState.targets >= practiceBottles.length) {
+        targetResetTimer = 2.6;
+      }
+    }
+
+    const bottleWorldPos = new THREE.Vector3();
+
+    function updateBottles(dt) {
+      practiceBottles.forEach((bottle) => {
+        const data = bottle.userData;
+        if (!data.knocked) return;
+
+        data.vel.y -= 9.8 * dt;
+        bottle.position.addScaledVector(data.vel, dt);
+        bottle.rotation.x += data.angVel.x * dt;
+        bottle.rotation.y += data.angVel.y * dt;
+        bottle.rotation.z += data.angVel.z * dt;
+
+        if (bottle.position.y < 0.15) {
+          bottle.position.y = 0.15;
+          if (data.vel.y < -0.6) {
+            data.vel.y *= -0.32;
+            data.vel.x *= 0.72;
+            data.vel.z *= 0.72;
+            data.angVel.multiplyScalar(0.7);
+          } else {
+            data.vel.y = 0;
+            data.vel.x *= 0.9;
+            data.vel.z *= 0.9;
+            data.angVel.multiplyScalar(0.86);
+          }
+        }
+      });
+    }
+
+    const safeHouseDoorBulletCheckPos = new THREE.Vector3();
+
+    function updateBullets(dt) {
+      for (let i = bullets.length - 1; i >= 0; i--) {
+        const bullet = bullets[i];
+        bullet.prev.copy(bullet.mesh.position);
+        bullet.mesh.position.addScaledVector(bullet.dir, bullet.speed * dt);
+        bullet.life -= dt;
+
+        // Sjekk om kula treffer den tunge Safe House-døren på avstand
+        if (safeHouseDoorHitMeshes.length > 0) {
+          safeHouseDoorHitMeshes[0].getWorldPosition(safeHouseDoorBulletCheckPos);
+          if (
+            Math.abs(bullet.mesh.position.y - safeHouseDoorBulletCheckPos.y) < 1.08 &&
+            segmentPointDistance(bullet.prev, bullet.mesh.position, safeHouseDoorBulletCheckPos) < 0.68
+          ) {
+            spawnImpact(bullet.mesh.position, 0xffd28a, 0.16);
+            toggleSafeHouseDoor();
+            removeBullet(i);
+            continue;
+          }
+        }
+
+        let hitBottle = null;
+        let nearest = Infinity;
+        for (const bottle of practiceBottles) {
+          if (bottle.userData.knocked) continue;
+          bottle.getWorldPosition(bottleWorldPos);
+          if (segmentPointDistance(bullet.prev, bullet.mesh.position, bottleWorldPos) < 0.17) {
+            const distance = bullet.prev.distanceToSquared(bottleWorldPos);
+            if (distance < nearest) {
+              nearest = distance;
+              hitBottle = bottle;
+            }
+          }
+        }
+
+        if (hitBottle) {
+          hitBottle.getWorldPosition(bottleWorldPos);
+          spawnImpact(bottleWorldPos, 0xffe6a8, 0.2);
+          knockBottle(hitBottle, bullet.dir);
+          removeBullet(i);
+          continue;
+        }
+
+        const combatHit = findCombatHit(bullet.prev, bullet.mesh.position);
+        if (combatHit) {
+          spawnImpact(combatHit.point, 0xffcf8a, 0.18);
+          damageCombatTarget(combatHit, bullet.dir);
+          removeBullet(i);
+          continue;
+        }
+
+        const groundY = getTerrainHeight(bullet.mesh.position.x, bullet.mesh.position.z);
+        if (bullet.mesh.position.y < groundY + 0.05) {
+          spawnImpact(bullet.mesh.position, 0xd9b07c, 0.16);
+          removeBullet(i);
+          continue;
+        }
+
+        if (
+          bullet.life <= 0 ||
+          Math.abs(bullet.mesh.position.x) > PROJECTILE_MAX_HORIZONTAL ||
+          Math.abs(bullet.mesh.position.z) > PROJECTILE_MAX_HORIZONTAL ||
+          bullet.mesh.position.y > PROJECTILE_MAX_HEIGHT
+        ) {
+          removeBullet(i);
+        }
+      }
+    }
+
+    const {
+      playGunshot,
+      playBottleHit,
+      playFleshHitSound,
+      playPlayerHitSound,
+      playPlayerDeathSound,
+      playCollectSound,
+      playUpgradeSound,
+      playShopDenySound,
+      playHealSound,
+      playQuestSelectSound,
+      playQuestFanfare,
+      playDoorToggleSound,
+      playBanditShotSound,
+      updateBackgroundAmbience
+    } = initWesternAudio(audioCtx, controllers, () => nightAmount);
+
+    function pulseRightHaptic() {
+      if (!renderer.xr.isPresenting) return;
+      const gamepad = getHandGamepad('right');
+      const actuator = gamepad && gamepad.hapticActuators && gamepad.hapticActuators[0];
+      if (actuator && typeof actuator.pulse === 'function') {
+        try {
+          actuator.pulse(0.9, 60);
+        } catch (err) {
+          // Haptikk er valgfritt
+        }
+      }
+    }
+
+    // --- 7e. Bevegelse: venstre spak i VR, WASD/piltaster på PC ---
+    const VR_MOVE_SPEED = 2.7;
+    const PC_MOVE_SPEED = 6.5;
+    const PLAY_AREA_LIMIT = 85;
+    const SNAP_TURN_ANGLE = Math.PI / 6;
+    const SNAP_TURN_COOLDOWN = 0.35;
+
+    let snapTurnCooldown = 0;
+    let snapTurnReady = true;
+
+    const moveForward = new THREE.Vector3();
+    const moveRight = new THREE.Vector3();
+    const moveVector = new THREE.Vector3();
+
+    function clampPlayerRig() {
+      playerRig.position.x = THREE.MathUtils.clamp(playerRig.position.x, -PLAY_AREA_LIMIT, PLAY_AREA_LIMIT);
+      playerRig.position.z = THREE.MathUtils.clamp(playerRig.position.z, -PLAY_AREA_LIMIT, PLAY_AREA_LIMIT);
+      playerRig.position.y = getTerrainHeight(playerRig.position.x, playerRig.position.z);
+    }
+
+    function moveInLookDirection(strafe, forwardAmount, speed, dt) {
+      camera.getWorldDirection(moveForward);
+      moveForward.y = 0;
+      if (moveForward.lengthSq() < 1e-6) return;
+      moveForward.normalize();
+      moveRight.crossVectors(moveForward, UP).normalize();
+
+      moveVector.set(0, 0, 0);
+      moveVector.addScaledVector(moveForward, forwardAmount);
+      moveVector.addScaledVector(moveRight, strafe);
+      if (moveVector.lengthSq() > 1) moveVector.normalize();
+      if (moveVector.lengthSq() === 0) return;
+
+      playerRig.position.addScaledVector(moveVector, speed * dt);
+      clampPlayerRig();
+    }
+
+    function updateVRMovement(dt) {
+      if (!renderer.xr.isPresenting) return;
+      const gamepad = getHandGamepad('left') || (vrHands.left && vrHands.left.userData.gamepad) || null;
+      if (!gamepad || !gamepad.axes) return;
+
+      const axisX = gamepad.axes[2] || 0;
+      const axisY = gamepad.axes[3] || 0;
+      const strafe = Math.abs(axisX) > 0.15 ? axisX : 0;
+      const forwardAmount = Math.abs(axisY) > 0.15 ? -axisY : 0;
+      if (strafe === 0 && forwardAmount === 0) return;
+
+      moveInLookDirection(strafe, forwardAmount, VR_MOVE_SPEED, dt);
+    }
+
+    const pcKeys = Object.create(null);
+
+    function updatePCMovement(dt) {
+      if (renderer.xr.isPresenting) return;
+
+      const forwardKey = (pcKeys.KeyW || pcKeys.ArrowUp) ? 1 : 0;
+      const backKey = (pcKeys.KeyS || pcKeys.ArrowDown) ? 1 : 0;
+      const rightKey = (pcKeys.KeyD || pcKeys.ArrowRight) ? 1 : 0;
+      const leftKey = (pcKeys.KeyA || pcKeys.ArrowLeft) ? 1 : 0;
+
+      const forwardAmount = forwardKey - backKey;
+      const strafe = rightKey - leftKey;
+      if (forwardAmount === 0 && strafe === 0) return;
+
+      moveInLookDirection(strafe, forwardAmount, PC_MOVE_SPEED, dt);
+    }
+
+    const rigCamWorld = new THREE.Vector3();
+    const rigCamLocal = new THREE.Vector3();
+    // Pre-allokert: snap-turn skal ikke lage et nytt Vector3-objekt.
+    const snapTurnRotated = new THREE.Vector3();
+
+    function snapTurn(direction) {
+      // Roter rundt kameraets posisjon slik at spilleren ikke forskyves i rommet
+      playerRig.updateMatrixWorld(true);
+      camera.getWorldPosition(rigCamWorld);
+      rigCamLocal.copy(camera.position);
+
+      playerRig.rotation.y += direction * SNAP_TURN_ANGLE;
+
+      const rotated = snapTurnRotated.copy(rigCamLocal).applyAxisAngle(UP, playerRig.rotation.y);
+      playerRig.position.x = rigCamWorld.x - rotated.x;
+      playerRig.position.z = rigCamWorld.z - rotated.z;
+      clampPlayerRig();
+    }
+
+    function updateSnapTurn(dt) {
+      if (!renderer.xr.isPresenting) {
+        snapTurnCooldown = 0;
+        snapTurnReady = true;
+        return;
+      }
+
+      snapTurnCooldown = Math.max(0, snapTurnCooldown - dt);
+      const gamepad = getHandGamepad('right') || (vrHands.right && vrHands.right.userData.gamepad) || null;
+      const axis = gamepad && gamepad.axes ? (gamepad.axes[2] || 0) : 0;
+
+      if (Math.abs(axis) < 0.35) snapTurnReady = true;
+
+      if (snapTurnReady && snapTurnCooldown <= 0 && Math.abs(axis) > 0.65) {
+        snapTurn(axis > 0 ? -1 : 1);
+        snapTurnReady = false;
+        snapTurnCooldown = SNAP_TURN_COOLDOWN;
+      }
+    }
+
+    const moveKeyCodes = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+
+    window.addEventListener('keydown', (e) => {
+      pcKeys[e.code] = true;
+      const keyLower = typeof e.key === 'string' ? e.key.toLowerCase() : '';
+      if (moveKeyCodes.includes(e.code)) e.preventDefault();
+      if ((e.code === 'KeyE' || e.code === 'KeyH' || keyLower === 'e' || keyLower === 'h') && !e.repeat && !renderer.xr.isPresenting) {
+        tryEatFood();
+      }
+      if ((e.code === 'KeyF' || keyLower === 'f') && !e.repeat && !renderer.xr.isPresenting) {
+        tryKeyFSafeHouseDoor();
+      }
+      if ((e.code === 'KeyR' || keyLower === 'r') && !renderer.xr.isPresenting) resetTargets();
+      if ((e.code === 'KeyN' || keyLower === 'n') && !renderer.xr.isPresenting) toggleDayNight();
+    });
+
+    window.addEventListener('keyup', (e) => {
+      pcKeys[e.code] = false;
+    });
+
+    window.addEventListener('blur', () => {
+      Object.keys(pcKeys).forEach((code) => {
+        pcKeys[code] = false;
+      });
+    });
+
+    // =========================================================================
+    // 8. DAG/NATTSYKLUS, HELSE, SKADE OG ATMOSFÆRE
+    // =========================================================================
+    const DAY_DURATION = 90;
+    const NIGHT_DURATION = 60;
+    const FULL_DAY_CYCLE = DAY_DURATION + NIGHT_DURATION;
+    const FOREST_BOUNDS = { minX: -26, maxX: 26, minZ: -70, maxZ: -22 };
+
+    let cycleTime = 0;
+    let isNight = false;
+    let nightAmount = 0;
+    let worldTime = 0;
+    let gunshotAlertTimer = 0;
+    let playerInvulnerableTimer = 0;
+    let damageVignetteTimer = 0;
+    let lastVRDayNightToggle = 0;
+
+    // Pre-allokerte hjelpeobjekter for animasjonsløkken. Løkken skal ikke
+    // opprette nye Vector3/Matrix4/Raycaster-objekter (GC-hakking på Quest).
+    const lastGunshotPosition = new THREE.Vector3();
+    const playerHeadPosition = new THREE.Vector3();
+    const playerChestPosition = new THREE.Vector3();
+    const combatCenter = new THREE.Vector3();
+    const nightBurnStartPosition = new THREE.Vector3();
+    const nightDeathImpactPosition = new THREE.Vector3();
+    const nightBurnImpactPosition = new THREE.Vector3();
+    const nightAttackImpactPosition = new THREE.Vector3();
+    const nightRespawnPosition = new THREE.Vector3();
+    const nightSpawnPosition = new THREE.Vector3();
+    const combatHitResult = { type: '', entity: null, point: new THREE.Vector3() };
+    let combatHitFound = false;
+    let combatHitBestDistance = Infinity;
+
+    const daySkyColor = new THREE.Color(0xd99b66);
+    const nightSkyColor = new THREE.Color(0x060b16);
+    const dayFogColor = new THREE.Color(0xe2b280);
+    const nightFogColor = new THREE.Color(0x0c1424);
+    const dayHemiSkyColor = new THREE.Color(0xffebd2);
+    const nightHemiSkyColor = new THREE.Color(0x465c8a);
+    const dayHemiGroundColor = new THREE.Color(0xc28a52);
+    const nightHemiGroundColor = new THREE.Color(0x231d30);
+    const daySunColor = new THREE.Color(0xffd699);
+    const nightSunColor = new THREE.Color(0x8fb0ff);
+
+    // --- 8a. Sol, måne med glorie og stjernehimmel ---
+    sunMesh.material.transparent = true;
+    sunMesh.material.opacity = 0.92;
+
+    // Myk radial glorie-tekstur delt mellom måneglorie, nattøyne og svevende partikler
+    const lanterns = [saloonLantern, tailorLantern];
+    const dayWindowColor = new THREE.Color(0x526574);
+    const nightWindowColor = new THREE.Color(0xffcf70);
+
+    let baseLanternIntensity = 0.35;
+    let baseSafeLanternIntensity = 1.6;
+    let baseCampfireIntensity = 2.4;
+
+    function applyDayNightLighting(amount) {
+      const night = THREE.MathUtils.clamp(amount, 0, 1);
+
+      // Oppdater Sky-shaderen og solposisjonen for varm solnedgang om dagen og dyp natt
+      applySkyShaderParams(sky, night, skySunVec);
+      sky.material.opacity = 1;
+
+      // Bytte mellom forhåndsbakt dag- og natt-PMREM for ekte PBR-refleksjon ved 0 ms kostnad
+      scene.environment = night > 0.55 ? nightEnvRT.texture : dayEnvRT.texture;
+      scene.environmentIntensity = THREE.MathUtils.lerp(0.88, 0.42, night);
+      renderer.toneMappingExposure = THREE.MathUtils.lerp(1.06, 0.92, night);
+
+      scene.background.copy(daySkyColor).lerp(nightSkyColor, night);
+      scene.fog.color.copy(dayFogColor).lerp(nightFogColor, night);
+      scene.fog.near = THREE.MathUtils.lerp(48, 26, night);
+      scene.fog.far = THREE.MathUtils.lerp(285, 165, night);
+
+      hemiLight.color.copy(dayHemiSkyColor).lerp(nightHemiSkyColor, night);
+      hemiLight.groundColor.copy(dayHemiGroundColor).lerp(nightHemiGroundColor, night);
+      hemiLight.intensity = THREE.MathUtils.lerp(0.92, 0.46, night);
+
+      sunLight.color.copy(daySunColor).lerp(nightSunColor, night);
+      sunLight.intensity = THREE.MathUtils.lerp(1.9, 0.55, night);
+      if (night < 0.85) {
+        sunLight.position.set(
+          skySunVec.x * 68,
+          Math.max(14, skySunVec.y * 85),
+          skySunVec.z * 68
+        );
+      } else {
+        sunLight.position.set(-46, 54, -76);
+      }
+
+      sunMesh.position.copy(skySunVec).multiplyScalar(225);
+      sunMesh.material.opacity = Math.max(0, 1 - night * 1.35) * 0.9;
+      sunMesh.visible = night < 0.75;
+
+      moonMesh.material.opacity = night;
+      moonHaloMat.opacity = night * 0.52;
+      moonGroup.visible = night > 0.02;
+
+      starMat.opacity = Math.max(0, (night - 0.18) / 0.82) * 0.95;
+      stars.visible = night > 0.18;
+
+      // Vinduer reflekterer himmelen om dagen og lyser varmt innenfra om natten
+      windowMat.color.copy(dayWindowColor).lerp(nightWindowColor, night);
+      windowMat.emissiveIntensity = THREE.MathUtils.lerp(0.14, 1.35, night);
+
+      lanternGlassMat.opacity = 0.58 + 0.42 * night;
+      lanternGlowMat.opacity = 0.18 + night * 0.68;
+      baseLanternIntensity = 0.35 + night * 7.2;
+      baseSafeLanternIntensity = 1.65 + night * 5.8;
+      baseCampfireIntensity = 2.2 + night * 5.6;
+    }
+
+    // Naturlig flakkende lys på lykter og leirbål (kun skalarmatematikk i animasjonsløkken)
+    function updateFlickeringLights(t) {
+      const f1 = 1.0 + Math.sin(t * 7.3) * 0.07 + Math.sin(t * 17.9) * 0.04;
+      const f2 = 1.0 + Math.sin(t * 8.1 + 1.9) * 0.07 + Math.cos(t * 19.3) * 0.04;
+      saloonLantern.light.intensity = baseLanternIntensity * f1;
+      tailorLantern.light.intensity = baseLanternIntensity * f2;
+      safeHouseLantern.light.intensity = baseSafeLanternIntensity * (0.97 + Math.sin(t * 6.4 + 0.7) * 0.05);
+
+      const fireFlicker = 1.0 + Math.sin(t * 11.4) * 0.14 + Math.cos(t * 23.7) * 0.08;
+      if (campfireLight) {
+        campfireLight.intensity = baseCampfireIntensity * fireFlicker;
+      }
+      if (campfireEmberMat) {
+        campfireEmberMat.emissiveIntensity = 1.1 + Math.sin(t * 5.5) * 0.28 + nightAmount * 0.45;
+      }
+      for (let i = 0; i < campfireFlameMeshes.length; i++) {
+        const fl = campfireFlameMeshes[i];
+        const ph = fl.userData.phase;
+        const sY = 0.86 + Math.sin(t * 12.5 + ph) * 0.22 + Math.cos(t * 21.0 + ph) * 0.1;
+        const sXZ = 0.92 + Math.cos(t * 10.2 + ph) * 0.1;
+        fl.scale.set(sXZ, sY, sXZ);
+        fl.position.y = fl.userData.baseH * (0.9 + 0.1 * sY);
+        fl.rotation.z = Math.sin(t * 8.6 + ph) * 0.12;
+      }
+    }
+
+    // --- 8c. Tidssyklus og bytte mellom dag og natt ---
+    function setTimeOfDay(night, immediate = false) {
+      if (isNight === night) return;
+      isNight = night;
+      isNightStateFlag = night;
+      if (immediate) nightAmount = night ? 1 : 0;
+      updateStatusUI();
+
+      if (night) {
+        for (const deer of deerList) deer.group.visible = false;
+        for (const bandit of banditList) {
+          bandit.active = false;
+          bandit.group.visible = false;
+        }
+        spawnNightEnemies();
+      } else {
+        startNightEnemiesBurning();
+        resetBanditsForDay();
+        for (const deer of deerList) {
+          deer.group.visible = deer.alive;
+        }
+      }
+
+      applyDayNightLighting(nightAmount);
+    }
+
+    function toggleDayNight() {
+      if (isNight) {
+        cycleTime = 0;
+        setTimeOfDay(false, true);
+      } else {
+        cycleTime = DAY_DURATION;
+        setTimeOfDay(true, true);
+      }
+    }
+
+    function updateDayNight(dt) {
+      cycleTime += dt;
+      if (cycleTime >= FULL_DAY_CYCLE) cycleTime -= FULL_DAY_CYCLE;
+
+      const shouldBeNight = cycleTime >= DAY_DURATION;
+      if (shouldBeNight !== isNight) setTimeOfDay(shouldBeNight, false);
+
+      const target = isNight ? 1 : 0;
+      nightAmount += (target - nightAmount) * (1 - Math.exp(-dt / 2.2));
+      applyDayNightLighting(nightAmount);
+    }
+
+    function notifyGunshot(position) {
+      lastGunshotPosition.copy(position);
+      gunshotAlertTimer = 0.6;
+    }
+
+    // --- Mat-spising (+35 HP) og Skredder-interaksjon (innenfor 6 meter) ---
+    function tryEatFood() {
+      if (playerState.food <= 0 || playerState.health >= 100) return false;
+      playerState.food -= 1;
+      playerState.health = Math.min(100, playerState.health + 35);
+      updateStatusUI();
+      playHealSound();
+      return true;
+    }
+
+    const uiRaycaster = new THREE.Raycaster();
+    uiRaycaster.near = 0.01;
+    uiRaycaster.far = 14;
+    const uiTempMatrix = new THREE.Matrix4();
+    const uiPointerNDC = new THREE.Vector2();
+    const tailorCounterWorldPos = new THREE.Vector3();
+    const saloonQuestWorldPos = new THREE.Vector3();
+    const playerCheckWorldPos = new THREE.Vector3();
+    const bottleCheckWorldPos = new THREE.Vector3();
+    const bottleRayOffset = new THREE.Vector3();
+
+    function isPlayerNearTailorCounter() {
+      if (!tailorCounterMesh) return false;
+      tailorCounterMesh.getWorldPosition(tailorCounterWorldPos);
+      camera.getWorldPosition(playerCheckWorldPos);
+      const camDist = Math.hypot(
+        playerCheckWorldPos.x - tailorCounterWorldPos.x,
+        playerCheckWorldPos.z - tailorCounterWorldPos.z
+      );
+      const rigDist = Math.hypot(
+        playerRig.position.x - tailorCounterWorldPos.x,
+        playerRig.position.z - tailorCounterWorldPos.z
+      );
+      return Math.min(camDist, rigDist) <= 6.0;
+    }
+
+    function isPlayerNearSaloonQuestBoard() {
+      if (!saloonQuestAnchorMesh) return false;
+      saloonQuestAnchorMesh.getWorldPosition(saloonQuestWorldPos);
+      camera.getWorldPosition(playerCheckWorldPos);
+      const camDist = Math.hypot(
+        playerCheckWorldPos.x - saloonQuestWorldPos.x,
+        playerCheckWorldPos.z - saloonQuestWorldPos.z
+      );
+      const rigDist = Math.hypot(
+        playerRig.position.x - saloonQuestWorldPos.x,
+        playerRig.position.z - saloonQuestWorldPos.z
+      );
+      return Math.min(camDist, rigDist) <= 6.0;
+    }
+
+    let lastDoorToggleMs = 0;
+
+    function toggleSafeHouseDoor() {
+      const nowMs = performance.now();
+      if (nowMs - lastDoorToggleMs < 180) return;
+      lastDoorToggleMs = nowMs;
+      safeHouseDoorOpen = !safeHouseDoorOpen;
+      playDoorToggleSound(safeHouseDoorOpen);
+    }
+
+    function isPlayerNearSafeHouseDoor(maxDist = 7.5) {
+      camera.getWorldPosition(playerCheckWorldPos);
+      const camDist = Math.hypot(
+        playerCheckWorldPos.x - safeHouseDoorwayWorld.x,
+        playerCheckWorldPos.z - safeHouseDoorwayWorld.z
+      );
+      const rigDist = Math.hypot(
+        playerRig.position.x - safeHouseDoorwayWorld.x,
+        playerRig.position.z - safeHouseDoorwayWorld.z
+      );
+      return isPlayerInHidingZone() || Math.min(camDist, rigDist) <= maxDist;
+    }
+
+    function tryKeyFSafeHouseDoor() {
+      if (isPlayerNearSafeHouseDoor(14.0)) {
+        toggleSafeHouseDoor();
+      }
+    }
+
+    function isPracticeBottleCloserOnRay(ray, boardHitDistance) {
+      for (const bottle of practiceBottles) {
+        if (bottle.userData.knocked) continue;
+        bottle.getWorldPosition(bottleCheckWorldPos);
+        const distAlong = bottleRayOffset.copy(bottleCheckWorldPos).sub(ray.origin).dot(ray.direction);
+        if (distAlong > 0 && distAlong < boardHitDistance) {
+          const perpDist = ray.distanceToPoint(bottleCheckWorldPos);
+          if (perpDist < 0.16) return true;
+        }
+      }
+      return false;
+    }
+
+    function setQuestBoardFeedback(messageKey, isSuccess, duration = 3.2, arg = null) {
+      questBoardMessageKey = messageKey;
+      questBoardMessageArg = arg;
+      questBoardMessageSuccess = isSuccess;
+      questBoardTimer = duration;
+      updateSaloonQuestBoardUI();
+    }
+
+    function selectSaloonQuest(quest) {
+      if (!quest) return;
+
+      if (completedQuests.includes(quest.id)) {
+        setQuestBoardFeedback('done_already', false, 3.0);
+        playShopDenySound();
+        return;
+      }
+
+      if (activeQuest && activeQuest.id === quest.id) {
+        setQuestBoardFeedback('active_now', true, 3.0, quest);
+        playQuestSelectSound();
+        return;
+      }
+
+      activeQuest = quest;
+      questProgress = questProgressMap[quest.id] || 0;
+
+      if (quest.id === 'bandit_clear' && !isNight) {
+        for (const bandit of banditList) {
+          if (!bandit.alive && (!bandit.respawnTimer || bandit.respawnTimer > 6)) {
+            bandit.respawnTimer = 4;
+          }
+        }
+      }
+
+      setQuestBoardFeedback('accepted', true, 3.2, quest);
+      updateStatusUI();
+      playQuestSelectSound();
+    }
+
+    function completeActiveQuest() {
+      if (!activeQuest) return;
+      const finished = activeQuest;
+      if (!completedQuests.includes(finished.id)) {
+        completedQuests.push(finished.id);
+      }
+      questProgressMap[finished.id] = finished.goal;
+      activeQuest = null;
+      questProgress = 0;
+
+      if (finished.id === 'deer_hunt') {
+        playerState.food += 2;
+        playerState.pelt += 2;
+        hasSheriffStar = true;
+        sheriffStarBadge.visible = true;
+        setQuestBoardFeedback('reward_deer', true, 4.5);
+      } else if (finished.id === 'bandit_clear') {
+        weaponDamage = 2;
+        hasGoldenRevolver = true;
+        upgradeRevolverToGold();
+        setQuestBoardFeedback('reward_bandit', true, 4.5);
+      } else if (finished.id === 'night_guardian') {
+        hasLegendTitle = true;
+        playerState.health = 100;
+        setQuestBoardFeedback('reward_night', true, 4.5);
+      }
+
+      updateStatusUI();
+      playQuestFanfare();
+    }
+
+    function recordQuestKill(targetType) {
+      if (!activeQuest || activeQuest.targetType !== targetType) return;
+      questProgress += 1;
+      questProgressMap[activeQuest.id] = questProgress;
+
+      if (questProgress >= activeQuest.goal) {
+        completeActiveQuest();
+      } else {
+        updateStatusUI();
+      }
+    }
+
+    function setTailorFeedback(messageKey, isSuccess, duration = 3.0) {
+      tailorStatusMessageKey = messageKey;
+      tailorStatusIsSuccess = isSuccess;
+      tailorStatusTimer = duration;
+      updateTailorWorkshopUI();
+    }
+
+    function purchaseTailorOutfit(outfit) {
+      if (!outfit) return;
+
+      if (currentOutfitTier >= outfit.level) {
+        const key = currentOutfitTier === outfit.level ? 'same' : 'better';
+        setTailorFeedback(key, false, 3.0);
+        playShopDenySound();
+        return;
+      }
+
+      if (playerState.pelt < outfit.cost) {
+        setTailorFeedback('no_pelts', false, 3.0);
+        playShopDenySound();
+        return;
+      }
+
+      playerState.pelt -= outfit.cost;
+      currentOutfitTier = outfit.level;
+      damageMultiplier = outfit.damageMultiplier;
+      if (outfit.nightMonsterDamage > nightMonsterDamage) {
+        nightMonsterDamage = outfit.nightMonsterDamage;
+      }
+      updateLeftSleeveAppearance(currentOutfitTier);
+      setTailorFeedback('crafted', true, 3.0);
+      updateStatusUI();
+      playUpgradeSound();
+    }
+
+    function setRayFromVRController(controller) {
+      controller.updateMatrixWorld(true);
+      uiTempMatrix.identity().extractRotation(controller.matrixWorld);
+      uiRaycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+      uiRaycaster.ray.direction.set(0, 0, -1).applyMatrix4(uiTempMatrix).normalize();
+    }
+
+    function tryRayBoardInteractions() {
+      // 1. Klikk på 3D-språkskiltet på Saloonen (EN / NO)
+      if (worldLangButtonMeshes.length > 0) {
+        const langHits = uiRaycaster.intersectObjects(worldLangButtonMeshes, false);
+        if (langHits.length > 0 && langHits[0].distance <= 9.0) {
+          toggleLanguage();
+          playQuestSelectSound();
+          return true;
+        }
+      }
+
+      // 2. Klikk på den tunge Safe House-tredøren (åpne/lukke uten å bruke skudd nær døren)
+      if (isPlayerNearSafeHouseDoor(8.5) && safeHouseDoorHitMeshes.length > 0) {
+        const doorHits = uiRaycaster.intersectObjects(safeHouseDoorHitMeshes, false);
+        if (doorHits.length > 0) {
+          toggleSafeHouseDoor();
+          return true;
+        }
+      }
+
+      // 3. Skredder-butikken (innenfor 6m)
+      if (isPlayerNearTailorCounter()) {
+        const btnHits = uiRaycaster.intersectObjects(tailorButtonMeshes, false);
+        if (btnHits.length > 0) {
+          purchaseTailorOutfit(btnHits[0].object.userData.outfit);
+          return true;
+        }
+        const shieldHits = uiRaycaster.intersectObjects(tailorBlockHitMeshes, false);
+        if (shieldHits.length > 0) {
+          return true;
+        }
+      }
+
+      // 4. Sheriffens oppdragstavle utenfor Saloonen (innenfor 6m)
+      if (isPlayerNearSaloonQuestBoard()) {
+        const qHits = uiRaycaster.intersectObjects(saloonQuestButtonMeshes, false);
+        if (qHits.length > 0 && !isPracticeBottleCloserOnRay(uiRaycaster.ray, qHits[0].distance)) {
+          selectSaloonQuest(qHits[0].object.userData.quest);
+          return true;
+        }
+        const qShieldHits = uiRaycaster.intersectObjects(saloonQuestBlockMeshes, false);
+        if (qShieldHits.length > 0 && !isPracticeBottleCloserOnRay(uiRaycaster.ray, qShieldHits[0].distance)) {
+          return true;
+        }
+      }
+
+      return false;
+    }
+
+    function tryVRRightTriggerUI(controller) {
+      setRayFromVRController(controller);
+
+      // 1. Sjekk klikk på spiseknapp eller EN/NO-knapp på venstre håndledd
+      leftWristRig.updateMatrixWorld(true);
+      if (uiRaycaster.intersectObject(langWristButton, false).length > 0) {
+        toggleLanguage();
+        playQuestSelectSound();
+        return true;
+      }
+      if (uiRaycaster.intersectObject(eatWristButton, false).length > 0) {
+        tryEatFood();
+        return true;
+      }
+
+      // 2. Sjekk klikk på skredder, oppdragstavle, Safe House-dør eller språkskilt
+      return tryRayBoardInteractions();
+    }
+
+    function tryVRLeftTriggerShopUI(controller) {
+      setRayFromVRController(controller);
+      return tryRayBoardInteractions();
+    }
+
+    function tryPCShopInteraction(clientX, clientY) {
+      // Sjekk først der musepekeren klikket, deretter midtsiktet (#crosshair)
+      uiPointerNDC.set(
+        (clientX / window.innerWidth) * 2 - 1,
+        -(clientY / window.innerHeight) * 2 + 1
+      );
+      uiRaycaster.setFromCamera(uiPointerNDC, camera);
+      if (tryRayBoardInteractions()) return true;
+
+      uiPointerNDC.set(0, 0);
+      uiRaycaster.setFromCamera(uiPointerNDC, camera);
+      if (tryRayBoardInteractions()) return true;
+
+      return false;
+    }
+
+    // --- 8f. Spillerens helse, skade og gjenoppliving ---
+    function updatePlayerBodyPoints() {
+      camera.getWorldPosition(playerHeadPosition);
+      playerChestPosition.copy(playerHeadPosition);
+      playerChestPosition.y -= 0.45;
+    }
+
+    function damagePlayer(amount) {
+      if (playerInvulnerableTimer > 0) return;
+
+      const finalDamage = Math.max(1, Math.round(amount * damageMultiplier));
+      playerState.health = Math.max(0, playerState.health - finalDamage);
+      updateStatusUI();
+      playPlayerHitSound();
+      flashDamageVignette();
+
+      if (playerState.health <= 0) {
+        handlePlayerDeath();
+      }
+    }
+
+    function handlePlayerDeath() {
+      playPlayerDeathSound();
+      flashDamageVignette(0.65);
+
+      playerState.health = 100;
+      playerState.food = Math.floor(playerState.food / 2);
+      playerState.pelt = Math.floor(playerState.pelt / 2);
+
+      playerRig.position.set(0, 0, 14.5);
+      playerRig.rotation.set(0, 0, 0);
+      resetPCCameraPitch();
+
+      playerInvulnerableTimer = 2;
+      updateStatusUI();
+    }
+
+    function updatePlayerStatus(dt) {
+      if (playerInvulnerableTimer > 0) {
+        playerInvulnerableTimer = Math.max(0, playerInvulnerableTimer - dt);
+      }
+      if (gunshotAlertTimer > 0) {
+        gunshotAlertTimer = Math.max(0, gunshotAlertTimer - dt);
+      }
+    }
+
+    applyDayNightLighting(0);
+
+    // --- 8g. Enkle delte geometrier og materialer for alle skapninger ---
+    function faceToward(group, targetX, targetZ) {
+      const dx = targetX - group.position.x;
+      const dz = targetZ - group.position.z;
+      if (dx * dx + dz * dz < 0.0001) return;
+      group.rotation.y = Math.atan2(-dx, -dz);
+    }
+
+    function moveEntityToward(group, targetX, targetZ, speed, dt, stopDistance = 0) {
+      const dx = targetX - group.position.x;
+      const dz = targetZ - group.position.z;
+      const distance = Math.hypot(dx, dz);
+      if (distance < 0.0001) return distance;
+
+      const step = Math.min(speed * dt, Math.max(0, distance - stopDistance));
+      if (step <= 0) return distance;
+
+      group.position.x += (dx / distance) * step;
+      group.position.z += (dz / distance) * step;
+      faceToward(group, targetX, targetZ);
+      return distance;
+    }
+
+    // --- 8h. Opprett og plasser skapningene (følger terrenghøyden) ---
+    const deerList = [];
+    const wolfList = [];
+    const banditList = [];
+    const nightEnemies = [];
+
+    const deerHomes = [
+      new THREE.Vector3(-12, 0, -32),
+      new THREE.Vector3(9, 0, -44),
+      new THREE.Vector3(-6, 0, -56),
+      new THREE.Vector3(16, 0, -63)
+    ];
+
+    function chooseDeerTarget(deer) {
+      const home = deer.home;
+      deer.wanderTarget.set(
+        THREE.MathUtils.clamp(home.x + (Math.random() - 0.5) * 20, FOREST_BOUNDS.minX, FOREST_BOUNDS.maxX),
+        0,
+        THREE.MathUtils.clamp(home.z + (Math.random() - 0.5) * 20, FOREST_BOUNDS.minZ, FOREST_BOUNDS.maxZ)
+      );
+    }
+
+    function createDeerAt(x, z) {
+      const group = createDeerModel();
+      group.position.set(x, getTerrainHeight(x, z), z);
+      group.rotation.y = Math.random() * Math.PI * 2;
+      scene.add(group);
+
+      const deer = {
+        kind: 'deer',
+        group,
+        alive: true,
+        hp: 2,
+        state: 'wander',
+        home: new THREE.Vector3(x, 0, z),
+        wanderTarget: new THREE.Vector3(),
+        wanderPause: Math.random() * 2,
+        fleeTimer: 0,
+        respawnTimer: 0,
+        deathTimer: 0,
+        stride: Math.random() * Math.PI * 2
+      };
+
+      chooseDeerTarget(deer);
+      deerList.push(deer);
+    }
+
+    const wolfHomes = [
+      new THREE.Vector3(-18, 0, -48),
+      new THREE.Vector3(14, 0, -30)
+    ];
+
+    function chooseWolfTarget(wolf) {
+      const home = wolf.home;
+      wolf.wanderTarget.set(
+        THREE.MathUtils.clamp(home.x + (Math.random() - 0.5) * 14, FOREST_BOUNDS.minX, FOREST_BOUNDS.maxX),
+        0,
+        THREE.MathUtils.clamp(home.z + (Math.random() - 0.5) * 14, FOREST_BOUNDS.minZ, FOREST_BOUNDS.maxZ)
+      );
+    }
+
+    function createWolfAt(x, z) {
+      const group = createWolfModel();
+      group.position.set(x, getTerrainHeight(x, z), z);
+      group.rotation.y = Math.random() * Math.PI * 2;
+      scene.add(group);
+
+      const wolf = {
+        kind: 'wolf',
+        group,
+        alive: true,
+        hp: 2,
+        state: 'patrol',
+        home: new THREE.Vector3(x, 0, z),
+        wanderTarget: new THREE.Vector3(),
+        wanderPause: Math.random() * 2,
+        attackCooldown: 0,
+        respawnTimer: 0,
+        deathTimer: 0,
+        stride: Math.random() * Math.PI * 2
+      };
+
+      chooseWolfTarget(wolf);
+      wolfList.push(wolf);
+    }
+
+    const banditPosts = [
+      new THREE.Vector3(-26, 0, 2),
+      new THREE.Vector3(28, 0, -14),
+      new THREE.Vector3(-44, 0, -42)
+    ];
+
+    function createBanditAt(position, index) {
+      const group = createBanditModel();
+      const spawnGrounded = position.clone();
+      spawnGrounded.y = getTerrainHeight(spawnGrounded.x, spawnGrounded.z);
+      group.position.copy(spawnGrounded);
+      faceToward(group, 0, 8);
+      scene.add(group);
+
+      const bandit = {
+        kind: 'bandit',
+        group,
+        muzzle: group.userData.muzzle,
+        alive: true,
+        hp: 3,
+        active: true,
+        cooldown: 1.2 + index * 0.45,
+        spawn: spawnGrounded,
+        baseYaw: group.rotation.y,
+        deathTimer: 0
+      };
+
+      banditList.push(bandit);
+    }
+
+    const nightSpawnPoints = [
+      new THREE.Vector3(-30, 0, -8),
+      new THREE.Vector3(30, 0, -4),
+      new THREE.Vector3(-20, 0, -45),
+      new THREE.Vector3(18, 0, -50),
+      new THREE.Vector3(0, 0, -65)
+    ];
+
+    function createNightEnemyAt(index) {
+      const group = createNightEnemyModel();
+      const sp = nightSpawnPoints[index];
+      group.position.set(sp.x, getTerrainHeight(sp.x, sp.z), sp.z);
+      group.visible = false;
+      scene.add(group);
+
+      const enemy = {
+        kind: 'night',
+        group,
+        alive: false,
+        hp: 3,
+        burning: false,
+        burnTimer: 0,
+        attackCooldown: 0,
+        spawnIndex: index,
+        deathTimer: 0
+      };
+
+      nightEnemies.push(enemy);
+    }
+
+    // --- 8i. Respawn, dagsreset og nattspawn ---
+    function respawnDeer(deer) {
+      let x = 0;
+      let z = 0;
+      for (let attempt = 0; attempt < 10; attempt++) {
+        x = THREE.MathUtils.randFloat(FOREST_BOUNDS.minX + 2, FOREST_BOUNDS.maxX - 2);
+        z = THREE.MathUtils.randFloat(FOREST_BOUNDS.minZ + 2, FOREST_BOUNDS.maxZ - 2);
+        const distance = Math.hypot(x - playerRig.position.x, z - playerRig.position.z);
+        if (distance > 15) break;
+      }
+
+      deer.alive = true;
+      deer.hp = 2;
+      deer.state = 'wander';
+      deer.deathTimer = 0;
+      deer.respawnTimer = 0;
+      deer.fleeTimer = 0;
+      deer.wanderPause = 0.5 + Math.random() * 2;
+      deer.home.set(x, 0, z);
+      deer.group.position.set(x, getTerrainHeight(x, z), z);
+      deer.group.rotation.set(0, Math.random() * Math.PI * 2, 0);
+      deer.group.scale.setScalar(1);
+      deer.group.visible = !isNight;
+      animateQuadrupedLegs(deer.group, 0, 0);
+      chooseDeerTarget(deer);
+    }
+
+    function respawnWolf(wolf) {
+      wolf.alive = true;
+      wolf.hp = 2;
+      wolf.state = 'patrol';
+      wolf.deathTimer = 0;
+      wolf.respawnTimer = 0;
+      wolf.attackCooldown = 0;
+      wolf.wanderPause = 0.5 + Math.random() * 2;
+      const wx = THREE.MathUtils.clamp(wolf.home.x + (Math.random() - 0.5) * 14, FOREST_BOUNDS.minX, FOREST_BOUNDS.maxX);
+      const wz = THREE.MathUtils.clamp(wolf.home.z + (Math.random() - 0.5) * 14, FOREST_BOUNDS.minZ, FOREST_BOUNDS.maxZ);
+      wolf.group.position.set(wx, getTerrainHeight(wx, wz), wz);
+      wolf.group.rotation.set(0, Math.random() * Math.PI * 2, 0);
+      wolf.group.scale.setScalar(1);
+      wolf.group.visible = true;
+      animateQuadrupedLegs(wolf.group, 0, 0);
+      chooseWolfTarget(wolf);
+    }
+
+    function resetBanditsForDay() {
+      banditList.forEach((bandit, index) => {
+        bandit.alive = true;
+        bandit.hp = 3;
+        bandit.active = !isNight;
+        bandit.deathTimer = 0;
+        bandit.cooldown = 1.0 + index * 0.4;
+        bandit.group.position.copy(bandit.spawn);
+        bandit.group.rotation.set(0, bandit.baseYaw, 0);
+        bandit.group.scale.setScalar(1);
+        bandit.group.visible = !isNight;
+      });
+    }
+
+    function spawnNightEnemies() {
+      nightEnemies.forEach((enemy, index) => {
+        const point = nightSpawnPosition.copy(nightSpawnPoints[index]);
+        point.x += (Math.random() - 0.5) * 4;
+        point.z += (Math.random() - 0.5) * 4;
+
+        const dx = point.x - playerRig.position.x;
+        const dz = point.z - playerRig.position.z;
+        const distance = Math.hypot(dx, dz);
+        if (distance < 15) {
+          const scale = 15 / Math.max(distance, 0.1);
+          point.x = playerRig.position.x + dx * scale;
+          point.z = playerRig.position.z + dz * scale;
+        }
+
+        point.x = THREE.MathUtils.clamp(point.x, -82, 82);
+        point.z = THREE.MathUtils.clamp(point.z, -82, 82);
+        point.y = getTerrainHeight(point.x, point.z);
+
+        enemy.alive = true;
+        enemy.hp = 3;
+        enemy.burning = false;
+        enemy.burnTimer = 0;
+        enemy.attackCooldown = 0.8 + Math.random() * 0.6;
+        enemy.deathTimer = 0;
+        enemy.group.position.copy(point);
+        enemy.group.rotation.set(0, 0, 0);
+        enemy.group.scale.setScalar(1);
+        enemy.group.visible = true;
+        faceToward(enemy.group, playerRig.position.x, playerRig.position.z);
+      });
+    }
+
+    function startNightEnemiesBurning() {
+      nightEnemies.forEach((enemy) => {
+        if (!enemy.group.visible) return;
+        enemy.burning = true;
+        enemy.burnTimer = 1.0;
+        enemy.attackCooldown = 999;
+
+        nightBurnStartPosition.copy(enemy.group.position);
+        nightBurnStartPosition.y += 0.9;
+        spawnImpact(nightBurnStartPosition, 0xff6a1f, 0.4);
+      });
+    }
+
+    // --- 8j. Skade på skapningene ---
+    // Alle våpentreff bruker weaponDamage (1 = standard, 2 = Gull-revolver).
+    // Nattmonstre får i tillegg nightMonsterDamage (1 = standard, 2 = Vampyrjeger-sett).
+    function damageDeer(deer) {
+      if (!deer.alive) return;
+      deer.hp -= weaponDamage;
+      playFleshHitSound();
+
+      if (deer.hp > 0) {
+        deer.state = 'flee';
+        deer.fleeTimer = 5;
+        return;
+      }
+
+      deer.alive = false;
+      deer.state = 'dead';
+      deer.deathTimer = 1.2;
+      deer.respawnTimer = 20;
+      deer.group.rotation.z = 0;
+
+      playerState.food += 1;
+      playerState.pelt += 1;
+      playCollectSound();
+      recordQuestKill('deer');
+      updateStatusUI();
+    }
+
+    function damageWolf(wolf) {
+      if (!wolf.alive) return;
+      wolf.hp -= weaponDamage;
+      playFleshHitSound();
+
+      if (wolf.hp > 0) {
+        wolf.state = 'chase';
+        wolf.attackCooldown = Math.min(wolf.attackCooldown, 0.4);
+        return;
+      }
+
+      wolf.alive = false;
+      wolf.deathTimer = 1.2;
+      wolf.respawnTimer = 20;
+      wolf.group.rotation.z = 0;
+
+      playerState.pelt += 1;
+      updateStatusUI();
+      playCollectSound();
+    }
+
+    function damageBandit(bandit) {
+      if (!bandit.alive) return;
+      bandit.hp -= weaponDamage;
+      playFleshHitSound();
+
+      if (bandit.hp > 0) return;
+
+      bandit.alive = false;
+      bandit.active = false;
+      bandit.deathTimer = 1.2;
+      bandit.respawnTimer = 22;
+      bandit.group.rotation.z = 0;
+      recordQuestKill('bandit');
+    }
+
+    function damageNightEnemy(enemy) {
+      if (!enemy.alive || enemy.burning) return;
+      const totalDamage = weaponDamage * nightMonsterDamage;
+      enemy.hp -= totalDamage;
+      playFleshHitSound();
+
+      if (enemy.hp > 0) return;
+
+      enemy.alive = false;
+      enemy.group.visible = false;
+      enemy.group.scale.setScalar(1);
+      enemy.respawnTimer = 14;
+
+      nightDeathImpactPosition.copy(enemy.group.position);
+      nightDeathImpactPosition.y += 1.0;
+      spawnImpact(nightDeathImpactPosition, 0xff3a1f, 0.32);
+      recordQuestKill('night');
+    }
+
+    // --- 8k. Oppdatering av dyre-, rovdyr-, banditt- og nattmonster-AI ---
+    function updateFallingEntity(entity, dt) {
+      if (entity.deathTimer <= 0) return;
+
+      entity.deathTimer = Math.max(0, entity.deathTimer - dt);
+      const progress = 1 - entity.deathTimer / 1.2;
+      entity.group.rotation.z = -Math.PI / 2 * Math.min(1, progress * 1.5);
+
+      if (entity.deathTimer <= 0) {
+        entity.group.visible = false;
+        entity.group.rotation.z = 0;
+      }
+    }
+
+    function updateDeer(dt) {
+      for (const deer of deerList) {
+        if (!deer.alive) {
+          updateFallingEntity(deer, dt);
+          if (deer.respawnTimer > 0) {
+            deer.respawnTimer -= dt;
+            if (deer.respawnTimer <= 0) respawnDeer(deer);
+          }
+          continue;
+        }
+
+        if (isNight || !deer.group.visible) continue;
+
+        const distanceToPlayer = Math.hypot(
+          deer.group.position.x - playerRig.position.x,
+          deer.group.position.z - playerRig.position.z
+        );
+
+        if (gunshotAlertTimer > 0 && deer.group.position.distanceTo(lastGunshotPosition) < 30) {
+          deer.state = 'flee';
+          deer.fleeTimer = Math.max(deer.fleeTimer, 4.5);
+        }
+
+        if (distanceToPlayer < 8) {
+          deer.state = 'flee';
+          deer.fleeTimer = Math.max(deer.fleeTimer, 4);
+        }
+
+        let movingSpeed = 0;
+        if (deer.state === 'flee') {
+          deer.fleeTimer -= dt;
+
+          const dx = deer.group.position.x - playerRig.position.x;
+          const dz = deer.group.position.z - playerRig.position.z;
+          const len = Math.hypot(dx, dz) || 1;
+
+          moveEntityToward(
+            deer.group,
+            deer.group.position.x + (dx / len) * 12,
+            deer.group.position.z + (dz / len) * 12,
+            5.6,
+            dt
+          );
+          movingSpeed = 5.6;
+
+          if (deer.fleeTimer <= 0) {
+            deer.state = 'wander';
+            deer.wanderPause = 0.8 + Math.random() * 2;
+            chooseDeerTarget(deer);
+          }
+        } else if (deer.wanderPause > 0) {
+          deer.wanderPause -= dt;
+        } else {
+          const dx = deer.wanderTarget.x - deer.group.position.x;
+          const dz = deer.wanderTarget.z - deer.group.position.z;
+
+          if (Math.hypot(dx, dz) < 0.8) {
+            deer.wanderPause = 1 + Math.random() * 4;
+            chooseDeerTarget(deer);
+          } else {
+            moveEntityToward(deer.group, deer.wanderTarget.x, deer.wanderTarget.z, 1.3, dt);
+            movingSpeed = 1.3;
+          }
+        }
+
+        deer.group.position.x = THREE.MathUtils.clamp(deer.group.position.x, FOREST_BOUNDS.minX, FOREST_BOUNDS.maxX);
+        deer.group.position.z = THREE.MathUtils.clamp(deer.group.position.z, FOREST_BOUNDS.minZ, FOREST_BOUNDS.maxZ);
+        const groundY = getTerrainHeight(deer.group.position.x, deer.group.position.z);
+        if (movingSpeed > 0) {
+          deer.stride += dt * (movingSpeed > 3 ? 13 : 6);
+          animateQuadrupedLegs(deer.group, deer.stride, movingSpeed > 3 ? 0.48 : 0.24);
+          deer.group.position.y = groundY + (movingSpeed > 3 ? Math.abs(Math.sin(deer.stride)) * 0.08 : 0);
+        } else {
+          animateQuadrupedLegs(deer.group, 0, 0);
+          deer.group.position.y = groundY;
+        }
+      }
+    }
+
+    function updateWolves(dt) {
+      for (const wolf of wolfList) {
+        if (!wolf.alive) {
+          updateFallingEntity(wolf, dt);
+          if (wolf.respawnTimer > 0) {
+            wolf.respawnTimer -= dt;
+            if (wolf.respawnTimer <= 0) respawnWolf(wolf);
+          }
+          continue;
+        }
+
+        if (!wolf.group.visible) continue;
+
+        const dx = playerRig.position.x - wolf.group.position.x;
+        const dz = playerRig.position.z - wolf.group.position.z;
+        const distance = Math.hypot(dx, dz);
+
+        if (distance < 12) wolf.state = 'chase';
+        else if (distance > 22) wolf.state = 'patrol';
+
+        let movingSpeed = 0;
+        if (wolf.state === 'chase') {
+          if (wolf.attackCooldown > 0) wolf.attackCooldown -= dt;
+
+          if (distance > 1.7) {
+            moveEntityToward(wolf.group, playerRig.position.x, playerRig.position.z, 4.3, dt, 1.4);
+            movingSpeed = 4.3;
+          } else {
+            faceToward(wolf.group, playerRig.position.x, playerRig.position.z);
+            if (wolf.attackCooldown <= 0) {
+              wolf.attackCooldown = 1.5;
+              damagePlayer(12);
+            }
+          }
+        } else {
+          wolf.attackCooldown = Math.max(0, wolf.attackCooldown - dt);
+
+          if (wolf.wanderPause > 0) {
+            wolf.wanderPause -= dt;
+          } else {
+            const targetDx = wolf.wanderTarget.x - wolf.group.position.x;
+            const targetDz = wolf.wanderTarget.z - wolf.group.position.z;
+
+            if (Math.hypot(targetDx, targetDz) < 0.8) {
+              wolf.wanderPause = 1 + Math.random() * 3;
+              chooseWolfTarget(wolf);
+            } else {
+              moveEntityToward(wolf.group, wolf.wanderTarget.x, wolf.wanderTarget.z, 1.7, dt);
+              movingSpeed = 1.7;
+            }
+          }
+        }
+
+        wolf.group.position.x = THREE.MathUtils.clamp(wolf.group.position.x, -82, 82);
+        wolf.group.position.z = THREE.MathUtils.clamp(wolf.group.position.z, -82, 82);
+        wolf.group.position.y = getTerrainHeight(wolf.group.position.x, wolf.group.position.z);
+        if (movingSpeed > 0) {
+          wolf.stride += dt * (movingSpeed > 3 ? 12 : 6.5);
+          animateQuadrupedLegs(wolf.group, wolf.stride, movingSpeed > 3 ? 0.45 : 0.24);
+        } else {
+          animateQuadrupedLegs(wolf.group, 0, 0);
+        }
+      }
+    }
+
+    const banditShotOrigin = new THREE.Vector3();
+    const banditShotTarget = new THREE.Vector3();
+    const banditShotDir = new THREE.Vector3();
+
+    function fireBanditBullet(bandit) {
+      bandit.muzzle.getWorldPosition(banditShotOrigin);
+      updatePlayerBodyPoints();
+      banditShotTarget.copy(playerChestPosition);
+
+      banditShotDir.copy(banditShotTarget).sub(banditShotOrigin).normalize();
+      banditShotDir.x += (Math.random() - 0.5) * 0.05;
+      banditShotDir.y += (Math.random() - 0.5) * 0.035;
+      banditShotDir.z += (Math.random() - 0.5) * 0.05;
+      banditShotDir.normalize();
+
+      spawnEnemyBullet(banditShotOrigin, banditShotDir, 24, 15);
+      playBanditShotSound();
+    }
+
+    function updateBandits(dt) {
+      for (const bandit of banditList) {
+        if (!bandit.alive) {
+          updateFallingEntity(bandit, dt);
+          if (!isNight && bandit.respawnTimer > 0) {
+            bandit.respawnTimer -= dt;
+            if (bandit.respawnTimer <= 0) {
+              bandit.alive = true;
+              bandit.hp = 3;
+              bandit.active = true;
+              bandit.deathTimer = 0;
+              bandit.cooldown = 1.4;
+              bandit.group.position.copy(bandit.spawn);
+              bandit.group.rotation.set(0, bandit.baseYaw, 0);
+              bandit.group.scale.setScalar(1);
+              bandit.group.visible = true;
+            }
+          }
+          continue;
+        }
+
+        if (!bandit.active || isNight) continue;
+
+        const dx = playerRig.position.x - bandit.group.position.x;
+        const dz = playerRig.position.z - bandit.group.position.z;
+        const distance = Math.hypot(dx, dz);
+
+        if (distance < 22) {
+          faceToward(bandit.group, playerRig.position.x, playerRig.position.z);
+          bandit.cooldown -= dt;
+
+          if (bandit.cooldown <= 0) {
+            bandit.cooldown = 2.2;
+            fireBanditBullet(bandit);
+          }
+        } else {
+          bandit.cooldown = Math.max(0, bandit.cooldown - dt);
+          faceToward(bandit.group, 0, 8);
+        }
+      }
+    }
+
+    function updateNightEnemies(dt) {
+      for (let index = 0; index < nightEnemies.length; index++) {
+        const enemy = nightEnemies[index];
+        if (!enemy.group.visible) {
+          if (isNight && !enemy.alive && !enemy.burning && enemy.respawnTimer > 0) {
+            enemy.respawnTimer -= dt;
+            if (enemy.respawnTimer <= 0) {
+              const point = nightRespawnPosition.copy(nightSpawnPoints[index]);
+              point.x += (Math.random() - 0.5) * 4;
+              point.z += (Math.random() - 0.5) * 4;
+              const dx = point.x - playerRig.position.x;
+              const dz = point.z - playerRig.position.z;
+              const dist = Math.hypot(dx, dz);
+              if (dist < 16) {
+                const sc = 16 / Math.max(dist, 0.1);
+                point.x = playerRig.position.x + dx * sc;
+                point.z = playerRig.position.z + dz * sc;
+              }
+              point.x = THREE.MathUtils.clamp(point.x, -82, 82);
+              point.z = THREE.MathUtils.clamp(point.z, -82, 82);
+              point.y = getTerrainHeight(point.x, point.z);
+
+              enemy.alive = true;
+              enemy.hp = 3;
+              enemy.burning = false;
+              enemy.burnTimer = 0;
+              enemy.attackCooldown = 1.0;
+              enemy.group.position.copy(point);
+              enemy.group.rotation.set(0, 0, 0);
+              enemy.group.scale.setScalar(1);
+              enemy.group.visible = true;
+              faceToward(enemy.group, playerRig.position.x, playerRig.position.z);
+            }
+          }
+          continue;
+        }
+
+        if (enemy.burning) {
+          enemy.burnTimer -= dt;
+          enemy.group.scale.setScalar(Math.max(0.01, enemy.burnTimer));
+          enemy.group.position.y += dt * 1.1;
+
+          if (Math.random() < dt * 14) {
+            nightBurnImpactPosition.copy(enemy.group.position);
+            nightBurnImpactPosition.y += 0.8;
+            spawnImpact(nightBurnImpactPosition, 0xff6a1f, 0.22);
+          }
+
+          if (enemy.burnTimer <= 0) {
+            enemy.group.visible = false;
+            enemy.group.scale.setScalar(1);
+            enemy.group.position.y = 0;
+            enemy.burning = false;
+            enemy.alive = false;
+          }
+          continue;
+        }
+
+        if (!enemy.alive) continue;
+
+        const dx = playerRig.position.x - enemy.group.position.x;
+        const dz = playerRig.position.z - enemy.group.position.z;
+        const distance = Math.hypot(dx, dz);
+
+        enemy.group.rotation.z = Math.sin(worldTime * 2.4 + index) * 0.04;
+        const arms = enemy.group.userData.arms;
+        if (arms && arms.length === 2) {
+          const clawReach = Math.sin(worldTime * 4.2 + index) * 0.12;
+          arms[0].rotation.x = clawReach;
+          arms[1].rotation.x = -clawReach;
+        }
+
+        if (distance > 1.8) {
+          moveEntityToward(enemy.group, playerRig.position.x, playerRig.position.z, 2.35, dt, 1.55);
+          enemy.attackCooldown = Math.max(0, enemy.attackCooldown - dt);
+        } else {
+          faceToward(enemy.group, playerRig.position.x, playerRig.position.z);
+          enemy.attackCooldown -= dt;
+
+          if (enemy.attackCooldown <= 0) {
+            enemy.attackCooldown = 1.2;
+            damagePlayer(20);
+
+            nightAttackImpactPosition.copy(playerChestPosition);
+            spawnImpact(nightAttackImpactPosition, 0xff2a2a, 0.18);
+          }
+        }
+
+        enemy.group.position.x = THREE.MathUtils.clamp(enemy.group.position.x, -82, 82);
+        enemy.group.position.z = THREE.MathUtils.clamp(enemy.group.position.z, -82, 82);
+        enemy.group.position.y =
+          getTerrainHeight(enemy.group.position.x, enemy.group.position.z) +
+          0.05 +
+          Math.sin(worldTime * 3.1 + index) * 0.045;
+      }
+    }
+
+    // --- 8l. Bandittkuler og treff på spilleren ---
+    const enemyBulletGeo = new THREE.CylinderGeometry(0.018, 0.018, 0.4, 6);
+    enemyBulletGeo.rotateX(Math.PI / 2);
+    const enemyBulletMat = new THREE.MeshBasicMaterial({ color: 0xff7a3c, fog: false });
+    const enemyBulletGlowGeo = new THREE.SphereGeometry(0.07, 6, 4);
+    const enemyBulletGlowMat = new THREE.MeshBasicMaterial({
+      color: 0xff4a2a,
+      transparent: true,
+      opacity: 0.5,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      fog: false
+    });
+    const enemyBullets = [];
+
+    function spawnEnemyBullet(origin, direction, speed, damage) {
+      const mesh = new THREE.Group();
+      mesh.add(new THREE.Mesh(enemyBulletGeo, enemyBulletMat));
+
+      const glow = new THREE.Mesh(enemyBulletGlowGeo, enemyBulletGlowMat);
+      glow.position.z = 0.12;
+      mesh.add(glow);
+
+      mesh.position.copy(origin);
+      mesh.quaternion.setFromUnitVectors(FORWARD, direction);
+      scene.add(mesh);
+
+      enemyBullets.push({
+        mesh,
+        dir: direction.clone(),
+        prev: origin.clone(),
+        speed,
+        damage,
+        life: 4
+      });
+    }
+
+    function removeEnemyBullet(index) {
+      // Delt geometri/materiale – fjern bare scenenoden.
+      scene.remove(enemyBullets[index].mesh);
+      enemyBullets.splice(index, 1);
+    }
+
+    function updateEnemyBullets(dt) {
+      updatePlayerBodyPoints();
+
+      for (let i = enemyBullets.length - 1; i >= 0; i--) {
+        const bullet = enemyBullets[i];
+        bullet.prev.copy(bullet.mesh.position);
+        bullet.mesh.position.addScaledVector(bullet.dir, bullet.speed * dt);
+        bullet.life -= dt;
+
+        const headHit = segmentPointDistance(bullet.prev, bullet.mesh.position, playerHeadPosition) < 0.42;
+        const chestHit = segmentPointDistance(bullet.prev, bullet.mesh.position, playerChestPosition) < 0.5;
+
+        if (headHit || chestHit) {
+          damagePlayer(bullet.damage);
+          spawnImpact(bullet.mesh.position, 0xff4030, 0.16);
+          removeEnemyBullet(i);
+          continue;
+        }
+
+        const enemyGroundY = getTerrainHeight(bullet.mesh.position.x, bullet.mesh.position.z);
+        if (bullet.mesh.position.y < enemyGroundY + 0.05) {
+          spawnImpact(bullet.mesh.position, 0xd9b07c, 0.14);
+          removeEnemyBullet(i);
+          continue;
+        }
+
+        if (
+          bullet.life <= 0 ||
+          Math.abs(bullet.mesh.position.x) > PROJECTILE_MAX_HORIZONTAL ||
+          Math.abs(bullet.mesh.position.z) > PROJECTILE_MAX_HORIZONTAL ||
+          bullet.mesh.position.y > PROJECTILE_MAX_HEIGHT
+        ) {
+          removeEnemyBullet(i);
+        }
+      }
+    }
+
+    // --- 8m. Finn spillerkulas treff blant alle skapninger ---
+    // Gjenbruker combatHitResult og unngår et nytt objekt + Vector3 per treff.
+    function considerCombatTarget(a, b, entity, type, centerY, radius) {
+      if (!entity.alive || !entity.group.visible || entity.burning) return;
+
+      combatCenter.set(
+        entity.group.position.x,
+        entity.group.position.y + centerY,
+        entity.group.position.z
+      );
+
+      if (segmentPointDistance(a, b, combatCenter) >= radius) return;
+
+      const distance = a.distanceToSquared(combatCenter);
+      if (distance < combatHitBestDistance) {
+        combatHitBestDistance = distance;
+        combatHitFound = true;
+        combatHitResult.type = type;
+        combatHitResult.entity = entity;
+        combatHitResult.point.copy(combatCenter);
+      }
+    }
+
+    function findCombatHit(a, b) {
+      combatHitFound = false;
+      combatHitBestDistance = Infinity;
+      combatHitResult.type = '';
+      combatHitResult.entity = null;
+
+      for (const deer of deerList) {
+        considerCombatTarget(a, b, deer, 'deer', 0.95, 0.8);
+      }
+      for (const wolf of wolfList) {
+        considerCombatTarget(a, b, wolf, 'wolf', 0.6, 0.62);
+      }
+      for (const bandit of banditList) {
+        considerCombatTarget(a, b, bandit, 'bandit', 1.0, 0.66);
+      }
+      for (const enemy of nightEnemies) {
+        considerCombatTarget(a, b, enemy, 'night', 1.0, 0.7);
+      }
+
+      return combatHitFound ? combatHitResult : null;
+    }
+
+    function damageCombatTarget(hit, direction) {
+      if (hit.type === 'deer') damageDeer(hit.entity, direction);
+      else if (hit.type === 'wolf') damageWolf(hit.entity, direction);
+      else if (hit.type === 'bandit') damageBandit(hit.entity, direction);
+      else if (hit.type === 'night') damageNightEnemy(hit.entity, direction);
+    }
+
+    // --- 8n. Plasser alle skapningene i verdenen ---
+    deerHomes.forEach((home) => createDeerAt(home.x, home.z));
+    wolfHomes.forEach((home) => createWolfAt(home.x, home.z));
+    banditPosts.forEach((post, index) => createBanditAt(post, index));
+    for (let i = 0; i < 5; i++) createNightEnemyAt(i);
+
+    // --- 8o. VR-kontrollerknapper: høyre grip = spis mat, venstre grip/trigger = dag/natt (eller butikk) ---
+    function tryVRDayNightToggle(controller, data) {
+      if (!renderer.xr.isPresenting) return;
+
+      const handedness = data && data.handedness;
+      const isLeft = handedness === 'left' || (!handedness && vrHands.left === controller);
+      if (!isLeft) return;
+
+      const now = performance.now();
+      if (now - lastVRDayNightToggle < 350) return;
+      lastVRDayNightToggle = now;
+      toggleDayNight();
+    }
+
+    controllers.forEach((controller) => {
+      controller.addEventListener('squeezestart', (e) => {
+        if (!renderer.xr.isPresenting) return;
+        const data = e.data || {};
+        const handedness = data.handedness;
+        const isRight = handedness === 'right' || (!handedness && vrHands.right === controller);
+        if (isRight) {
+          tryEatFood();
+          return;
+        }
+        tryVRDayNightToggle(controller, data);
+      });
+
+      controller.addEventListener('selectstart', (e) => {
+        if (!renderer.xr.isPresenting) return;
+        const data = e.data || {};
+        const handedness = data.handedness;
+        const isLeft = handedness === 'left' || (!handedness && vrHands.left === controller);
+        if (isLeft) {
+          if (tryVRLeftTriggerShopUI(controller)) return;
+          tryVRDayNightToggle(controller, data);
+        }
+      });
+    });
+
+    // =========================================================================
+    // 9. PC-KAMERAKONTROLL (DRA MED MUS FOR Å SE SEG RUNDT) OG RESIZE
+    // =========================================================================
+    let isDragging = false;
+    let prevPointerX = 0;
+    let prevPointerY = 0;
+    let pcPitch = 0;
+
+    function resetPCCameraPitch() {
+      pcPitch = 0;
+      camera.rotation.x = 0;
+    }
+
+    let pointerDownX = 0;
+    let pointerDownY = 0;
+    let pointerMoved = false;
+    let pointerCanShoot = false;
+
     window.addEventListener('pointerdown', (e) => {
       if (renderer.xr.isPresenting) return;
-      pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
-      pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
-      raycaster.setFromCamera(pointer, camera);
-      checkHit(raycaster);
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+
+      // Ikke skyt når man trykker på VR-knappen eller andre knapper
+      const onButton = !!(e.target && e.target.closest && e.target.closest('button'));
+      pointerCanShoot = e.button === 0 && !onButton;
+      pointerMoved = false;
+      pointerDownX = e.clientX;
+      pointerDownY = e.clientY;
+      isDragging = true;
+      prevPointerX = e.clientX;
+      prevPointerY = e.clientY;
+    });
+
+    window.addEventListener('pointermove', (e) => {
+      if (!isDragging || renderer.xr.isPresenting) return;
+      const dx = e.clientX - prevPointerX;
+      const dy = e.clientY - prevPointerY;
+      prevPointerX = e.clientX;
+      prevPointerY = e.clientY;
+
+      // Bevegelse utover en liten terskel betyr at man drar kameraet, ikke klikker
+      if (Math.hypot(e.clientX - pointerDownX, e.clientY - pointerDownY) > 6) {
+        pointerMoved = true;
+      }
+
+      playerRig.rotation.y -= dx * 0.004;
+      pcPitch = Math.max(-0.6, Math.min(0.6, pcPitch - dy * 0.003));
+      camera.rotation.x = pcPitch;
+    });
+
+    window.addEventListener('pointerup', (e) => {
+      if (!renderer.xr.isPresenting && pointerCanShoot && !pointerMoved) {
+        if (!tryPCShopInteraction(e.clientX, e.clientY)) {
+          shoot();
+        }
+      }
+      pointerCanShoot = false;
+      isDragging = false;
+    });
+
+    window.addEventListener('pointercancel', () => {
+      pointerCanShoot = false;
+      isDragging = false;
+    });
+
+    // Nullstill PC-pitch når man går inn i VR slik at headsettet styrer kameraet rent
+    renderer.xr.addEventListener('sessionstart', () => {
+      camera.rotation.set(0, 0, 0);
     });
 
     window.addEventListener('resize', () => {
@@ -144,17 +3038,80 @@
       renderer.setSize(window.innerWidth, window.innerHeight);
     });
 
-    // 7. Spill-løkke
+    // =========================================================================
+    // 11. HOVEDLØKKE
+    // =========================================================================
     const clock = new THREE.Clock();
+
     renderer.setAnimationLoop(() => {
-      const t = clock.getElapsedTime();
-      targets.forEach((target) => {
-        target.rotation.y += 0.02;
-        target.rotation.x += 0.01;
-        target.position.x += Math.sin(t * target.userData.speed + target.userData.offset) * 0.012;
-      });
+      const dt = Math.min(clock.getDelta(), 0.05);
+      worldTime += dt;
+
+      // Dag/natt-syklus, flakkende lykter/leirbål, svevende støvkorn/glør, helse og skadetimere
+      updateDayNight(dt);
+      updateFlickeringLights(worldTime);
+      updateBackgroundAmbience(dt);
+      updatePlayerStatus(dt);
+
+      // Tidsbegrenset statusmelding på skreddertavlen og oppdragstavlen + skredder- og Safe House-døranimasjon
+      if (tailorStatusTimer > 0) {
+        tailorStatusTimer = Math.max(0, tailorStatusTimer - dt);
+        if (tailorStatusTimer === 0) {
+          tailorStatusMessageKey = '';
+          updateTailorWorkshopUI();
+        }
+      }
+      if (questBoardTimer > 0) {
+        questBoardTimer = Math.max(0, questBoardTimer - dt);
+        if (questBoardTimer === 0) {
+          questBoardMessageKey = '';
+          questBoardMessageArg = null;
+          updateSaloonQuestBoardUI();
+        }
+      }
+      if (tailorNPCGroup) {
+        tailorNPCGroup.rotation.y = 0.14 + Math.sin(worldTime * 1.4) * 0.08;
+      }
+      if (safeHouseDoorPivot) {
+        const targetDoorAngle = safeHouseDoorOpen ? 1.62 : 0;
+        safeHouseDoorAngle += (targetDoorAngle - safeHouseDoorAngle) * Math.min(1, dt * 8.5);
+        safeHouseDoorPivot.rotation.y = safeHouseDoorAngle;
+      }
+
+      // Bevegelse: venstre spak i VR, WASD/piltaster på PC
+      updateVRMovement(dt);
+      updatePCMovement(dt);
+      updateSnapTurn(dt);
+      updatePlayerBodyPoints();
+
+      // Skapninger, fiender og bandittkuler
+      updateDeer(dt);
+      updateWolves(dt);
+      updateBandits(dt);
+      updateNightEnemies(dt);
+      updateEnemyBullets(dt);
+
+      // Skyting: kuler, treff, blinkfysikk, støvkorn/glør og visuelle effekter
+      updateBullets(dt);
+      updateBottles(dt);
+      updateImpacts(dt);
+      updateAmbientParticles(dt, playerRig.position, nightAmount, worldTime);
+      updateDamageVignette(dt);
+
+      updateRevolverFX(pcRevolver, dt);
+      if (vrRevolver) updateRevolverFX(vrRevolver, dt);
+
+      // Nullstill blinkene automatisk litt etter at alle er truffet
+      if (targetResetTimer > 0) {
+        targetResetTimer -= dt;
+        if (targetResetTimer <= 0) resetTargets();
+      }
+
       renderer.render(scene, camera);
     });
+
+
+
   </script>
 </body>
 </html>
