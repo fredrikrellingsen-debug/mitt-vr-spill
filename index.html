@@ -117,6 +117,7 @@
     import { buildTownBuildings } from './js/buildings.js';
     import { initWesternAudio } from './js/audio.js';
     import { initRevolverAndAtmosphereFX } from './js/revolver-fx.js';
+    import { initWorldEntities } from './js/entities.js';
 
     // =========================================================================
     // 1. SCENE, RENDERER OG SPILLER-RIGG (playerRig)
@@ -160,20 +161,33 @@
 
     const playerState = {
       health: 100,
+      gold: 15,
       food: 0,
       pelt: 0,
+      dynamite: 2,
       outfit: 'Plain',
+      weapon: 'Peacemaker',
       timeOfDay: 'Day',
       targets: 0,
       title: ''
     };
 
-    // Globale kamp-, våpen-, rustnings- og oppdragsvariabler
+    // Globale kamp-, våpen-, rustnings-, gull- og 4-akts historievariabler
     let damageMultiplier = 1.0;
     let nightMonsterDamage = 1;
     let currentOutfitTier = 0;
 
     let weaponDamage = 1;
+    const WEAPON_ORDER = ['revolver', 'shotgun', 'rifle', 'crossbow', 'dynamite'];
+    const unlockedWeapons = {
+      revolver: true,
+      shotgun: false,
+      rifle: false,
+      crossbow: false,
+      dynamite: true
+    };
+    let activeWeaponId = 'revolver';
+
     let activeQuest = null;
     let questProgress = 0;
     const completedQuests = [];
@@ -184,15 +198,112 @@
     let isNightStateFlag = false;
     let playerHiddenStatus = false;
 
+    // 4-Akts Cowboy-historie
+    const storyState = {
+      currentAct: 1, // 1..4 (5 = fullført)
+      talkedSheriff: false,
+      act1Deer: 0,
+      boughtGear: false,
+      act2Bandits: 0,
+      captainDefeated: false,
+      mineGoldCollected: false,
+      hasVampireGear: false,
+      act3NightKills: 0,
+      act3SafeHouseTimer: 0,
+      act3NightSurvived: false,
+      bossActive: false,
+      bossHp: 30,
+      bossMaxHp: 30,
+      bossDefeated: false
+    };
+
+    let refreshGunsmithHook = null;
+    let refreshSheriffHook = null;
+    let equipWeaponHook = null;
+    let playStoryFanfareHook = null;
+
     const hudEl = document.getElementById('hud');
     const pcHintEl = document.getElementById('pc-hint');
     const langBtnEl = document.getElementById('lang-btn');
 
+    function getLocalizedWeaponName(wId) {
+      const dict = L();
+      if (wId === 'revolver' && (hasGoldenRevolver || weaponDamage >= 2)) {
+        return dict.weapons.revolverGold;
+      }
+      return dict.weapons[wId] || wId;
+    }
+
     function syncLocalizedStateStrings() {
       const dict = L();
       playerState.outfit = dict.outfits[currentOutfitTier] || dict.outfits[0];
+      playerState.weapon = getLocalizedWeaponName(activeWeaponId);
       playerState.timeOfDay = isNightStateFlag ? dict.night : dict.day;
       playerState.title = hasLegendTitle ? dict.legendTitle : '';
+    }
+
+    function getStoryStatusLine() {
+      const dict = L();
+      storyState.hasVampireGear = currentOutfitTier >= 3 || unlockedWeapons.crossbow;
+      if (storyState.currentAct > 4 || storyState.bossDefeated) {
+        return dict.storyComplete;
+      }
+      const actDef = dict.acts[storyState.currentAct - 1];
+      return actDef ? actDef.formatProgress(storyState) : '';
+    }
+
+    function checkStoryProgression() {
+      storyState.hasVampireGear = currentOutfitTier >= 3 || unlockedWeapons.crossbow;
+      let advanced = false;
+
+      if (
+        storyState.currentAct === 1 &&
+        storyState.talkedSheriff &&
+        storyState.act1Deer >= 2 &&
+        storyState.boughtGear
+      ) {
+        storyState.currentAct = 2;
+        playerState.gold += 20;
+        hasSheriffStar = true;
+        sheriffStarBadge.visible = true;
+        advanced = true;
+      }
+
+      if (
+        storyState.currentAct === 2 &&
+        storyState.act2Bandits >= 4 &&
+        storyState.captainDefeated &&
+        storyState.mineGoldCollected
+      ) {
+        storyState.currentAct = 3;
+        playerState.gold += 35;
+        weaponDamage = 2;
+        advanced = true;
+      }
+
+      if (
+        storyState.currentAct === 3 &&
+        storyState.hasVampireGear &&
+        storyState.act3NightSurvived
+      ) {
+        storyState.currentAct = 4;
+        playerState.gold += 40;
+        playerState.dynamite += 3;
+        advanced = true;
+      }
+
+      if (storyState.currentAct === 4 && storyState.bossDefeated) {
+        storyState.currentAct = 5;
+        hasLegendTitle = true;
+        playerState.gold += 100;
+        playerState.health = 100;
+        advanced = true;
+      }
+
+      if (advanced) {
+        if (playStoryFanfareHook) playStoryFanfareHook();
+        updateStatusUI();
+      }
     }
 
     // Venstre håndleddsgruppe: inneholder erme/mansjett, Sheriff-stjerne, wristBoard, spiseknapp og språkknapp
@@ -268,7 +379,7 @@
 
     const wristCanvas = document.createElement('canvas');
     wristCanvas.width = 640;
-    wristCanvas.height = 384;
+    wristCanvas.height = 448;
     const wristCtx = wristCanvas.getContext('2d');
 
     const wristTexture = new THREE.CanvasTexture(wristCanvas);
@@ -276,7 +387,7 @@
     wristTexture.anisotropy = maxAnisotropy;
 
     const wristBoard = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.28, 0.168),
+      new THREE.PlaneGeometry(0.28, 0.196),
       new THREE.MeshBasicMaterial({
         map: wristTexture,
         transparent: true,
@@ -285,7 +396,7 @@
         toneMapped: false
       })
     );
-    wristBoard.position.set(0.055, 0.06, -0.04);
+    wristBoard.position.set(0.055, 0.068, -0.04);
     wristBoard.rotation.set(-0.65, 0.25, 0.15);
     leftWristRig.add(wristBoard);
 
@@ -300,7 +411,7 @@
     eatBtnTexture.anisotropy = maxAnisotropy;
 
     const eatWristButton = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.192, 0.05),
+      new THREE.PlaneGeometry(0.192, 0.048),
       new THREE.MeshBasicMaterial({
         map: eatBtnTexture,
         transparent: true,
@@ -309,7 +420,7 @@
         toneMapped: false
       })
     );
-    eatWristButton.position.set(-0.044, -0.116, 0.002);
+    eatWristButton.position.set(-0.044, -0.128, 0.002);
     wristBoard.add(eatWristButton);
 
     // Klikkbar 3D-språkknapp (EN / NO) ved siden av spiseknappen på wristBoard i VR
@@ -323,7 +434,7 @@
     langWristTexture.anisotropy = maxAnisotropy;
 
     const langWristButton = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.082, 0.05),
+      new THREE.PlaneGeometry(0.082, 0.048),
       new THREE.MeshBasicMaterial({
         map: langWristTexture,
         transparent: true,
@@ -332,8 +443,31 @@
         toneMapped: false
       })
     );
-    langWristButton.position.set(0.099, -0.116, 0.002);
+    langWristButton.position.set(0.099, -0.128, 0.002);
     wristBoard.add(langWristButton);
+
+    // Klikkbar 3D-våpenbytteknapp («WEAPON / VÅPEN») rett under spise-/språkknappen i VR
+    const weaponWristCanvas = document.createElement('canvas');
+    weaponWristCanvas.width = 576;
+    weaponWristCanvas.height = 96;
+    const weaponWristCtx = weaponWristCanvas.getContext('2d');
+
+    const weaponWristTexture = new THREE.CanvasTexture(weaponWristCanvas);
+    weaponWristTexture.colorSpace = THREE.SRGBColorSpace;
+    weaponWristTexture.anisotropy = maxAnisotropy;
+
+    const weaponWristButton = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.28, 0.048),
+      new THREE.MeshBasicMaterial({
+        map: weaponWristTexture,
+        transparent: true,
+        side: THREE.DoubleSide,
+        fog: false,
+        toneMapped: false
+      })
+    );
+    weaponWristButton.position.set(0, -0.182, 0.002);
+    wristBoard.add(weaponWristButton);
 
     function updateEatWristButton() {
       const dict = L();
@@ -370,6 +504,25 @@
       langWristCtx.fillStyle = '#fff5db';
       langWristCtx.fillText(dict.wristLangBtn, langWristCanvas.width / 2, 50);
       langWristTexture.needsUpdate = true;
+
+      // Oppdater 3D VÅPEN / WEAPON-knappen på håndleddet
+      weaponWristCtx.clearRect(0, 0, weaponWristCanvas.width, weaponWristCanvas.height);
+      drawRoundedRect(weaponWristCtx, 6, 6, weaponWristCanvas.width - 12, 84, 18);
+      weaponWristCtx.fillStyle = 'rgba(48, 32, 18, 0.96)';
+      weaponWristCtx.fill();
+      weaponWristCtx.lineWidth = 5;
+      weaponWristCtx.strokeStyle = '#9fd4ff';
+      weaponWristCtx.stroke();
+
+      const wLabel = activeWeaponId === 'dynamite'
+        ? `${dict.weaponCycleBtn(playerState.weapon)} (${playerState.dynamite})`
+        : dict.weaponCycleBtn(playerState.weapon);
+      weaponWristCtx.textAlign = 'center';
+      weaponWristCtx.textBaseline = 'middle';
+      weaponWristCtx.font = 'bold 26px sans-serif';
+      weaponWristCtx.fillStyle = '#eef8ff';
+      weaponWristCtx.fillText(wLabel, weaponWristCanvas.width / 2, 50);
+      weaponWristTexture.needsUpdate = true;
     }
 
     let refreshTailorWorkshopHook = null;
@@ -398,17 +551,20 @@
       if (pcHintEl) pcHintEl.innerHTML = dict.pcHintHtml;
 
       const titleSuffix = playerState.title ? ` | ${dict.hudTitle}: ${playerState.title}` : '';
+      const storyLine = getStoryStatusLine();
       const questLine = getActiveQuestStatusLine();
       const summaryText =
-        `${dict.hudHealth}: ${playerState.health} | ${dict.hudFood}: ${playerState.food} ${dict.hudEatHint} | ` +
-        `${dict.hudPelts}: ${playerState.pelt} | ${dict.hudOutfit}: ${playerState.outfit} | ${dict.hudTime}: ${playerState.timeOfDay} | ` +
-        `${dict.hudTargets}: ${playerState.targets}/5${titleSuffix}\n${questLine}`;
+        `${dict.hudHealth}: ${playerState.health} | ${dict.hudGold}: ${playerState.gold} | ` +
+        `${dict.hudWeapon}: ${playerState.weapon} | ${dict.hudDynamite}: ${playerState.dynamite} | ` +
+        `${dict.hudFood}: ${playerState.food} ${dict.hudEatHint} | ${dict.hudPelts}: ${playerState.pelt} | ` +
+        `${dict.hudOutfit}: ${playerState.outfit} | ${dict.hudTime}: ${playerState.timeOfDay}${titleSuffix}\n` +
+        `${storyLine}  •  ${questLine}`;
       hudEl.textContent = playerHiddenStatus ? `${summaryText}\n${dict.hiddenStatus}` : summaryText;
 
       wristCtx.clearRect(0, 0, wristCanvas.width, wristCanvas.height);
 
       // Mørk lær-/trebakgrunn med messingramme
-      drawRoundedRect(wristCtx, 8, 8, 624, 368, 24);
+      drawRoundedRect(wristCtx, 8, 8, 624, 432, 24);
       wristCtx.fillStyle = 'rgba(38, 22, 11, 0.95)';
       wristCtx.fill();
       wristCtx.lineWidth = 6;
@@ -418,63 +574,83 @@
       wristCtx.textAlign = 'left';
       wristCtx.textBaseline = 'middle';
 
-      wristCtx.font = 'bold 25px Georgia, serif';
+      wristCtx.font = 'bold 24px Georgia, serif';
       wristCtx.fillStyle = playerState.title ? '#ffe07a' : '#f2c16b';
       const headerLabel = playerState.title
         ? `${dict.wristLegendPrefix}${playerState.title.toUpperCase()}`
         : dict.wristHeader;
-      wristCtx.fillText(headerLabel, 36, 48);
+      wristCtx.fillText(headerLabel, 34, 44);
 
       if (hasSheriffStar) {
-        drawSheriffStar2D(wristCtx, 582, 48, 20, 10);
+        drawSheriffStar2D(wristCtx, 584, 44, 19, 9.5);
       }
 
       wristCtx.strokeStyle = 'rgba(217, 160, 78, 0.4)';
       wristCtx.lineWidth = 2;
       wristCtx.beginPath();
-      wristCtx.moveTo(36, 78);
-      wristCtx.lineTo(604, 78);
+      wristCtx.moveTo(34, 72);
+      wristCtx.lineTo(606, 72);
       wristCtx.stroke();
-
-      wristCtx.font = 'bold 33px sans-serif';
-      wristCtx.fillStyle = '#fff4dc';
-      wristCtx.fillText(`${dict.hudHealth}: ${playerState.health}`, 36, 118);
-      wristCtx.fillText(`${dict.hudTime}: ${playerState.timeOfDay}`, 350, 118);
-
-      wristCtx.fillText(`${dict.hudFood}: ${playerState.food}`, 36, 174);
-      wristCtx.fillText(`${dict.hudPelts}: ${playerState.pelt}`, 350, 174);
 
       wristCtx.font = 'bold 29px sans-serif';
-      wristCtx.fillStyle = '#ffd98e';
-      wristCtx.fillText(`${dict.hudOutfit}: ${playerState.outfit}`, 36, 232);
+      wristCtx.fillStyle = '#fff4dc';
+      wristCtx.fillText(`${dict.hudHealth}: ${playerState.health}`, 34, 108);
+      wristCtx.fillStyle = '#ffe07a';
+      wristCtx.fillText(`${dict.hudGold}: ${playerState.gold}`, 250, 108);
+      wristCtx.fillStyle = '#fff4dc';
+      wristCtx.fillText(`${dict.hudTime}: ${playerState.timeOfDay}`, 440, 108);
 
-      // Skillelinje før oppdragslinje nederst på wristBoard
+      wristCtx.fillText(`${dict.hudFood}: ${playerState.food}`, 34, 156);
+      wristCtx.fillText(`${dict.hudPelts}: ${playerState.pelt}`, 250, 156);
+      wristCtx.fillStyle = '#ffb88a';
+      wristCtx.fillText(`Dyn: ${playerState.dynamite}`, 440, 156);
+
+      wristCtx.font = 'bold 26px sans-serif';
+      wristCtx.fillStyle = '#bfe4ff';
+      wristCtx.fillText(`${dict.hudWeapon}: ${playerState.weapon}`, 34, 204);
+
+      wristCtx.font = 'bold 25px sans-serif';
+      wristCtx.fillStyle = '#ffd98e';
+      wristCtx.fillText(`${dict.hudOutfit}: ${playerState.outfit}`, 34, 248);
+
+      // Skillelinje før 4-akts historie og dusøroppdrag på wristBoard
       wristCtx.strokeStyle = 'rgba(217, 160, 78, 0.35)';
       wristCtx.beginPath();
-      wristCtx.moveTo(36, 272);
-      wristCtx.lineTo(604, 272);
+      wristCtx.moveTo(34, 280);
+      wristCtx.lineTo(606, 280);
       wristCtx.stroke();
 
-      let questFontSize = 27;
+      let storyFontSize = 23;
+      wristCtx.font = `bold ${storyFontSize}px sans-serif`;
+      while (storyFontSize > 15 && wristCtx.measureText(storyLine).width > 572) {
+        storyFontSize -= 1;
+        wristCtx.font = `bold ${storyFontSize}px sans-serif`;
+      }
+      wristCtx.fillStyle = '#ffe89e';
+      wristCtx.fillText(storyLine, 34, 316);
+
+      let questFontSize = 23;
       wristCtx.font = `bold ${questFontSize}px sans-serif`;
-      while (questFontSize > 19 && wristCtx.measureText(questLine).width > 568) {
+      while (questFontSize > 16 && wristCtx.measureText(questLine).width > 572) {
         questFontSize -= 1;
         wristCtx.font = `bold ${questFontSize}px sans-serif`;
       }
       wristCtx.fillStyle = activeQuest ? '#a6f096' : '#f5d284';
-      wristCtx.fillText(questLine, 36, 320);
+      wristCtx.fillText(questLine, 34, 358);
 
       if (playerHiddenStatus) {
-        wristCtx.font = 'bold 23px sans-serif';
+        wristCtx.font = 'bold 22px sans-serif';
         wristCtx.fillStyle = '#8ff0a8';
-        wristCtx.fillText(dict.hiddenStatus, 36, 352);
+        wristCtx.fillText(dict.hiddenStatus, 34, 398);
       }
 
       wristTexture.needsUpdate = true;
 
       updateEatWristButton();
       if (refreshTailorWorkshopHook) refreshTailorWorkshopHook();
+      if (refreshGunsmithHook) refreshGunsmithHook();
       if (refreshQuestBoardHook) refreshQuestBoardHook();
+      if (refreshSheriffHook) refreshSheriffHook();
       if (refreshWorldSignsHook) refreshWorldSignsHook();
     }
 
@@ -557,15 +733,23 @@
     const M = initTexturesAndMaterials(maxAnisotropy);
     const { windowMat } = M;
 
-    const W = buildEnvironmentAndScenery({ scene, renderer, M, maxAnisotropy, Sky });
+    const W = buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotropy, Sky });
     const {
       sky, skySunVec, dayEnvRT, nightEnvRT,
       hemiLight, sunLight, sunMesh,
       rockColliders,
+      structureWallColliders,
+      goldPickups,
+      goldHitMeshes,
+      chapelAltarHitMeshes,
+      bloodChaliceOrb,
+      mineGroup,
+      chapelGroup,
+      refreshRegionSigns,
       campfireFlameMeshes, campfireLight, campfireEmberMat
     } = W;
 
-    // Last inn alle 8 skulpturerte .glb-modeller parallelt (med sømløs prosedyrisk fallback per fil)
+    // Last inn alle 16 binære .glb-modeller parallelt (med sømløs prosedyrisk fallback per fil)
     const gltfLoader = new GLTFLoader();
     function loadOptionalGLB(url) {
       return gltfLoader.loadAsync(url).catch((err) => {
@@ -576,36 +760,60 @@
 
     const [
       revolverGLTF,
+      shotgunGLTF,
+      rifleGLTF,
+      crossbowGLTF,
+      dynamiteGLTF,
       saloonGLTF,
       tailorGLTF,
+      gunsmithGLTF,
       banditGLTF,
       tailorNpcGLTF,
+      gunsmithNpcGLTF,
       vampireGLTF,
       deerGLTF,
-      wolfGLTF
+      wolfGLTF,
+      bearGLTF,
+      bossVampireGLTF
     ] = await Promise.all([
       loadOptionalGLB('./assets/revolver.glb'),
+      loadOptionalGLB('./assets/shotgun.glb'),
+      loadOptionalGLB('./assets/rifle.glb'),
+      loadOptionalGLB('./assets/crossbow.glb'),
+      loadOptionalGLB('./assets/dynamite.glb'),
       loadOptionalGLB('./assets/saloon.glb'),
       loadOptionalGLB('./assets/tailor.glb'),
+      loadOptionalGLB('./assets/gunsmith.glb'),
       loadOptionalGLB('./assets/bandit.glb'),
       loadOptionalGLB('./assets/tailor_npc.glb'),
+      loadOptionalGLB('./assets/gunsmith_npc.glb'),
       loadOptionalGLB('./assets/vampire.glb'),
       loadOptionalGLB('./assets/deer.glb'),
-      loadOptionalGLB('./assets/wolf.glb')
+      loadOptionalGLB('./assets/wolf.glb'),
+      loadOptionalGLB('./assets/bear.glb'),
+      loadOptionalGLB('./assets/boss_vampire.glb')
     ]);
 
     const loadedAssets = {
       revolver: revolverGLTF,
+      shotgun: shotgunGLTF,
+      rifle: rifleGLTF,
+      crossbow: crossbowGLTF,
+      dynamite: dynamiteGLTF,
       saloon: saloonGLTF,
       tailor: tailorGLTF,
+      gunsmith: gunsmithGLTF,
       bandit: banditGLTF,
       tailorNpc: tailorNpcGLTF,
+      gunsmithNpc: gunsmithNpcGLTF,
       vampire: vampireGLTF,
       deer: deerGLTF,
-      wolf: wolfGLTF
+      wolf: wolfGLTF,
+      bear: bearGLTF,
+      bossVampire: bossVampireGLTF
     };
 
-    // --- 5a. Saloon / Oppdragsbygg og «SHERIFF'S BOUNTY BOARD» ---
+    // --- 5a. Saloon / Oppdragsbygg og «SHERIFF'S BOUNTY BOARD» (repeterbar for ekstra Gull!) ---
     const SALOON_QUESTS = [
       { id: 'deer_hunt', goal: 2, targetType: 'deer' },
       { id: 'bandit_clear', goal: 3, targetType: 'bandit' },
@@ -614,6 +822,7 @@
 
     let saloonMainSignMesh = null;
     let tailorMainSignMesh = null;
+    let gunsmithMainSignMesh = null;
     let safeHouseMainSignMesh = null;
     let safeHouseStreetSignMesh = null;
     let saloonLangSignMesh = null;
@@ -725,10 +934,9 @@
               activeTitle,
               questProgress,
               activeQuest.goal,
-              completedQuests.length,
-              SALOON_QUESTS.length
+              playerState.gold
             )
-          : dict.questBoardIdleSub(completedQuests.length, SALOON_QUESTS.length);
+          : dict.questBoardIdleSub(completedQuests.length, playerState.gold);
         saloonQuestCtx.fillText(subText, 512, 116);
       }
 
@@ -745,12 +953,12 @@
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         drawRoundedRect(ctx, 6, 6, canvas.width - 12, canvas.height - 12, 16);
-        if (isDone) {
-          ctx.fillStyle = '#1f4a24';
-          ctx.strokeStyle = '#8ce881';
-        } else if (isActive) {
+        if (isActive) {
           ctx.fillStyle = '#633c12';
           ctx.strokeStyle = '#ffe074';
+        } else if (isDone) {
+          ctx.fillStyle = '#1f4a24';
+          ctx.strokeStyle = '#8ce881';
         } else {
           ctx.fillStyle = '#4c2c15';
           ctx.strokeStyle = '#cc9548';
@@ -762,14 +970,14 @@
         let statusLabel = dict.badgeOpen;
         let badgeBg = 'rgba(217, 160, 78, 0.22)';
         let badgeTextCol = '#ffe3a3';
-        if (isDone) {
-          statusLabel = dict.badgeDone;
-          badgeBg = 'rgba(90, 200, 95, 0.28)';
-          badgeTextCol = '#b8ffaf';
-        } else if (isActive) {
+        if (isActive) {
           statusLabel = `${dict.badgeActive} (${shownProg}/${quest.goal})`;
           badgeBg = 'rgba(255, 214, 90, 0.28)';
           badgeTextCol = '#fff3a6';
+        } else if (isDone) {
+          statusLabel = dict.badgeDone;
+          badgeBg = 'rgba(90, 200, 95, 0.28)';
+          badgeTextCol = '#b8ffaf';
         } else if (savedProg > 0) {
           statusLabel = `${dict.badgeOpen} (${savedProg}/${quest.goal})`;
         }
@@ -791,11 +999,11 @@
           titleFont -= 1;
           ctx.font = `bold ${titleFont}px sans-serif`;
         }
-        ctx.fillStyle = isDone ? '#dcffd8' : '#fff7e5';
+        ctx.fillStyle = isDone && !isActive ? '#dcffd8' : '#fff7e5';
         ctx.fillText(qText.taskText, 28, 41);
 
         ctx.font = 'bold 22px sans-serif';
-        ctx.fillStyle = isDone ? '#a7e8a1' : '#f5c76e';
+        ctx.fillStyle = isDone && !isActive ? '#a7e8a1' : '#f5c76e';
         ctx.fillText(qText.rewardText, 28, 88);
 
         texture.needsUpdate = true;
@@ -953,6 +1161,165 @@
 
     refreshTailorWorkshopHook = updateTailorWorkshopUI;
 
+    // --- 5b2. Våpensmed-butikk («GUNSMITH'S ARMORY» / «VÅPENSMEDENS VERKSTED») ---
+    const GUNSMITH_ITEMS = [
+      { id: 'shotgun', type: 'weapon', weaponId: 'shotgun', goldCost: 25, peltCost: 0 },
+      { id: 'rifle', type: 'weapon', weaponId: 'rifle', goldCost: 40, peltCost: 0 },
+      { id: 'crossbow', type: 'weapon', weaponId: 'crossbow', goldCost: 65, peltCost: 2 },
+      { id: 'dynamite_pack', type: 'ammo', amount: 3, goldCost: 15, peltCost: 0 }
+    ];
+
+    let gunsmithCounterMesh = null;
+    let gunsmithNPCGroup = null;
+    const gunsmithButtonMeshes = [];
+    const gunsmithBlockHitMeshes = [];
+    const sheriffHitMeshes = [];
+    let gunsmithStatusKey = '';
+    let gunsmithStatusArg = null;
+    let gunsmithStatusSuccess = true;
+    let gunsmithStatusTimer = 0;
+
+    const gunsmithBoardCanvas = document.createElement('canvas');
+    gunsmithBoardCanvas.width = 1024;
+    gunsmithBoardCanvas.height = 504;
+    const gunsmithBoardCtx = gunsmithBoardCanvas.getContext('2d');
+    const gunsmithBoardTexture = new THREE.CanvasTexture(gunsmithBoardCanvas);
+    gunsmithBoardTexture.colorSpace = THREE.SRGBColorSpace;
+    gunsmithBoardTexture.anisotropy = maxAnisotropy;
+
+    function createGunsmithButtonEntry(item) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1024;
+      canvas.height = 88;
+      const ctx = canvas.getContext('2d');
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = maxAnisotropy;
+
+      const mesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(3.44, 0.255),
+        new THREE.MeshBasicMaterial({ map: texture, transparent: true, fog: false, toneMapped: false })
+      );
+      mesh.userData.gunsmithItem = item;
+      return { item, canvas, ctx, texture, mesh };
+    }
+
+    const gunsmithButtonEntries = GUNSMITH_ITEMS.map((item) => createGunsmithButtonEntry(item));
+
+    function resolveGunsmithMessage() {
+      const dict = L();
+      if (!gunsmithStatusKey) return '';
+      if (gunsmithStatusKey === 'owned') return dict.gunsmithMsgOwned;
+      if (gunsmithStatusKey === 'no_gold') return dict.gunsmithMsgNoGold;
+      if (gunsmithStatusKey === 'no_pelts') return dict.gunsmithMsgNoPelts;
+      if (gunsmithStatusKey === 'bought_weapon') {
+        return dict.gunsmithMsgBoughtWeapon(getLocalizedWeaponName(gunsmithStatusArg || 'shotgun'));
+      }
+      if (gunsmithStatusKey === 'bought_dynamite') {
+        return dict.gunsmithMsgBoughtDynamite(playerState.dynamite);
+      }
+      return gunsmithStatusKey;
+    }
+
+    function updateGunsmithUI() {
+      const dict = L();
+      gunsmithBoardCtx.clearRect(0, 0, gunsmithBoardCanvas.width, gunsmithBoardCanvas.height);
+
+      drawRoundedRect(gunsmithBoardCtx, 8, 8, 1008, 488, 22);
+      gunsmithBoardCtx.fillStyle = 'rgba(32, 22, 16, 0.97)';
+      gunsmithBoardCtx.fill();
+      gunsmithBoardCtx.lineWidth = 8;
+      gunsmithBoardCtx.strokeStyle = '#d9a04e';
+      gunsmithBoardCtx.stroke();
+
+      drawRoundedRect(gunsmithBoardCtx, 22, 22, 980, 460, 14);
+      gunsmithBoardCtx.lineWidth = 2;
+      gunsmithBoardCtx.strokeStyle = 'rgba(245, 205, 130, 0.45)';
+      gunsmithBoardCtx.stroke();
+
+      gunsmithBoardCtx.textAlign = 'center';
+      gunsmithBoardCtx.textBaseline = 'middle';
+      gunsmithBoardCtx.font = 'bold 42px Georgia, serif';
+      gunsmithBoardCtx.fillStyle = '#fff1cf';
+      gunsmithBoardCtx.fillText(dict.gunsmithBoardTitle, 512, 54);
+
+      const banner = resolveGunsmithMessage();
+      if (gunsmithStatusTimer > 0 && banner) {
+        drawRoundedRect(gunsmithBoardCtx, 52, 82, 920, 46, 12);
+        gunsmithBoardCtx.fillStyle = gunsmithStatusSuccess
+          ? 'rgba(34, 96, 44, 0.96)'
+          : 'rgba(132, 34, 26, 0.96)';
+        gunsmithBoardCtx.fill();
+        gunsmithBoardCtx.lineWidth = 3;
+        gunsmithBoardCtx.strokeStyle = gunsmithStatusSuccess ? '#9bf08a' : '#ff9a8a';
+        gunsmithBoardCtx.stroke();
+
+        gunsmithBoardCtx.font = 'bold 25px sans-serif';
+        gunsmithBoardCtx.fillStyle = '#ffffff';
+        gunsmithBoardCtx.fillText(banner, 512, 106);
+      } else {
+        gunsmithBoardCtx.font = 'bold 23px sans-serif';
+        gunsmithBoardCtx.fillStyle = '#ffd67a';
+        gunsmithBoardCtx.fillText(
+          dict.gunsmithInfo(playerState.gold, playerState.pelt, playerState.dynamite),
+          512,
+          106
+        );
+      }
+
+      gunsmithBoardTexture.needsUpdate = true;
+
+      gunsmithButtonEntries.forEach((entry, idx) => {
+        const { item, canvas, ctx, texture } = entry;
+        const isWeapon = item.type === 'weapon';
+        const isOwned = isWeapon && !!unlockedWeapons[item.weaponId];
+        const isEquipped = isWeapon && activeWeaponId === item.weaponId;
+        const canAfford =
+          playerState.gold >= item.goldCost && playerState.pelt >= item.peltCost;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        drawRoundedRect(ctx, 6, 5, canvas.width - 12, canvas.height - 10, 15);
+        if (isEquipped) {
+          ctx.fillStyle = '#1f4e28';
+          ctx.strokeStyle = '#92f08a';
+        } else if (isOwned) {
+          ctx.fillStyle = '#263f4a';
+          ctx.strokeStyle = '#89d4ff';
+        } else if (canAfford) {
+          ctx.fillStyle = '#5c3416';
+          ctx.strokeStyle = '#ffd275';
+        } else {
+          ctx.fillStyle = '#3d2213';
+          ctx.strokeStyle = '#a87639';
+        }
+        ctx.fill();
+        ctx.lineWidth = 4.5;
+        ctx.stroke();
+
+        const baseLabel = dict.gunsmithButtons[idx] || '';
+        const tag = isEquipped
+          ? ` ${dict.equippedTag}`
+          : (isOwned ? ` ${dict.ownedTag}` : '');
+        const fullLabel = `${baseLabel}${tag}`;
+
+        let fontSize = 26;
+        ctx.font = `bold ${fontSize}px sans-serif`;
+        while (fontSize > 17 && ctx.measureText(fullLabel).width > 968) {
+          fontSize -= 1;
+          ctx.font = `bold ${fontSize}px sans-serif`;
+        }
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#fff6e3';
+        ctx.fillText(fullLabel, canvas.width / 2, canvas.height / 2 + 1);
+        texture.needsUpdate = true;
+      });
+    }
+
+    refreshGunsmithHook = updateGunsmithUI;
+
     // --- 5c. FYSISK GJEMMESTED (SAFE HOUSE / HIDEOUT) VED SIDEN AV SALOONEN ---
     // Nøyaktig innvendig gulvareal inne i Safe House-hytta (tømmerveggene står rett utenfor sonen).
     const hidingZone = {
@@ -1015,8 +1382,11 @@
     const {
       createDeerModel,
       createWolfModel,
+      createBearModel,
       createBanditModel,
+      createBanditCaptainModel,
       createNightEnemyModel,
+      createBossVampireModel,
       animateQuadrupedLegs
     } = C;
 
@@ -1026,8 +1396,12 @@
       saloonQuestTexture, saloonQuestButtonEntries, saloonQuestButtonMeshes, saloonQuestBlockMeshes,
       worldLangButtonMeshes,
       workshopBoardTexture, tailorButtonEntries, tailorButtonMeshes, tailorBlockHitMeshes,
+      gunsmithBoardTexture, gunsmithButtonEntries, gunsmithButtonMeshes, gunsmithBlockHitMeshes,
+      sheriffHitMeshes,
       hidingZone, safeHouseCenterWorld, safeHouseDoorAngle, safeHouseDoorHitMeshes
     });
+
+    const { sheriffVanceGroup, createLorePoster, lorePosters } = townBuilt;
 
     // Mål faktiske lokale og globale dimensjoner med THREE.Box3 før/etter plassering
     const buildingMeasureBox = new THREE.Box3();
@@ -1072,6 +1446,26 @@
     tailorBuilding.updateMatrixWorld(true);
     updateTailorWorkshopUI();
 
+    const gunsmithBuilding = townBuilt.gunsmithBuilding;
+    gunsmithMainSignMesh = townBuilt.gunsmithMainSignMesh;
+    gunsmithCounterMesh = townBuilt.gunsmithCounterMesh;
+    gunsmithNPCGroup = townBuilt.gunsmithNPCGroup;
+    gunsmithBuilding.position.set(0, 0, 0);
+    gunsmithBuilding.rotation.y = 0;
+    scene.add(gunsmithBuilding);
+    gunsmithBuilding.updateMatrixWorld(true);
+    buildingMeasureBox.setFromObject(gunsmithBuilding);
+    const gunsmithLocalBounds = {
+      minX: buildingMeasureBox.min.x,
+      maxX: buildingMeasureBox.max.x,
+      minZ: buildingMeasureBox.min.z,
+      maxZ: buildingMeasureBox.max.z
+    };
+    gunsmithBuilding.position.set(7.2, 0, -10.8);
+    gunsmithBuilding.rotation.y = -0.42;
+    gunsmithBuilding.updateMatrixWorld(true);
+    updateGunsmithUI();
+
     const safeHouseBuilding = townBuilt.safeHouseBuilding;
     safeHouseDoorPivot = townBuilt.safeHouseDoorPivot;
     safeHouseMainSignMesh = townBuilt.safeHouseMainSignMesh;
@@ -1086,6 +1480,34 @@
       maxZ: buildingMeasureBox.max.z
     };
 
+    // Plasser Sheriff Vance utenfor Safe House / Saloonen
+    if (sheriffVanceGroup) {
+      sheriffVanceGroup.position.set(-2.75, 0, -3.65);
+      sheriffVanceGroup.rotation.y = 0.28;
+      scene.add(sheriffVanceGroup);
+    }
+
+    // Plasser Lore-plakat #3 ved Gullgruven i øst og Lore-plakat #4 ved Boot Hill-porten i vest
+    if (createLorePoster) {
+      const minePoster = createLorePoster(2);
+      minePoster.position.set(-0.42, 1.78, 2.24);
+      minePoster.rotation.y = -Math.PI / 2;
+      if (mineGroup) mineGroup.add(minePoster);
+
+      const graveyardPoster = createLorePoster(3);
+      graveyardPoster.position.set(-61.4, getTerrainHeight(-61.4, 2.55) + 1.56, 2.55);
+      graveyardPoster.rotation.y = Math.PI / 2;
+      scene.add(graveyardPoster);
+    }
+
+    refreshSheriffHook = () => {
+      if (sheriffVanceGroup && sheriffVanceGroup.userData.updateSheriffDialogue) {
+        const quoteIdx = storyState.bossDefeated ? 4 : Math.max(0, storyState.currentAct - 1);
+        sheriffVanceGroup.userData.updateSheriffDialogue(quoteIdx);
+      }
+    };
+    refreshSheriffHook();
+
     // =========================================================================
     // 5d. NØYAKTIGE VEGGKOLLISJONER (AABB / OBB) OG AKTØRKOLLISJON I HVER FRAME
     // =========================================================================
@@ -1093,8 +1515,10 @@
     const PLAYER_RADIUS = 0.45;
     const DEER_RADIUS = 0.45;
     const WOLF_RADIUS = 0.38;
+    const BEAR_RADIUS = 0.68;
     const BANDIT_RADIUS = 0.38;
     const NIGHT_RADIUS = 0.42;
+    const BOSS_RADIUS = 0.64;
 
     function addLocalWallCollider(group, minX, maxX, minZ, maxZ, isSafeHouseDoor = false, maxY = 4.8) {
       wallColliders.push({
@@ -1154,6 +1578,18 @@
     addLocalWallCollider(tailorBuilding, 1.92, tRightOuter, 2.22, 3.02, false, 1.35);
     addLocalWallCollider(tailorBuilding, -2.44, 2.44, 0.78, 1.72, false, 1.32);
 
+    // 2b) Våpensmed-bygning (målt fra gunsmith.glb): venstre vegg, høyre vegg + essepipe, bakvegg,
+    //     frontstolper + ambolt på hver side av >= 3,84 m åpen butikkfront (-1.92..+1.92), samt våpendisken.
+    const gLeftOuter = Math.min(-2.86, gunsmithLocalBounds.minX + 0.16);
+    const gRightOuter = Math.min(3.48, Math.max(2.96, gunsmithLocalBounds.maxX - 0.08));
+    const gBackOuter = Math.min(-2.14, gunsmithLocalBounds.minZ + 0.12);
+    addLocalWallCollider(gunsmithBuilding, gLeftOuter, -2.42, gBackOuter, 3.00);
+    addLocalWallCollider(gunsmithBuilding, 2.42, gRightOuter, gBackOuter, 3.00);
+    addLocalWallCollider(gunsmithBuilding, gLeftOuter, gRightOuter, gBackOuter, -1.74);
+    addLocalWallCollider(gunsmithBuilding, gLeftOuter, -1.92, 2.68, 3.02);
+    addLocalWallCollider(gunsmithBuilding, 1.92, gRightOuter, 1.96, 3.02, false, 1.38);
+    addLocalWallCollider(gunsmithBuilding, -2.44, 2.44, 0.78, 1.72, false, 1.32);
+
     // 3) Safe House (målt fra safeHouseBuilding): bakvegg, nordvegg, sørvegg og to frontvegg-segmenter
     //    rundt en fri døråpning på 1,92 m (-0.96..+0.96), pluss dynamisk dørboks når døren er lukket.
     const shHalfW = (hidingZone.maxX - hidingZone.minX + 0.32) * 0.5;
@@ -1170,10 +1606,16 @@
     addLocalWallCollider(safeHouseBuilding, -(shHalfW - 0.12), -(shHalfW - 0.92), -1.76, 0.10, false, 0.9);
     addLocalWallCollider(safeHouseBuilding, -(shHalfW - 0.12), -(shHalfW - 0.82), 0.94, 1.62, false, 0.95);
 
-    // 4) Store sandsteinsklipper (målt med THREE.Box3 i world.js)
+    // 4) Store sandsteinsklipper, Gullgruve-inngang, Boot Hill-kapell og rekkverk (målt med THREE.Box3 i world.js)
     for (let i = 0; i < rockColliders.length; i++) {
       const rock = rockColliders[i];
-      addWorldWallCollider(rock.minX, rock.maxX, rock.minZ, rock.maxZ, 3.8);
+      addWorldWallCollider(rock.minX, rock.maxX, rock.minZ, rock.maxZ, rock.maxY || 4.2);
+    }
+    if (structureWallColliders) {
+      for (let i = 0; i < structureWallColliders.length; i++) {
+        const sc = structureWallColliders[i];
+        addWorldWallCollider(sc.minX, sc.maxX, sc.minZ, sc.maxZ, sc.maxY || 4.4);
+      }
     }
 
     // Glatt vegg-glidning med ekte Sirkel-mot-OBB nærmeste-punkt-projeksjon (0 objektallokeringer per frame)
@@ -1309,10 +1751,13 @@
       }
     }
 
+    let refreshBossBarHook = null;
+
     refreshWorldSignsHook = () => {
       const dict = L();
       if (saloonMainSignMesh) saloonMainSignMesh.userData.updateSign(dict.signSaloonTitle, dict.signSaloonSub);
       if (tailorMainSignMesh) tailorMainSignMesh.userData.updateSign(dict.signTailorTitle, dict.signTailorSub);
+      if (gunsmithMainSignMesh) gunsmithMainSignMesh.userData.updateSign(dict.signGunsmithTitle, dict.signGunsmithSub);
       if (safeHouseMainSignMesh) safeHouseMainSignMesh.userData.updateSign(dict.signSafeHouseTitle, dict.signSafeHouseSub);
       if (safeHouseStreetSignMesh) {
         safeHouseStreetSignMesh.userData.updateSign(dict.signSafeHouseTitle, dict.signSafeHouseSub);
@@ -1321,6 +1766,13 @@
         }
       }
       if (saloonLangSignMesh) saloonLangSignMesh.userData.updateSign(dict.saloonLangSign, dict.saloonLangSub);
+      if (refreshRegionSigns) refreshRegionSigns();
+      if (lorePosters) {
+        for (let i = 0; i < lorePosters.length; i++) {
+          if (lorePosters[i].userData.refreshPoster) lorePosters[i].userData.refreshPoster();
+        }
+      }
+      if (refreshBossBarHook) refreshBossBarHook();
     };
 
 
@@ -1328,7 +1780,7 @@
     const FORWARD = new THREE.Vector3(0, 0, -1);
 
     const vrHands = { left: null, right: null };
-    let vrRevolver = null;
+    let vrActiveWeapon = null;
 
     function getHandGamepad(handedness) {
       const session = renderer.xr.getSession();
@@ -1340,10 +1792,11 @@
     }
 
     const FX = initRevolverAndAtmosphereFX({
-      scene, camera, M, saloonBuilding, tailorBuilding, safeHouseBuilding, loadedAssets
+      scene, camera, M, saloonBuilding, tailorBuilding, gunsmithBuilding, safeHouseBuilding, loadedAssets
     });
     const {
-      createRevolver,
+      createWeaponModel,
+      createThrownDynamiteMesh,
       upgradeRevolverToGold,
       practiceBottles,
       moonMesh,
@@ -1355,35 +1808,124 @@
       lanternGlowMat,
       saloonLantern,
       tailorLantern,
+      gunsmithLantern,
       safeHouseLantern,
       updateAmbientParticles,
       flashDamageVignette,
       updateDamageVignette
     } = FX;
 
-    // PC-revolver nede til høyre for kameraet
-    const pcRevolver = createRevolver();
-    pcRevolver.scale.setScalar(0.82);
-    pcRevolver.position.set(0.33, -0.245, -0.78);
-    pcRevolver.rotation.set(0.018, 0.07, 0.02);
-    camera.add(pcRevolver);
+    // --- 7a. 5 Spillbare Våpen på PC og i VR (Revolver, Shotgun, Winchester, Silver Crossbow, Dynamite) ---
+    const PC_WEAPON_TRANSFORMS = {
+      revolver: { scale: 0.82, pos: [0.33, -0.245, -0.78], rot: [0.018, 0.07, 0.02] },
+      shotgun:  { scale: 0.80, pos: [0.31, -0.235, -0.70], rot: [0.022, 0.08, 0.015] },
+      rifle:    { scale: 0.78, pos: [0.29, -0.230, -0.66], rot: [0.015, 0.075, 0.01] },
+      crossbow: { scale: 0.78, pos: [0.30, -0.235, -0.72], rot: [0.030, 0.07, 0.015] },
+      dynamite: { scale: 0.88, pos: [0.31, -0.220, -0.64], rot: [0.040, 0.12, -0.04] }
+    };
 
-    // VR-revolver festes til høyre kontroller når den kobles til
-    function attachRevolverToHand(controller) {
-      if (!controller.userData.revolver) {
-        const rev = createRevolver();
-        rev.scale.setScalar(0.95);
-        rev.position.set(0, -0.02, -0.03);
-        controller.add(rev);
-        controller.userData.revolver = rev;
+    const VR_RAY_STYLES = {
+      revolver: { color: 0xffe2a0, len: 9.0 },
+      shotgun:  { color: 0xff9d5c, len: 5.5 },
+      rifle:    { color: 0xfff4cc, len: 16.0 },
+      crossbow: { color: 0x8fd8ff, len: 13.5 },
+      dynamite: { color: 0xff6242, len: 7.5 }
+    };
+
+    const pcWeapons = Object.create(null);
+    WEAPON_ORDER.forEach((wId) => {
+      const wModel = createWeaponModel(wId);
+      const tf = PC_WEAPON_TRANSFORMS[wId];
+      wModel.scale.setScalar(tf.scale);
+      wModel.position.set(tf.pos[0], tf.pos[1], tf.pos[2]);
+      wModel.rotation.set(tf.rot[0], tf.rot[1], tf.rot[2]);
+      wModel.visible = wId === activeWeaponId;
+      camera.add(wModel);
+      pcWeapons[wId] = wModel;
+    });
+
+    function updateControllerRayStyle(controller, wId) {
+      if (!controller) return;
+      const style = VR_RAY_STYLES[wId] || VR_RAY_STYLES.revolver;
+      controller.traverse((child) => {
+        if (child.isLine && child.material) {
+          child.material.color.setHex(style.color);
+          const posAttr = child.geometry && child.geometry.attributes && child.geometry.attributes.position;
+          if (posAttr && posAttr.count >= 2) {
+            posAttr.setZ(1, -style.len);
+            posAttr.needsUpdate = true;
+          }
+        }
+      });
+    }
+
+    function attachWeaponsToVRHand(controller) {
+      if (!controller.userData.weapons) {
+        const map = Object.create(null);
+        WEAPON_ORDER.forEach((wId) => {
+          const wm = createWeaponModel(wId);
+          wm.scale.setScalar(0.94);
+          wm.position.set(0, -0.02, -0.03);
+          wm.visible = wId === activeWeaponId;
+          controller.add(wm);
+          map[wId] = wm;
+        });
+        controller.userData.weapons = map;
+      } else {
+        WEAPON_ORDER.forEach((wId) => {
+          if (controller.userData.weapons[wId]) {
+            controller.userData.weapons[wId].visible = wId === activeWeaponId;
+          }
+        });
       }
-      vrRevolver = controller.userData.revolver;
+      vrActiveWeapon = controller.userData.weapons[activeWeaponId];
+      updateControllerRayStyle(controller, activeWeaponId);
 
-      // Skjul den enkle plassholderen slik at revolveren blir tydelig
       const marker = controller.getObjectByName('handMarker');
       if (marker) marker.visible = false;
       const handle = controller.getObjectByName('handleMesh');
       if (handle) handle.visible = false;
+    }
+
+    let playWeaponSwitchSfxFn = null;
+
+    function equipWeapon(wId, silent = false) {
+      if (!unlockedWeapons[wId]) return false;
+      if (wId === 'dynamite' && playerState.dynamite <= 0) return false;
+      activeWeaponId = wId;
+
+      const inVR = renderer.xr.isPresenting;
+      WEAPON_ORDER.forEach((id) => {
+        if (pcWeapons[id]) {
+          pcWeapons[id].visible = !inVR && id === activeWeaponId;
+        }
+        if (vrHands.right && vrHands.right.userData.weapons && vrHands.right.userData.weapons[id]) {
+          vrHands.right.userData.weapons[id].visible = id === activeWeaponId;
+        }
+      });
+      if (vrHands.right && vrHands.right.userData.weapons) {
+        vrActiveWeapon = vrHands.right.userData.weapons[activeWeaponId];
+        updateControllerRayStyle(vrHands.right, activeWeaponId);
+      }
+
+      updateStatusUI();
+      if (!silent && playWeaponSwitchSfxFn) playWeaponSwitchSfxFn();
+      return true;
+    }
+    equipWeaponHook = equipWeapon;
+
+    function cycleUnlockedWeapon(step = 1) {
+      const startIdx = Math.max(0, WEAPON_ORDER.indexOf(activeWeaponId));
+      for (let k = 1; k <= WEAPON_ORDER.length; k++) {
+        const idx = (startIdx + k * step + WEAPON_ORDER.length * 4) % WEAPON_ORDER.length;
+        const candidate = WEAPON_ORDER[idx];
+        if (!unlockedWeapons[candidate]) continue;
+        if (candidate === 'dynamite' && playerState.dynamite <= 0) continue;
+        if (candidate !== activeWeaponId) {
+          equipWeapon(candidate);
+          return;
+        }
+      }
     }
 
     controllers.forEach((controller) => {
@@ -1394,7 +1936,7 @@
         if (data.handedness === 'left') vrHands.left = controller;
         if (data.handedness === 'right') {
           vrHands.right = controller;
-          attachRevolverToHand(controller);
+          attachWeaponsToVRHand(controller);
         }
       });
 
@@ -1402,14 +1944,14 @@
         const data = e.data || {};
         if (data.handedness === 'right' && vrHands.right === controller) {
           vrHands.right = null;
-          vrRevolver = null;
+          vrActiveWeapon = null;
         }
         if (data.handedness === 'left' && vrHands.left === controller) {
           vrHands.left = null;
         }
       });
 
-      // Høyre avtrekker = velg 3D-knapp (håndledd/skredder) eller skyt
+      // Høyre avtrekker = velg 3D-knapp (håndledd/skredder/våpensmed) eller skyt/kast
       controller.addEventListener('selectstart', (e) => {
         if (!renderer.xr.isPresenting) return;
         const data = e.data || {};
@@ -1421,68 +1963,197 @@
     });
 
     renderer.xr.addEventListener('sessionstart', () => {
-      pcRevolver.visible = false;
+      WEAPON_ORDER.forEach((id) => {
+        if (pcWeapons[id]) pcWeapons[id].visible = false;
+      });
       const crosshair = document.getElementById('crosshair');
       if (crosshair) crosshair.style.display = 'none';
     });
 
     renderer.xr.addEventListener('sessionend', () => {
-      pcRevolver.visible = true;
+      WEAPON_ORDER.forEach((id) => {
+        if (pcWeapons[id]) pcWeapons[id].visible = id === activeWeaponId;
+      });
       const crosshair = document.getElementById('crosshair');
       if (crosshair) crosshair.style.display = 'block';
     });
 
-    // --- 7b. Skyting: kule, rekyl, munningsglimt og haptikk ---
+    // --- 7b. Skyting, Hagle-spredning, Winchester, Sølv-armbrøst, Dynamitt og Grafikk 3.0 FX ---
     const shotQuat = new THREE.Quaternion();
     const shotPos = new THREE.Vector3();
     const shotDir = new THREE.Vector3();
+    const pelletDir = new THREE.Vector3();
+    const spreadRight = new THREE.Vector3();
+    const spreadUp = new THREE.Vector3();
     const aimCamPos = new THREE.Vector3();
     const aimCamDir = new THREE.Vector3();
     const aimPoint = new THREE.Vector3();
+    let shotCooldownTimer = 0;
 
-    function shoot() {
-      if (audioCtx.state === 'suspended') audioCtx.resume();
+    // Grafikk 3.0 partikkeleffekter: kruttrøyk, gule gnister, sandstøv og glødende vampyr-aske
+    const fxParticles = [];
+    const smokeSpriteBaseMat = new THREE.SpriteMaterial({
+      map: M.sharedSmokePuffTex || M.sharedParticleGlowTex,
+      color: 0xd8d2c8,
+      transparent: true,
+      opacity: 0.45,
+      depthWrite: false,
+      fog: false
+    });
 
-      const useVR = renderer.xr.isPresenting && vrRevolver;
-      const rev = useVR ? vrRevolver : pcRevolver;
-      rev.userData.muzzle.getWorldPosition(shotPos);
-      shotDir.set(0, 0, 0);
-
-      if (useVR) {
-        rev.getWorldQuaternion(shotQuat);
-        shotDir.copy(FORWARD).applyQuaternion(shotQuat).normalize();
-      } else {
-        // På PC samles siktelinjen mot midten av skjermen
-        camera.getWorldPosition(aimCamPos);
-        camera.getWorldDirection(aimCamDir);
-        aimPoint.copy(aimCamPos).addScaledVector(aimCamDir, 14);
-        shotDir.copy(aimPoint).sub(shotPos).normalize();
+    function spawnGunsmoke(origin, count = 2, scaleMul = 1.0) {
+      for (let i = 0; i < count; i++) {
+        const mat = smokeSpriteBaseMat.clone();
+        mat.opacity = 0.42;
+        const sprite = new THREE.Sprite(mat);
+        sprite.position.set(
+          origin.x + (Math.random() - 0.5) * 0.06,
+          origin.y + (Math.random() - 0.5) * 0.06,
+          origin.z + (Math.random() - 0.5) * 0.06
+        );
+        const startS = 0.08 * scaleMul;
+        sprite.scale.set(startS, startS, 1);
+        scene.add(sprite);
+        fxParticles.push({
+          mesh: sprite,
+          mat,
+          vx: (Math.random() - 0.5) * 0.45,
+          vy: 0.42 + Math.random() * 0.45,
+          vz: (Math.random() - 0.5) * 0.45,
+          startScale: startS,
+          endScale: (0.34 + Math.random() * 0.18) * scaleMul,
+          baseOpacity: 0.42,
+          life: 0.52,
+          maxLife: 0.52,
+          gravity: 0
+        });
       }
-
-      spawnBullet(shotPos, shotDir);
-      notifyGunshot(shotPos);
-      fireRevolver(rev);
-      playGunshot();
-      pulseRightHaptic();
     }
 
-    function fireRevolver(rev) {
-      if (!rev) return;
-      const data = rev.userData;
-      data.recoilVel += 7.5;
-      data.cylinderTargetRot = (data.cylinderTargetRot || 0) + Math.PI / 3;
-      data.flashTimer = 0.08;
-      data.flash.visible = true;
-      data.flashLight.intensity = 22;
+    function spawnSparkBurst(origin, count = 6, colorHex = 0xffdf6b, speedScale = 1.0) {
+      for (let i = 0; i < count; i++) {
+        const mat = new THREE.SpriteMaterial({
+          map: M.sharedSparkGlowTex || M.sharedParticleGlowTex,
+          color: colorHex,
+          transparent: true,
+          opacity: 0.95,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          fog: false,
+          toneMapped: false
+        });
+        const sprite = new THREE.Sprite(mat);
+        sprite.position.copy(origin);
+        const s = 0.08 + Math.random() * 0.07;
+        sprite.scale.set(s, s, 1);
+        scene.add(sprite);
+        fxParticles.push({
+          mesh: sprite,
+          mat,
+          vx: (Math.random() - 0.5) * 4.4 * speedScale,
+          vy: (1.2 + Math.random() * 2.8) * speedScale,
+          vz: (Math.random() - 0.5) * 4.4 * speedScale,
+          startScale: s,
+          endScale: s * 0.25,
+          baseOpacity: 0.95,
+          life: 0.34 + Math.random() * 0.18,
+          maxLife: 0.45,
+          gravity: 9.2
+        });
+      }
     }
 
-    function updateRevolverFX(rev, dt) {
-      const data = rev.userData;
+    function spawnSandDust(origin) {
+      spawnSparkBurst(origin, 3, 0xd8aa72, 0.48);
+      spawnGunsmoke(origin, 1, 0.85);
+    }
+
+    function spawnVampireAshDissolution(origin, scaleMul = 1.0) {
+      const count = Math.round(14 * scaleMul);
+      for (let i = 0; i < count; i++) {
+        const isEmber = i % 2 === 0;
+        const mat = new THREE.SpriteMaterial({
+          map: isEmber ? (M.sharedSparkGlowTex || M.sharedParticleGlowTex) : (M.sharedSmokePuffTex || M.sharedParticleGlowTex),
+          color: isEmber ? 0xff4e1f : 0x3b2426,
+          transparent: true,
+          opacity: isEmber ? 0.95 : 0.62,
+          blending: isEmber ? THREE.AdditiveBlending : THREE.NormalBlending,
+          depthWrite: false,
+          fog: false,
+          toneMapped: false
+        });
+        const sprite = new THREE.Sprite(mat);
+        sprite.position.set(
+          origin.x + (Math.random() - 0.5) * 0.7 * scaleMul,
+          origin.y + Math.random() * 1.6 * scaleMul,
+          origin.z + (Math.random() - 0.5) * 0.7 * scaleMul
+        );
+        const s = (isEmber ? 0.14 : 0.24) * scaleMul;
+        sprite.scale.set(s, s, 1);
+        scene.add(sprite);
+        fxParticles.push({
+          mesh: sprite,
+          mat,
+          vx: (Math.random() - 0.5) * 1.1,
+          vy: 1.1 + Math.random() * 1.6,
+          vz: (Math.random() - 0.5) * 1.1,
+          startScale: s,
+          endScale: s * (isEmber ? 0.2 : 1.7),
+          baseOpacity: isEmber ? 0.95 : 0.58,
+          life: 0.85 + Math.random() * 0.45,
+          maxLife: 1.15,
+          gravity: -0.4
+        });
+      }
+    }
+
+    function updateFXParticles(dt) {
+      for (let i = fxParticles.length - 1; i >= 0; i--) {
+        const p = fxParticles[i];
+        p.life -= dt;
+        if (p.life <= 0) {
+          scene.remove(p.mesh);
+          p.mat.dispose();
+          fxParticles.splice(i, 1);
+          continue;
+        }
+        p.vy -= p.gravity * dt;
+        p.mesh.position.x += p.vx * dt;
+        p.mesh.position.y += p.vy * dt;
+        p.mesh.position.z += p.vz * dt;
+        const t = 1 - Math.max(0, p.life) / p.maxLife;
+        const sc = THREE.MathUtils.lerp(p.startScale, p.endScale, t);
+        p.mesh.scale.set(sc, sc, 1);
+        p.mat.opacity = Math.max(0, (1 - t) * p.baseOpacity);
+      }
+    }
+
+    function triggerWeaponKick(weaponObj, kickStrength = 7.5, flashIntensity = 22) {
+      if (!weaponObj) return;
+      const data = weaponObj.userData;
+      data.recoilVel += kickStrength;
+      if (data.weaponId === 'revolver') {
+        data.cylinderTargetRot = (data.cylinderTargetRot || 0) + Math.PI / 3;
+      }
+      if (data.weaponId === 'rifle') {
+        data.leverAnimTimer = 0.34;
+      }
+      if (data.weaponId === 'crossbow') {
+        data.boltReloadTimer = 0.38;
+      }
+      if (data.flash && flashIntensity > 0) {
+        data.flashTimer = 0.08;
+        data.flash.visible = true;
+        data.flashLight.intensity = flashIntensity;
+      }
+    }
+
+    function updateWeaponViewFX(weaponObj, dt) {
+      if (!weaponObj) return;
+      const data = weaponObj.userData;
       const spring = 320;
       const damping = 24;
 
-      // Fjær/demper gir en kjapp rekyl som vipper opp og faller tilbake.
-      // Faste substeg gjør animasjonen stabil også på trege bildefrekvenser.
       let remaining = Math.min(dt, 0.1);
       while (remaining > 0) {
         const step = Math.min(remaining, 1 / 120);
@@ -1490,37 +2161,270 @@
         data.recoilAngle += data.recoilVel * step;
         remaining -= step;
       }
-      data.recoilAngle = THREE.MathUtils.clamp(data.recoilAngle, -0.08, 0.5);
-      data.body.rotation.x = data.recoilAngle;
-      data.body.position.z = data.recoilAngle * 0.05;
+      data.recoilAngle = THREE.MathUtils.clamp(data.recoilAngle, -0.08, 0.56);
+      if (data.body) {
+        data.body.rotation.x = data.recoilAngle;
+        data.body.position.z = data.recoilAngle * 0.055;
+      }
       if (data.cylinder && data.cylinderTargetRot !== undefined) {
         data.cylinder.rotation.z += (data.cylinderTargetRot - data.cylinder.rotation.z) * Math.min(1, dt * 18);
       }
       if (data.hammer) {
         data.hammer.rotation.x = -Math.max(0, data.recoilAngle) * 0.65;
       }
+      if (data.lever) {
+        if (data.leverAnimTimer > 0) {
+          data.leverAnimTimer = Math.max(0, data.leverAnimTimer - dt);
+          const lt = 1 - data.leverAnimTimer / 0.34;
+          data.lever.rotation.x = Math.sin(lt * Math.PI) * 0.62;
+        } else {
+          data.lever.rotation.x = 0;
+        }
+      }
+      if (data.loadedBolt) {
+        if (data.boltReloadTimer > 0) {
+          data.boltReloadTimer = Math.max(0, data.boltReloadTimer - dt);
+          data.loadedBolt.visible = data.boltReloadTimer < 0.08;
+        } else {
+          data.loadedBolt.visible = true;
+        }
+      }
+      if (data.fuseSpark) {
+        const sp = 0.085 + Math.sin(worldTime * 28) * 0.025;
+        data.fuseSpark.scale.set(sp, sp, 1);
+      }
 
-      if (data.flashTimer > 0) {
-        data.flashTimer = Math.max(0, data.flashTimer - dt);
-        const t = data.flashTimer / 0.08;
-        data.flash.visible = t > 0.02;
-        data.flashMat.opacity = t;
-        data.flashLight.intensity = 22 * t * t;
-        data.flash.scale.setScalar(0.7 + 0.9 * t);
-      } else if (data.flash.visible) {
-        data.flash.visible = false;
-        data.flashLight.intensity = 0;
-        data.flashMat.opacity = 0;
+      if (data.flash) {
+        if (data.flashTimer > 0) {
+          data.flashTimer = Math.max(0, data.flashTimer - dt);
+          const t = data.flashTimer / 0.08;
+          data.flash.visible = t > 0.02;
+          data.flashMat.opacity = t;
+          data.flashLight.intensity = 22 * t * t;
+          data.flash.scale.setScalar(0.7 + 0.9 * t);
+        } else if (data.flash.visible) {
+          data.flash.visible = false;
+          data.flashLight.intensity = 0;
+          data.flashMat.opacity = 0;
+        }
       }
     }
 
-    // Prosjektiler fjernes ved treff, bakken, livstid eller maks rekkevidde.
-    const PROJECTILE_MAX_HORIZONTAL = 120;
-    const PROJECTILE_MAX_HEIGHT = 90;
+    // --- Kastet Dynamitt (ballistisk bue, luntegnister og 2,2s eksplosjon med trykkbølge og AoE-skade) ---
+    const thrownDynamites = [];
+    const shockwaves = [];
+    const shockwaveGeo = new THREE.RingGeometry(0.35, 1.0, 24);
+    shockwaveGeo.rotateX(-Math.PI / 2);
+
+    function throwDynamite(origin, direction) {
+      if (playerState.dynamite <= 0) {
+        playShopDenySound();
+        equipWeapon('revolver');
+        return;
+      }
+      playerState.dynamite -= 1;
+      const dynMesh = createThrownDynamiteMesh();
+      dynMesh.position.copy(origin);
+      scene.add(dynMesh);
+
+      const vel = direction.clone().multiplyScalar(15.0);
+      vel.y += 4.6;
+
+      thrownDynamites.push({
+        mesh: dynMesh,
+        vel,
+        fuse: 2.2,
+        sparkAccum: 0
+      });
+
+      playDynamiteThrowSound();
+      updateStatusUI();
+      if (playerState.dynamite <= 0 && activeWeaponId === 'dynamite') {
+        equipWeapon('revolver', true);
+      }
+    }
+
+    let applyDynamiteBlastHook = null;
+
+    function explodeDynamite(pos) {
+      playExplosionSound();
+      spawnImpact(pos, 0xff8a2a, 3.2);
+      spawnSparkBurst(pos, 18, 0xffb838, 1.85);
+      spawnGunsmoke(pos, 8, 3.2);
+
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: 0xffaa3b,
+        transparent: true,
+        opacity: 0.9,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        fog: false,
+        toneMapped: false
+      });
+      const ringMesh = new THREE.Mesh(shockwaveGeo, ringMat);
+      ringMesh.position.set(pos.x, getTerrainHeight(pos.x, pos.z) + 0.12, pos.z);
+      ringMesh.scale.setScalar(0.3);
+      scene.add(ringMesh);
+      shockwaves.push({ mesh: ringMesh, mat: ringMat, life: 0.46, maxLife: 0.46 });
+
+      if (applyDynamiteBlastHook) {
+        applyDynamiteBlastHook(pos, 7.2);
+      }
+    }
+
+    function updateThrownDynamites(dt) {
+      for (let i = thrownDynamites.length - 1; i >= 0; i--) {
+        const d = thrownDynamites[i];
+        d.fuse -= dt;
+        d.vel.y -= 13.5 * dt;
+
+        d.mesh.position.addScaledVector(d.vel, dt);
+        d.mesh.rotation.x += dt * 7.5;
+        d.mesh.rotation.z += dt * 5.2;
+
+        if (pointHitsSolidWall(d.mesh.position.x, d.mesh.position.y, d.mesh.position.z)) {
+          d.vel.x *= -0.38;
+          d.vel.z *= -0.38;
+        }
+
+        const gy = getTerrainHeight(d.mesh.position.x, d.mesh.position.z) + 0.11;
+        if (d.mesh.position.y < gy) {
+          d.mesh.position.y = gy;
+          if (d.vel.y < -1.2) {
+            d.vel.y *= -0.36;
+            d.vel.x *= 0.65;
+            d.vel.z *= 0.65;
+          } else {
+            d.vel.set(0, 0, 0);
+          }
+        }
+
+        d.sparkAccum += dt;
+        if (d.sparkAccum >= 0.07) {
+          d.sparkAccum = 0;
+          spawnSparkBurst(d.mesh.position, 1, 0xffd25a, 0.42);
+        }
+
+        if (d.fuse <= 0) {
+          const blastPos = d.mesh.position.clone();
+          scene.remove(d.mesh);
+          thrownDynamites.splice(i, 1);
+          explodeDynamite(blastPos);
+        }
+      }
+
+      for (let i = shockwaves.length - 1; i >= 0; i--) {
+        const sw = shockwaves[i];
+        sw.life -= dt;
+        if (sw.life <= 0) {
+          scene.remove(sw.mesh);
+          sw.mat.dispose();
+          shockwaves.splice(i, 1);
+          continue;
+        }
+        const t = 1 - sw.life / sw.maxLife;
+        sw.mesh.scale.setScalar(0.4 + t * 7.2);
+        sw.mat.opacity = Math.max(0, (1 - t) * 0.9);
+      }
+    }
+
+    function shoot() {
+      if (shotCooldownTimer > 0) return;
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+
+      const useVR = renderer.xr.isPresenting && vrActiveWeapon;
+      const weaponObj = useVR ? vrActiveWeapon : pcWeapons[activeWeaponId];
+      if (!weaponObj) return;
+
+      weaponObj.userData.muzzle.getWorldPosition(shotPos);
+      shotDir.set(0, 0, 0);
+
+      if (useVR) {
+        weaponObj.getWorldQuaternion(shotQuat);
+        shotDir.copy(FORWARD).applyQuaternion(shotQuat).normalize();
+      } else {
+        camera.getWorldPosition(aimCamPos);
+        camera.getWorldDirection(aimCamDir);
+        const convergeDist = activeWeaponId === 'rifle' ? 28 : 16;
+        aimPoint.copy(aimCamPos).addScaledVector(aimCamDir, convergeDist);
+        shotDir.copy(aimPoint).sub(shotPos).normalize();
+      }
+
+      if (activeWeaponId === 'dynamite') {
+        shotCooldownTimer = 0.52;
+        triggerWeaponKick(weaponObj, 6.0, 0);
+        throwDynamite(shotPos, shotDir);
+        pulseRightHaptic();
+        return;
+      }
+
+      if (activeWeaponId === 'shotgun') {
+        shotCooldownTimer = 0.52;
+        spreadRight.crossVectors(shotDir, UP);
+        if (spreadRight.lengthSq() < 1e-5) spreadRight.set(1, 0, 0);
+        spreadRight.normalize();
+        spreadUp.crossVectors(spreadRight, shotDir).normalize();
+
+        for (let p = 0; p < 6; p++) {
+          const ang = (p / 6) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
+          const rad = 0.025 + Math.random() * 0.068;
+          pelletDir
+            .copy(shotDir)
+            .addScaledVector(spreadRight, Math.cos(ang) * rad)
+            .addScaledVector(spreadUp, Math.sin(ang) * rad)
+            .normalize();
+          spawnBullet(shotPos, pelletDir, { speed: 58, life: 0.68, dmgMult: 1, kind: 'pellet' });
+        }
+        spawnGunsmoke(shotPos, 4, 1.35);
+        notifyGunshot(shotPos);
+        triggerWeaponKick(weaponObj, 13.5, 28);
+        playShotgunSound();
+        pulseRightHaptic();
+        return;
+      }
+
+      if (activeWeaponId === 'rifle') {
+        shotCooldownTimer = 0.42;
+        spawnBullet(shotPos, shotDir, { speed: 98, life: 3.2, dmgMult: 3, kind: 'rifle' });
+        spawnGunsmoke(shotPos, 2, 1.1);
+        notifyGunshot(shotPos);
+        triggerWeaponKick(weaponObj, 9.5, 25);
+        playRifleSound();
+        pulseRightHaptic();
+        return;
+      }
+
+      if (activeWeaponId === 'crossbow') {
+        shotCooldownTimer = 0.46;
+        spawnBullet(shotPos, shotDir, { speed: 78, life: 2.8, dmgMult: 1, isSilverBolt: true, kind: 'silver' });
+        spawnSparkBurst(shotPos, 4, 0x8fd8ff, 0.45);
+        triggerWeaponKick(weaponObj, 4.5, 14);
+        playCrossbowSound();
+        pulseRightHaptic();
+        return;
+      }
+
+      // Standard / Gull Peacemaker Revolver
+      shotCooldownTimer = 0.16;
+      spawnBullet(shotPos, shotDir, { speed: 64, life: 2.6, dmgMult: 1, kind: 'revolver' });
+      spawnGunsmoke(shotPos, 2, 0.95);
+      notifyGunshot(shotPos);
+      triggerWeaponKick(weaponObj, 7.5, 22);
+      playGunshot();
+      pulseRightHaptic();
+    }
+
+    // Prosjektiler fjernes ved treff, bakken, livstid eller maks rekkevidde (utvidet til +-175m).
+    const PROJECTILE_MAX_HORIZONTAL = 175;
+    const PROJECTILE_MAX_HEIGHT = 110;
     const bullets = [];
     const bulletGeo = new THREE.CylinderGeometry(0.018, 0.018, 0.42, 6);
     bulletGeo.rotateX(Math.PI / 2);
+    const silverBoltGeo = new THREE.CylinderGeometry(0.014, 0.018, 0.58, 6);
+    silverBoltGeo.rotateX(Math.PI / 2);
     const bulletMat = new THREE.MeshBasicMaterial({ color: 0xffd66b, fog: false });
+    const silverBoltMat = new THREE.MeshBasicMaterial({ color: 0xd8f2ff, fog: false });
     const bulletGlowGeo = new THREE.SphereGeometry(0.06, 8, 6);
     const bulletGlowMat = new THREE.MeshBasicMaterial({
       color: 0xffe9a8,
@@ -1530,11 +2434,20 @@
       depthWrite: false,
       fog: false
     });
+    const silverGlowBoltMat = new THREE.MeshBasicMaterial({
+      color: 0x6ec6ff,
+      transparent: true,
+      opacity: 0.62,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      fog: false
+    });
 
-    function spawnBullet(origin, direction) {
+    function spawnBullet(origin, direction, opts = {}) {
+      const isSilver = !!opts.isSilverBolt;
       const mesh = new THREE.Group();
-      mesh.add(new THREE.Mesh(bulletGeo, bulletMat));
-      const glow = new THREE.Mesh(bulletGlowGeo, bulletGlowMat);
+      mesh.add(new THREE.Mesh(isSilver ? silverBoltGeo : bulletGeo, isSilver ? silverBoltMat : bulletMat));
+      const glow = new THREE.Mesh(bulletGlowGeo, isSilver ? silverGlowBoltMat : bulletGlowMat);
       glow.position.z = 0.13;
       mesh.add(glow);
 
@@ -1546,8 +2459,10 @@
         mesh,
         dir: direction.clone(),
         prev: origin.clone(),
-        speed: 62,
-        life: 2.5
+        speed: opts.speed || 64,
+        life: opts.life || 2.5,
+        dmgMult: opts.dmgMult || 1,
+        isSilverBolt: isSilver
       });
     }
 
@@ -1673,6 +2588,50 @@
     }
 
     const safeHouseDoorBulletCheckPos = new THREE.Vector3();
+    const altarBulletCheckPos = new THREE.Vector3();
+    const goldBulletCheckPos = new THREE.Vector3();
+    let summonBossFromAltarHook = null;
+
+    function collectGoldPickup(gp) {
+      if (!gp || gp.collected) return;
+      gp.collected = true;
+      gp.group.visible = false;
+      gp.respawnTimer = 45;
+      playerState.gold += gp.amount;
+      if (gp.group.position.x > 65) {
+        storyState.mineGoldCollected = true;
+      }
+      playGoldPickupSound();
+      checkStoryProgression();
+      updateStatusUI();
+    }
+
+    function updateGoldPickups(dt) {
+      if (!goldPickups) return;
+      for (let i = 0; i < goldPickups.length; i++) {
+        const gp = goldPickups[i];
+        if (gp.collected) {
+          if (gp.respawnTimer > 0) {
+            gp.respawnTimer -= dt;
+            if (gp.respawnTimer <= 0) {
+              gp.collected = false;
+              gp.group.visible = true;
+            }
+          }
+          continue;
+        }
+        gp.hitMesh.rotation.y += dt * 1.4;
+        const dx = playerRig.position.x - gp.group.position.x;
+        const dz = playerRig.position.z - gp.group.position.z;
+        if (dx * dx + dz * dz < 5.8) {
+          collectGoldPickup(gp);
+        }
+      }
+      if (bloodChaliceOrb) {
+        bloodChaliceOrb.rotation.y += dt * 1.6;
+        bloodChaliceOrb.position.y = 1.52 + Math.sin(worldTime * 2.8) * 0.06;
+      }
+    }
 
     function updateBullets(dt) {
       for (let i = bullets.length - 1; i >= 0; i--) {
@@ -1688,8 +2647,39 @@
             Math.abs(bullet.mesh.position.y - safeHouseDoorBulletCheckPos.y) < 1.08 &&
             segmentPointDistance(bullet.prev, bullet.mesh.position, safeHouseDoorBulletCheckPos) < 0.68
           ) {
-            spawnImpact(bullet.mesh.position, 0xffd28a, 0.16);
+            spawnSparkBurst(bullet.mesh.position, 5, 0xffd28a, 0.8);
             toggleSafeHouseDoor();
+            removeBullet(i);
+            continue;
+          }
+        }
+
+        // Sjekk om kula treffer Blodalteret i Boot Hill-kapellet (fremkaller Natt & Lord Malakor!)
+        if (bloodChaliceOrb) {
+          bloodChaliceOrb.getWorldPosition(altarBulletCheckPos);
+          if (segmentPointDistance(bullet.prev, bullet.mesh.position, altarBulletCheckPos) < 0.72) {
+            spawnSparkBurst(altarBulletCheckPos, 14, 0xff2442, 1.35);
+            if (summonBossFromAltarHook) summonBossFromAltarHook();
+            removeBullet(i);
+            continue;
+          }
+        }
+
+        // Sjekk om kula treffer en gullklump/gullkiste i Crimson Canyon
+        if (goldPickups) {
+          let hitGold = null;
+          for (let g = 0; g < goldPickups.length; g++) {
+            const gp = goldPickups[g];
+            if (gp.collected) continue;
+            goldBulletCheckPos.set(gp.group.position.x, gp.group.position.y + 0.30, gp.group.position.z);
+            if (segmentPointDistance(bullet.prev, bullet.mesh.position, goldBulletCheckPos) < 0.65) {
+              hitGold = gp;
+              break;
+            }
+          }
+          if (hitGold) {
+            spawnSparkBurst(bullet.mesh.position, 8, 0xffe066, 0.95);
+            collectGoldPickup(hitGold);
             removeBullet(i);
             continue;
           }
@@ -1711,7 +2701,7 @@
 
         if (hitBottle) {
           hitBottle.getWorldPosition(bottleWorldPos);
-          spawnImpact(bottleWorldPos, 0xffe6a8, 0.2);
+          spawnSparkBurst(bottleWorldPos, 6, 0xffe6a8, 0.8);
           knockBottle(hitBottle, bullet.dir);
           removeBullet(i);
           continue;
@@ -1719,14 +2709,19 @@
 
         const combatHit = findCombatHit(bullet.prev, bullet.mesh.position);
         if (combatHit) {
-          spawnImpact(combatHit.point, 0xffcf8a, 0.18);
-          damageCombatTarget(combatHit, bullet.dir);
+          spawnImpact(combatHit.point, bullet.isSilverBolt ? 0x8ad8ff : 0xffcf8a, 0.2);
+          if (bullet.isSilverBolt && (combatHit.type === 'night' || combatHit.type === 'boss')) {
+            spawnSparkBurst(combatHit.point, 10, 0xff6a1f, 1.15);
+          }
+          damageCombatTarget(combatHit, bullet.dir, bullet);
           removeBullet(i);
           continue;
         }
 
         if (pointHitsSolidWall(bullet.mesh.position.x, bullet.mesh.position.y, bullet.mesh.position.z)) {
-          spawnImpact(bullet.mesh.position, 0xd9b07c, 0.14);
+          spawnImpact(bullet.mesh.position, 0xffdf7a, 0.15);
+          spawnSparkBurst(bullet.mesh.position, 5, 0xffd85a, 0.9);
+          playRockRicochetSound();
           removeBullet(i);
           continue;
         }
@@ -1734,6 +2729,7 @@
         const groundY = getTerrainHeight(bullet.mesh.position.x, bullet.mesh.position.z);
         if (bullet.mesh.position.y < groundY + 0.05) {
           spawnImpact(bullet.mesh.position, 0xd9b07c, 0.16);
+          spawnSandDust(bullet.mesh.position);
           removeBullet(i);
           continue;
         }
@@ -1751,6 +2747,16 @@
 
     const {
       playGunshot,
+      playShotgunSound,
+      playRifleSound,
+      playCrossbowSound,
+      playDynamiteThrowSound,
+      playExplosionSound,
+      playWeaponSwitchSound,
+      playGoldPickupSound,
+      playRockRicochetSound,
+      playBearRoarSound,
+      playBossVictoryFanfare,
       playBottleHit,
       playFleshHitSound,
       playPlayerHitSound,
@@ -1766,6 +2772,9 @@
       updateBackgroundAmbience
     } = initWesternAudio(audioCtx, controllers, () => nightAmount);
 
+    playWeaponSwitchSfxFn = playWeaponSwitchSound;
+    playStoryFanfareHook = playQuestFanfare;
+
     function pulseRightHaptic() {
       if (!renderer.xr.isPresenting) return;
       const gamepad = getHandGamepad('right');
@@ -1779,15 +2788,32 @@
       }
     }
 
-    // --- 7e. Bevegelse: venstre spak i VR, WASD/piltaster på PC ---
-    const VR_MOVE_SPEED = 2.7;
-    const PC_MOVE_SPEED = 6.5;
-    const PLAY_AREA_LIMIT = 85;
+    // --- 7e. Bevegelse: venstre spak i VR, WASD/piltaster på PC (Kartgrenser -158..+158) ---
+    const VR_MOVE_SPEED = 3.1;
+    const PC_MOVE_SPEED = 7.4;
+    const PLAY_AREA_LIMIT = 158;
     const SNAP_TURN_ANGLE = Math.PI / 6;
     const SNAP_TURN_COOLDOWN = 0.35;
 
     let snapTurnCooldown = 0;
     let snapTurnReady = true;
+    let vrWeaponBtnPrev = false;
+
+    function updateVRWeaponSwitchButton() {
+      if (!renderer.xr.isPresenting) {
+        vrWeaponBtnPrev = false;
+        return;
+      }
+      const gpR = getHandGamepad('right') || (vrHands.right && vrHands.right.userData.gamepad) || null;
+      const gpL = getHandGamepad('left') || (vrHands.left && vrHands.left.userData.gamepad) || null;
+      const aPressed = !!(gpR && gpR.buttons && ((gpR.buttons[4] && gpR.buttons[4].pressed) || (gpR.buttons[5] && gpR.buttons[5].pressed)));
+      const xPressed = !!(gpL && gpL.buttons && ((gpL.buttons[4] && gpL.buttons[4].pressed) || (gpL.buttons[5] && gpL.buttons[5].pressed)));
+      const nowPressed = aPressed || xPressed;
+      if (nowPressed && !vrWeaponBtnPrev) {
+        cycleUnlockedWeapon(1);
+      }
+      vrWeaponBtnPrev = nowPressed;
+    }
 
     const moveForward = new THREE.Vector3();
     const moveRight = new THREE.Vector3();
@@ -1894,11 +2920,27 @@
     }
 
     const moveKeyCodes = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+    const weaponDigitMap = {
+      Digit1: 'revolver',
+      Digit2: 'shotgun',
+      Digit3: 'rifle',
+      Digit4: 'crossbow',
+      Digit5: 'dynamite'
+    };
 
     window.addEventListener('keydown', (e) => {
       pcKeys[e.code] = true;
       const keyLower = typeof e.key === 'string' ? e.key.toLowerCase() : '';
       if (moveKeyCodes.includes(e.code)) e.preventDefault();
+      if (!e.repeat && !renderer.xr.isPresenting && weaponDigitMap[e.code]) {
+        const targetWeapon = weaponDigitMap[e.code];
+        if (!equipWeapon(targetWeapon)) {
+          playShopDenySound();
+        }
+      }
+      if ((e.code === 'KeyQ' || keyLower === 'q') && !e.repeat && !renderer.xr.isPresenting) {
+        cycleUnlockedWeapon(1);
+      }
       if ((e.code === 'KeyE' || e.code === 'KeyH' || keyLower === 'e' || keyLower === 'h') && !e.repeat && !renderer.xr.isPresenting) {
         tryEatFood();
       }
@@ -1908,6 +2950,12 @@
       if ((e.code === 'KeyR' || keyLower === 'r') && !renderer.xr.isPresenting) resetTargets();
       if ((e.code === 'KeyN' || keyLower === 'n') && !renderer.xr.isPresenting) toggleDayNight();
     });
+
+    window.addEventListener('wheel', (e) => {
+      if (renderer.xr.isPresenting) return;
+      if (Math.abs(e.deltaY) < 4) return;
+      cycleUnlockedWeapon(e.deltaY > 0 ? 1 : -1);
+    }, { passive: true });
 
     window.addEventListener('keyup', (e) => {
       pcKeys[e.code] = false;
@@ -1925,7 +2973,7 @@
     const DAY_DURATION = 90;
     const NIGHT_DURATION = 60;
     const FULL_DAY_CYCLE = DAY_DURATION + NIGHT_DURATION;
-    const FOREST_BOUNDS = { minX: -26, maxX: 26, minZ: -70, maxZ: -22 };
+    const FOREST_BOUNDS = { minX: -58, maxX: 58, minZ: -145, maxZ: -28 };
 
     let cycleTime = 0;
     let isNight = false;
@@ -1968,7 +3016,7 @@
     sunMesh.material.opacity = 0.92;
 
     // Myk radial glorie-tekstur delt mellom måneglorie, nattøyne og svevende partikler
-    const lanterns = [saloonLantern, tailorLantern];
+    const lanterns = [saloonLantern, tailorLantern, gunsmithLantern].filter(Boolean);
     const dayWindowColor = new THREE.Color(0x526574);
     const nightWindowColor = new THREE.Color(0xffcf70);
 
@@ -1990,8 +3038,8 @@
 
       scene.background.copy(daySkyColor).lerp(nightSkyColor, night);
       scene.fog.color.copy(dayFogColor).lerp(nightFogColor, night);
-      scene.fog.near = THREE.MathUtils.lerp(48, 26, night);
-      scene.fog.far = THREE.MathUtils.lerp(285, 165, night);
+      scene.fog.near = THREE.MathUtils.lerp(56, 28, night);
+      scene.fog.far = THREE.MathUtils.lerp(335, 195, night);
 
       hemiLight.color.copy(dayHemiSkyColor).lerp(nightHemiSkyColor, night);
       hemiLight.groundColor.copy(dayHemiGroundColor).lerp(nightHemiGroundColor, night);
@@ -2035,8 +3083,12 @@
     function updateFlickeringLights(t) {
       const f1 = 1.0 + Math.sin(t * 7.3) * 0.07 + Math.sin(t * 17.9) * 0.04;
       const f2 = 1.0 + Math.sin(t * 8.1 + 1.9) * 0.07 + Math.cos(t * 19.3) * 0.04;
+      const f3 = 1.0 + Math.sin(t * 7.7 + 3.4) * 0.07 + Math.sin(t * 16.4) * 0.04;
       saloonLantern.light.intensity = baseLanternIntensity * f1;
       tailorLantern.light.intensity = baseLanternIntensity * f2;
+      if (gunsmithLantern && gunsmithLantern.light) {
+        gunsmithLantern.light.intensity = baseLanternIntensity * f3;
+      }
       safeHouseLantern.light.intensity = baseSafeLanternIntensity * (0.97 + Math.sin(t * 6.4 + 0.7) * 0.05);
 
       const fireFlicker = 1.0 + Math.sin(t * 11.4) * 0.14 + Math.cos(t * 23.7) * 0.08;
@@ -2056,6 +3108,8 @@
         fl.rotation.z = Math.sin(t * 8.6 + ph) * 0.12;
       }
     }
+
+    let onNightStateChangedBossHook = null;
 
     // --- 8c. Tidssyklus og bytte mellom dag og natt ---
     function setTimeOfDay(night, immediate = false) {
@@ -2079,6 +3133,7 @@
           deer.group.visible = deer.alive;
         }
       }
+      if (onNightStateChangedBossHook) onNightStateChangedBossHook(night);
 
       applyDayNightLighting(nightAmount);
     }
@@ -2110,7 +3165,7 @@
       gunshotAlertTimer = 0.6;
     }
 
-    // --- Mat-spising (+35 HP) og Skredder-interaksjon (innenfor 6 meter) ---
+    // --- Mat-spising (+35 HP), Skredder-, Våpensmed- og Sheriff-interaksjon (innenfor 6 meter) ---
     function tryEatFood() {
       if (playerState.food <= 0 || playerState.health >= 100) return false;
       playerState.food -= 1;
@@ -2122,11 +3177,13 @@
 
     const uiRaycaster = new THREE.Raycaster();
     uiRaycaster.near = 0.01;
-    uiRaycaster.far = 14;
+    uiRaycaster.far = 15;
     const uiTempMatrix = new THREE.Matrix4();
     const uiPointerNDC = new THREE.Vector2();
     const tailorCounterWorldPos = new THREE.Vector3();
+    const gunsmithCounterWorldPos = new THREE.Vector3();
     const saloonQuestWorldPos = new THREE.Vector3();
+    const sheriffWorldPos = new THREE.Vector3();
     const playerCheckWorldPos = new THREE.Vector3();
     const bottleCheckWorldPos = new THREE.Vector3();
     const bottleRayOffset = new THREE.Vector3();
@@ -2146,6 +3203,21 @@
       return Math.min(camDist, rigDist) <= 6.0;
     }
 
+    function isPlayerNearGunsmithCounter() {
+      if (!gunsmithCounterMesh) return false;
+      gunsmithCounterMesh.getWorldPosition(gunsmithCounterWorldPos);
+      camera.getWorldPosition(playerCheckWorldPos);
+      const camDist = Math.hypot(
+        playerCheckWorldPos.x - gunsmithCounterWorldPos.x,
+        playerCheckWorldPos.z - gunsmithCounterWorldPos.z
+      );
+      const rigDist = Math.hypot(
+        playerRig.position.x - gunsmithCounterWorldPos.x,
+        playerRig.position.z - gunsmithCounterWorldPos.z
+      );
+      return Math.min(camDist, rigDist) <= 6.0;
+    }
+
     function isPlayerNearSaloonQuestBoard() {
       if (!saloonQuestAnchorMesh) return false;
       saloonQuestAnchorMesh.getWorldPosition(saloonQuestWorldPos);
@@ -2159,6 +3231,21 @@
         playerRig.position.z - saloonQuestWorldPos.z
       );
       return Math.min(camDist, rigDist) <= 6.0;
+    }
+
+    function isPlayerNearSheriff() {
+      if (!sheriffVanceGroup) return false;
+      sheriffVanceGroup.getWorldPosition(sheriffWorldPos);
+      camera.getWorldPosition(playerCheckWorldPos);
+      const camDist = Math.hypot(
+        playerCheckWorldPos.x - sheriffWorldPos.x,
+        playerCheckWorldPos.z - sheriffWorldPos.z
+      );
+      const rigDist = Math.hypot(
+        playerRig.position.x - sheriffWorldPos.x,
+        playerRig.position.z - sheriffWorldPos.z
+      );
+      return Math.min(camDist, rigDist) <= 6.5;
     }
 
     let lastDoorToggleMs = 0;
@@ -2214,16 +3301,15 @@
     function selectSaloonQuest(quest) {
       if (!quest) return;
 
-      if (completedQuests.includes(quest.id)) {
-        setQuestBoardFeedback('done_already', false, 3.0);
-        playShopDenySound();
-        return;
-      }
-
       if (activeQuest && activeQuest.id === quest.id) {
         setQuestBoardFeedback('active_now', true, 3.0, quest);
         playQuestSelectSound();
         return;
+      }
+
+      const wasDone = completedQuests.includes(quest.id);
+      if (wasDone) {
+        questProgressMap[quest.id] = 0;
       }
 
       activeQuest = quest;
@@ -2237,7 +3323,7 @@
         }
       }
 
-      setQuestBoardFeedback('accepted', true, 3.2, quest);
+      setQuestBoardFeedback(wasDone ? 'done_already' : 'accepted', true, 3.2, quest);
       updateStatusUI();
       playQuestSelectSound();
     }
@@ -2248,23 +3334,25 @@
       if (!completedQuests.includes(finished.id)) {
         completedQuests.push(finished.id);
       }
-      questProgressMap[finished.id] = finished.goal;
+      questProgressMap[finished.id] = 0;
       activeQuest = null;
       questProgress = 0;
 
       if (finished.id === 'deer_hunt') {
+        playerState.gold += 25;
         playerState.food += 2;
         playerState.pelt += 2;
         hasSheriffStar = true;
         sheriffStarBadge.visible = true;
         setQuestBoardFeedback('reward_deer', true, 4.5);
       } else if (finished.id === 'bandit_clear') {
+        playerState.gold += 30;
         weaponDamage = 2;
         hasGoldenRevolver = true;
         upgradeRevolverToGold();
         setQuestBoardFeedback('reward_bandit', true, 4.5);
       } else if (finished.id === 'night_guardian') {
-        hasLegendTitle = true;
+        playerState.gold += 45;
         playerState.health = 100;
         setQuestBoardFeedback('reward_night', true, 4.5);
       }
@@ -2314,10 +3402,79 @@
       if (outfit.nightMonsterDamage > nightMonsterDamage) {
         nightMonsterDamage = outfit.nightMonsterDamage;
       }
+      storyState.boughtGear = true;
+      if (currentOutfitTier >= 3) {
+        storyState.hasVampireGear = true;
+      }
       updateLeftSleeveAppearance(currentOutfitTier);
       setTailorFeedback('crafted', true, 3.0);
+      checkStoryProgression();
       updateStatusUI();
       playUpgradeSound();
+    }
+
+    function setGunsmithFeedback(key, isSuccess, duration = 3.2, arg = null) {
+      gunsmithStatusKey = key;
+      gunsmithStatusArg = arg;
+      gunsmithStatusSuccess = isSuccess;
+      gunsmithStatusTimer = duration;
+      updateGunsmithUI();
+    }
+
+    function purchaseGunsmithItem(item) {
+      if (!item) return;
+
+      if (item.type === 'weapon') {
+        if (unlockedWeapons[item.weaponId]) {
+          equipWeapon(item.weaponId);
+          setGunsmithFeedback('owned', true, 3.0, item.weaponId);
+          return;
+        }
+        if (playerState.gold < item.goldCost) {
+          setGunsmithFeedback('no_gold', false, 3.2);
+          playShopDenySound();
+          return;
+        }
+        if (playerState.pelt < item.peltCost) {
+          setGunsmithFeedback('no_pelts', false, 3.2);
+          playShopDenySound();
+          return;
+        }
+        playerState.gold -= item.goldCost;
+        playerState.pelt -= item.peltCost;
+        unlockedWeapons[item.weaponId] = true;
+        storyState.boughtGear = true;
+        if (item.weaponId === 'crossbow') {
+          storyState.hasVampireGear = true;
+        }
+        equipWeapon(item.weaponId, true);
+        setGunsmithFeedback('bought_weapon', true, 3.5, item.weaponId);
+        checkStoryProgression();
+        updateStatusUI();
+        playUpgradeSound();
+        return;
+      }
+
+      // 3x Dynamitt-pakke
+      if (playerState.gold < item.goldCost) {
+        setGunsmithFeedback('no_gold', false, 3.2);
+        playShopDenySound();
+        return;
+      }
+      playerState.gold -= item.goldCost;
+      playerState.dynamite += item.amount;
+      storyState.boughtGear = true;
+      setGunsmithFeedback('bought_dynamite', true, 3.2);
+      checkStoryProgression();
+      updateStatusUI();
+      playUpgradeSound();
+    }
+
+    function talkToSheriffVance() {
+      storyState.talkedSheriff = true;
+      playQuestSelectSound();
+      checkStoryProgression();
+      updateStatusUI();
     }
 
     function setRayFromVRController(controller) {
@@ -2347,7 +3504,16 @@
         }
       }
 
-      // 3. Skredder-butikken (innenfor 6m)
+      // 3. Klikk på Sheriff Vance utenfor Safe House / Saloonen (innenfor 6,5m)
+      if (isPlayerNearSheriff() && sheriffHitMeshes.length > 0) {
+        const sHits = uiRaycaster.intersectObjects(sheriffHitMeshes, false);
+        if (sHits.length > 0) {
+          talkToSheriffVance();
+          return true;
+        }
+      }
+
+      // 4. Skredder-butikken (innenfor 6m)
       if (isPlayerNearTailorCounter()) {
         const btnHits = uiRaycaster.intersectObjects(tailorButtonMeshes, false);
         if (btnHits.length > 0) {
@@ -2360,7 +3526,20 @@
         }
       }
 
-      // 4. Sheriffens oppdragstavle utenfor Saloonen (innenfor 6m)
+      // 5. Våpensmed-butikken (innenfor 6m)
+      if (isPlayerNearGunsmithCounter()) {
+        const gHits = uiRaycaster.intersectObjects(gunsmithButtonMeshes, false);
+        if (gHits.length > 0) {
+          purchaseGunsmithItem(gHits[0].object.userData.gunsmithItem);
+          return true;
+        }
+        const gShieldHits = uiRaycaster.intersectObjects(gunsmithBlockHitMeshes, false);
+        if (gShieldHits.length > 0) {
+          return true;
+        }
+      }
+
+      // 6. Sheriffens oppdragstavle utenfor Saloonen (innenfor 6m)
       if (isPlayerNearSaloonQuestBoard()) {
         const qHits = uiRaycaster.intersectObjects(saloonQuestButtonMeshes, false);
         if (qHits.length > 0 && !isPracticeBottleCloserOnRay(uiRaycaster.ray, qHits[0].distance)) {
@@ -2373,13 +3552,34 @@
         }
       }
 
+      // 7. Klikk på Gullklumper/kister på nært hold (innenfor 5,5m)
+      if (goldHitMeshes && goldHitMeshes.length > 0) {
+        const gPickHits = uiRaycaster.intersectObjects(goldHitMeshes, false);
+        if (gPickHits.length > 0 && gPickHits[0].distance <= 5.5) {
+          const gp = gPickHits[0].object.userData.goldEntry;
+          if (gp && !gp.collected) {
+            collectGoldPickup(gp);
+            return true;
+          }
+        }
+      }
+
+      // 8. Klikk på Blodalteret i Boot Hill-kapellet (innenfor 7m -> fremkall Natt & Lord Malakor)
+      if (chapelAltarHitMeshes && chapelAltarHitMeshes.length > 0) {
+        const altarHits = uiRaycaster.intersectObjects(chapelAltarHitMeshes, false);
+        if (altarHits.length > 0 && altarHits[0].distance <= 7.5) {
+          if (summonBossFromAltarHook) summonBossFromAltarHook();
+          return true;
+        }
+      }
+
       return false;
     }
 
     function tryVRRightTriggerUI(controller) {
       setRayFromVRController(controller);
 
-      // 1. Sjekk klikk på spiseknapp eller EN/NO-knapp på venstre håndledd
+      // 1. Sjekk klikk på spiseknapp, språkknapp eller våpenknapp på venstre håndledd
       leftWristRig.updateMatrixWorld(true);
       if (uiRaycaster.intersectObject(langWristButton, false).length > 0) {
         toggleLanguage();
@@ -2390,8 +3590,12 @@
         tryEatFood();
         return true;
       }
+      if (uiRaycaster.intersectObject(weaponWristButton, false).length > 0) {
+        cycleUnlockedWeapon(1);
+        return true;
+      }
 
-      // 2. Sjekk klikk på skredder, oppdragstavle, Safe House-dør eller språkskilt
+      // 2. Sjekk klikk på skredder, våpensmed, Sheriff, oppdragstavle, Safe House-dør eller språkskilt
       return tryRayBoardInteractions();
     }
 
@@ -2464,1265 +3668,100 @@
 
     applyDayNightLighting(0);
 
-    // --- 8g. Enkle delte geometrier og materialer for alle skapninger ---
-    function faceToward(group, targetX, targetZ) {
-      const dx = targetX - group.position.x;
-      const dz = targetZ - group.position.z;
-      if (dx * dx + dz * dz < 0.0001) return;
-      group.rotation.y = Math.atan2(-dx, -dz);
-    }
-
-    function moveEntityToward(group, targetX, targetZ, speed, dt, stopDistance = 0, radius = 0, blockOpenSafeDoor = false) {
-      const dx = targetX - group.position.x;
-      const dz = targetZ - group.position.z;
-      const distance = Math.hypot(dx, dz);
-      if (distance < 0.0001) return distance;
-
-      const step = Math.min(speed * dt, Math.max(0, distance - stopDistance));
-      if (step <= 0) return distance;
-
-      const dirX = dx / distance;
-      const dirZ = dz / distance;
-      const startX = group.position.x;
-      const startZ = group.position.z;
-
-      group.position.x = startX + dirX * step;
-      group.position.z = startZ + dirZ * step;
-
-      if (radius > 0) {
-        if (blockOpenSafeDoor) pushOutOfHidingZone(group, radius);
-        resolveWallCollisions(group.position, radius, blockOpenSafeDoor);
-
-        const movedX = group.position.x - startX;
-        const movedZ = group.position.z - startZ;
-        const movedDist = Math.hypot(movedX, movedZ);
-
-        if (movedDist >= step * 0.55) {
-          group.userData.slideSign = 0;
-        } else if (movedDist < step * 0.38) {
-          const slideStep = step * 0.85;
-          let sign = group.userData.slideSign || 0;
-
-          if (sign === 0) {
-            group.position.x = startX - dirZ * slideStep;
-            group.position.z = startZ + dirX * slideStep;
-            if (blockOpenSafeDoor) pushOutOfHidingZone(group, radius);
-            resolveWallCollisions(group.position, radius, blockOpenSafeDoor);
-            const lx = group.position.x;
-            const lz = group.position.z;
-            const lTargetSq = (targetX - lx) * (targetX - lx) + (targetZ - lz) * (targetZ - lz);
-
-            group.position.x = startX + dirZ * slideStep;
-            group.position.z = startZ - dirX * slideStep;
-            if (blockOpenSafeDoor) pushOutOfHidingZone(group, radius);
-            resolveWallCollisions(group.position, radius, blockOpenSafeDoor);
-            const rx = group.position.x;
-            const rz = group.position.z;
-            const rTargetSq = (targetX - rx) * (targetX - rx) + (targetZ - rz) * (targetZ - rz);
-
-            sign = lTargetSq <= rTargetSq ? -1 : 1;
-            group.userData.slideSign = sign;
-          }
-
-          group.position.x = startX + sign * dirZ * slideStep;
-          group.position.z = startZ - sign * dirX * slideStep;
-          if (blockOpenSafeDoor) pushOutOfHidingZone(group, radius);
-          resolveWallCollisions(group.position, radius, blockOpenSafeDoor);
-
-          const sMovedSq =
-            (group.position.x - startX) * (group.position.x - startX) +
-            (group.position.z - startZ) * (group.position.z - startZ);
-          if (sMovedSq < 1e-6) {
-            sign = -sign;
-            group.userData.slideSign = sign;
-            group.position.x = startX + sign * dirZ * slideStep;
-            group.position.z = startZ - sign * dirX * slideStep;
-            if (blockOpenSafeDoor) pushOutOfHidingZone(group, radius);
-            resolveWallCollisions(group.position, radius, blockOpenSafeDoor);
+    const E = initWorldEntities({
+      scene,
+      playerRig,
+      playerState,
+      storyState,
+      S: {
+        get nightMonsterDamage() { return nightMonsterDamage; },
+        get weaponDamage() { return weaponDamage; },
+        get playerHiddenStatus() { return playerHiddenStatus; },
+        get safeHouseDoorOpen() { return safeHouseDoorOpen; },
+        get isNight() { return isNight; },
+        get worldTime() { return worldTime; },
+        get gunshotAlertTimer() { return gunshotAlertTimer; },
+        grantLegendTitle() { hasLegendTitle = true; },
+        forceNightNow() {
+          if (!isNight) {
+            cycleTime = DAY_DURATION;
+            setTimeOfDay(true, true);
           }
         }
-
-        const actualDX = group.position.x - startX;
-        const actualDZ = group.position.z - startZ;
-        if (actualDX * actualDX + actualDZ * actualDZ > 1e-6) {
-          group.rotation.y = Math.atan2(-actualDX, -actualDZ);
-        } else {
-          faceToward(group, targetX, targetZ);
-        }
-        return distance;
-      }
-
-      faceToward(group, targetX, targetZ);
-      return distance;
-    }
-
-    // --- 8g2. Animasjonskontroll: AnimationMixer + tilstander ---
-    const animationMixers = [];
-
-    function createQuadrupedAnimationClips() {
-      const idleTracks = [];
-      const walkTracks = [];
-      const runTracks = [];
-      for (let i = 0; i < 4; i++) {
-        const phase = (i === 0 || i === 3) ? 1 : -1;
-        idleTracks.push(new THREE.NumberKeyframeTrack(`leg${i}.rotation[x]`, [0, 1], [0, 0]));
-        walkTracks.push(new THREE.NumberKeyframeTrack(`leg${i}.rotation[x]`, [0, 0.5, 1], [0, 0.28 * phase, 0]));
-        runTracks.push(new THREE.NumberKeyframeTrack(`leg${i}.rotation[x]`, [0, 0.275, 0.55], [0, 0.5 * phase, 0]));
-      }
-
-      return [
-        new THREE.AnimationClip('Idle', 1, idleTracks),
-        new THREE.AnimationClip('Walk', 1, walkTracks),
-        new THREE.AnimationClip('Run', 0.55, runTracks),
-        new THREE.AnimationClip('Attack', 0.35, [
-          new THREE.NumberKeyframeTrack('head.rotation[x]', [0, 0.15, 0.35], [0, -0.35, 0])
-        ])
-      ];
-    }
-
-    function createNightAnimationClips() {
-      return [
-        new THREE.AnimationClip('Idle', 2, [
-          new THREE.NumberKeyframeTrack('arm0.rotation[x]', [0, 1, 2], [0, 0.06, 0]),
-          new THREE.NumberKeyframeTrack('arm1.rotation[x]', [0, 1, 2], [0, -0.06, 0])
-        ]),
-        new THREE.AnimationClip('Walk', 1, [
-          new THREE.NumberKeyframeTrack('arm0.rotation[x]', [0, 0.5, 1], [0, 0.3, 0]),
-          new THREE.NumberKeyframeTrack('arm1.rotation[x]', [0, 0.5, 1], [0, -0.3, 0])
-        ]),
-        new THREE.AnimationClip('Attack', 0.35, [
-          new THREE.NumberKeyframeTrack('arm0.rotation[x]', [0, 0.12, 0.35], [0, -0.55, 0]),
-          new THREE.NumberKeyframeTrack('arm1.rotation[x]', [0, 0.12, 0.35], [0, -0.55, 0])
-        ])
-      ];
-    }
-
-    function createBanditAnimationClips() {
-      return [
-        new THREE.AnimationClip('Idle', 2, [
-          new THREE.NumberKeyframeTrack('rightUpper.rotation[x]', [0, 1, 2], [-0.95, -0.93, -0.95]),
-          new THREE.NumberKeyframeTrack('rightFore.rotation[x]', [0, 1, 2], [-1.48, -1.46, -1.48])
-        ]),
-        new THREE.AnimationClip('Attack', 0.35, [
-          new THREE.NumberKeyframeTrack('rightUpper.rotation[x]', [0, 0.1, 0.35], [-0.95, -1.28, -0.95]),
-          new THREE.NumberKeyframeTrack('rightFore.rotation[x]', [0, 0.1, 0.35], [-1.48, -1.62, -1.48])
-        ])
-      ];
-    }
-
-    const quadrupedAnimationClips = createQuadrupedAnimationClips();
-    const nightAnimationClips = createNightAnimationClips();
-    const banditAnimationClips = createBanditAnimationClips();
-
-    function registerEntityAnimations(entity, fallbackClips) {
-      entity.animationMixer = null;
-      entity.animationActions = null;
-      entity.animationState = '';
-      entity.currentAnimationAction = null;
-      entity.attackAnimTimer = 0;
-
-      // GLB-klosser kan levere clips på gruppen eller via userData. Hvis
-      // modellen er prosedyrisk, bruker vi de genererte fallback-clipene.
-      const groupClips = entity.group.animations && entity.group.animations.length
-        ? entity.group.animations
-        : (entity.group.userData.animations && entity.group.userData.animations.length
-          ? entity.group.userData.animations
-          : null);
-      const clips = entity.animationClips || groupClips || fallbackClips;
-      if (!clips || clips.length === 0) return;
-
-      const mixer = new THREE.AnimationMixer(entity.group);
-      const actions = Object.create(null);
-      for (let i = 0; i < clips.length; i++) {
-        const clip = clips[i];
-        if (!clip) continue;
-        actions[(clip.name || '').toLowerCase()] = mixer.clipAction(clip);
-      }
-
-      entity.animationMixer = mixer;
-      entity.animationActions = actions;
-      animationMixers.push(entity);
-      setEntityAnimation(entity, 'Idle');
-    }
-
-    function setEntityAnimation(entity, stateName) {
-      const actions = entity.animationActions;
-      if (!actions) return;
-      if (entity.animationState === stateName) return;
-
-      const lower = stateName.toLowerCase();
-      let action = actions[lower];
-
-      if (!action) {
-        for (const key in actions) {
-          if (key.includes(lower)) {
-            action = actions[key];
-            break;
-          }
-        }
-      }
-
-      if (!action) action = actions.idle;
-      if (!action) {
-        const keys = Object.keys(actions);
-        if (keys.length > 0) action = actions[keys[0]];
-      }
-      if (!action) return;
-
-      entity.animationState = stateName;
-      if (entity.currentAnimationAction === action) return;
-
-      if (entity.currentAnimationAction) {
-        entity.currentAnimationAction.fadeOut(0.18);
-      }
-
-      action.reset();
-      action.setEffectiveWeight(1);
-      action.fadeIn(0.18);
-      if (stateName === 'Attack') {
-        action.setLoop(THREE.LoopOnce, 1);
-        action.clampWhenFinished = true;
-      } else {
-        action.setLoop(THREE.LoopRepeat, Infinity);
-        action.clampWhenFinished = false;
-      }
-      action.play();
-      entity.currentAnimationAction = action;
-    }
-
-    function updateAnimationMixers(dt) {
-      for (let i = 0; i < animationMixers.length; i++) {
-        const entity = animationMixers[i];
-        if (entity.animationMixer && entity.group.visible) {
-          entity.animationMixer.update(dt);
-        }
-      }
-    }
-
-    // --- 8h. Opprett og plasser skapningene (følger terrenghøyden) ---
-    const deerList = [];
-    const wolfList = [];
-    const banditList = [];
-    const nightEnemies = [];
-
-    const deerHomes = [
-      new THREE.Vector3(-12, 0, -32),
-      new THREE.Vector3(9, 0, -44),
-      new THREE.Vector3(-6, 0, -56),
-      new THREE.Vector3(16, 0, -63)
-    ];
-
-    function chooseDeerTarget(deer) {
-      const home = deer.home;
-      deer.wanderTarget.set(
-        THREE.MathUtils.clamp(home.x + (Math.random() - 0.5) * 20, FOREST_BOUNDS.minX, FOREST_BOUNDS.maxX),
-        0,
-        THREE.MathUtils.clamp(home.z + (Math.random() - 0.5) * 20, FOREST_BOUNDS.minZ, FOREST_BOUNDS.maxZ)
-      );
-    }
-
-    function createDeerAt(x, z) {
-      const group = createDeerModel();
-      group.position.set(x, getTerrainHeight(x, z), z);
-      group.rotation.y = Math.random() * Math.PI * 2;
-      scene.add(group);
-
-      const deer = {
-        kind: 'deer',
-        group,
-        alive: true,
-        hp: 2,
-        state: 'wander',
-        home: new THREE.Vector3(x, 0, z),
-        wanderTarget: new THREE.Vector3(),
-        wanderPause: Math.random() * 2,
-        fleeTimer: 0,
-        respawnTimer: 0,
-        deathTimer: 0,
-        stride: Math.random() * Math.PI * 2
-      };
-
-      chooseDeerTarget(deer);
-      registerEntityAnimations(deer, quadrupedAnimationClips);
-      deerList.push(deer);
-    }
-
-    const wolfHomes = [
-      new THREE.Vector3(-18, 0, -48),
-      new THREE.Vector3(14, 0, -30)
-    ];
-
-    function chooseWolfTarget(wolf) {
-      const home = wolf.home;
-      wolf.wanderTarget.set(
-        THREE.MathUtils.clamp(home.x + (Math.random() - 0.5) * 14, FOREST_BOUNDS.minX, FOREST_BOUNDS.maxX),
-        0,
-        THREE.MathUtils.clamp(home.z + (Math.random() - 0.5) * 14, FOREST_BOUNDS.minZ, FOREST_BOUNDS.maxZ)
-      );
-    }
-
-    function createWolfAt(x, z) {
-      const group = createWolfModel();
-      group.position.set(x, getTerrainHeight(x, z), z);
-      group.rotation.y = Math.random() * Math.PI * 2;
-      scene.add(group);
-
-      const wolf = {
-        kind: 'wolf',
-        group,
-        alive: true,
-        hp: 2,
-        state: 'patrol',
-        home: new THREE.Vector3(x, 0, z),
-        wanderTarget: new THREE.Vector3(),
-        wanderPause: Math.random() * 2,
-        attackCooldown: 0,
-        respawnTimer: 0,
-        deathTimer: 0,
-        stride: Math.random() * Math.PI * 2,
-        hidingTimer: 0,
-        lostTrail: false
-      };
-
-      chooseWolfTarget(wolf);
-      registerEntityAnimations(wolf, quadrupedAnimationClips);
-      wolfList.push(wolf);
-    }
-
-    const banditPosts = [
-      new THREE.Vector3(-26, 0, 2),
-      new THREE.Vector3(28, 0, -14),
-      new THREE.Vector3(-44, 0, -42)
-    ];
-
-    function createBanditAt(position, index) {
-      const group = createBanditModel();
-      const spawnGrounded = position.clone();
-      spawnGrounded.y = getTerrainHeight(spawnGrounded.x, spawnGrounded.z);
-      group.position.copy(spawnGrounded);
-      faceToward(group, 0, 8);
-      scene.add(group);
-
-      const bandit = {
-        kind: 'bandit',
-        group,
-        muzzle: group.userData.muzzle,
-        alive: true,
-        hp: 3,
-        active: true,
-        cooldown: 1.2 + index * 0.45,
-        spawn: spawnGrounded,
-        baseYaw: group.rotation.y,
-        deathTimer: 0,
-        attackAnimTimer: 0
-      };
-
-      registerEntityAnimations(bandit, banditAnimationClips);
-      banditList.push(bandit);
-    }
-
-    const nightSpawnPoints = [
-      new THREE.Vector3(-30, 0, -8),
-      new THREE.Vector3(30, 0, -4),
-      new THREE.Vector3(-20, 0, -45),
-      new THREE.Vector3(18, 0, -50),
-      new THREE.Vector3(0, 0, -65)
-    ];
-
-    function chooseNightWanderAwayTarget(enemy) {
-      // Velg et punkt langt ute i nattmørket/skogen bort fra Safe House (null objektallokering)
-      const awayX = enemy.group.position.x - safeHouseCenterWorld.x;
-      const awayZ = enemy.group.position.z - safeHouseCenterWorld.z;
-      const baseAngle = (awayX * awayX + awayZ * awayZ > 0.25)
-        ? Math.atan2(awayZ, awayX)
-        : (Math.random() * Math.PI * 2);
-      const spreadAngle = baseAngle + (Math.random() - 0.5) * 1.45;
-      const dist = 34 + Math.random() * 24;
-      const tx = THREE.MathUtils.clamp(safeHouseCenterWorld.x + Math.cos(spreadAngle) * dist, -78, 78);
-      const tz = THREE.MathUtils.clamp(safeHouseCenterWorld.z + Math.sin(spreadAngle) * dist, -78, 78);
-      enemy.wanderTarget.set(tx, 0, tz);
-    }
-
-    function createNightEnemyAt(index) {
-      const group = createNightEnemyModel();
-      const sp = nightSpawnPoints[index];
-      group.position.set(sp.x, getTerrainHeight(sp.x, sp.z), sp.z);
-      group.visible = false;
-      scene.add(group);
-
-      const enemy = {
-        kind: 'night',
-        group,
-        alive: false,
-        hp: 3,
-        burning: false,
-        burnTimer: 0,
-        attackCooldown: 0,
-        spawnIndex: index,
-        deathTimer: 0,
-        hidingTimer: 0,
-        lostTrail: false,
-        wanderTarget: new THREE.Vector3(sp.x, 0, sp.z)
-      };
-
-      registerEntityAnimations(enemy, nightAnimationClips);
-      nightEnemies.push(enemy);
-    }
-
-    // --- 8i. Respawn, dagsreset og nattspawn ---
-    function respawnDeer(deer) {
-      let x = 0;
-      let z = 0;
-      for (let attempt = 0; attempt < 10; attempt++) {
-        x = THREE.MathUtils.randFloat(FOREST_BOUNDS.minX + 2, FOREST_BOUNDS.maxX - 2);
-        z = THREE.MathUtils.randFloat(FOREST_BOUNDS.minZ + 2, FOREST_BOUNDS.maxZ - 2);
-        const distance = Math.hypot(x - playerRig.position.x, z - playerRig.position.z);
-        if (distance > 15) break;
-      }
-
-      deer.alive = true;
-      deer.hp = 2;
-      deer.state = 'wander';
-      deer.deathTimer = 0;
-      deer.respawnTimer = 0;
-      deer.fleeTimer = 0;
-      deer.wanderPause = 0.5 + Math.random() * 2;
-      deer.home.set(x, 0, z);
-      deer.group.position.set(x, getTerrainHeight(x, z), z);
-      deer.group.rotation.set(0, Math.random() * Math.PI * 2, 0);
-      deer.group.scale.setScalar(1);
-      deer.group.visible = !isNight;
-      deer.attackAnimTimer = 0;
-      if (!deer.animationMixer) animateQuadrupedLegs(deer.group, 0, 0);
-      setEntityAnimation(deer, 'Idle');
-      chooseDeerTarget(deer);
-    }
-
-    function respawnWolf(wolf) {
-      wolf.alive = true;
-      wolf.hp = 2;
-      wolf.state = 'patrol';
-      wolf.deathTimer = 0;
-      wolf.respawnTimer = 0;
-      wolf.attackCooldown = 0;
-      wolf.attackAnimTimer = 0;
-      wolf.hidingTimer = 0;
-      wolf.lostTrail = false;
-      wolf.wanderPause = 0.5 + Math.random() * 2;
-      const wx = THREE.MathUtils.clamp(wolf.home.x + (Math.random() - 0.5) * 14, FOREST_BOUNDS.minX, FOREST_BOUNDS.maxX);
-      const wz = THREE.MathUtils.clamp(wolf.home.z + (Math.random() - 0.5) * 14, FOREST_BOUNDS.minZ, FOREST_BOUNDS.maxZ);
-      wolf.group.position.set(wx, getTerrainHeight(wx, wz), wz);
-      wolf.group.rotation.set(0, Math.random() * Math.PI * 2, 0);
-      wolf.group.scale.setScalar(1);
-      wolf.group.visible = true;
-      if (!wolf.animationMixer) animateQuadrupedLegs(wolf.group, 0, 0);
-      setEntityAnimation(wolf, 'Idle');
-      chooseWolfTarget(wolf);
-    }
-
-    function resetBanditsForDay() {
-      banditList.forEach((bandit, index) => {
-        bandit.alive = true;
-        bandit.hp = 3;
-        bandit.active = !isNight;
-        bandit.deathTimer = 0;
-        bandit.attackAnimTimer = 0;
-        bandit.cooldown = 1.0 + index * 0.4;
-        bandit.group.position.copy(bandit.spawn);
-        resolveCircleAgainstWalls(bandit.group.position, BANDIT_RADIUS);
-        bandit.group.position.y = getTerrainHeight(bandit.group.position.x, bandit.group.position.z);
-        bandit.group.rotation.set(0, bandit.baseYaw, 0);
-        bandit.group.scale.setScalar(1);
-        bandit.group.visible = !isNight;
-        setEntityAnimation(bandit, 'Idle');
-      });
-    }
-
-    function spawnNightEnemies() {
-      nightEnemies.forEach((enemy, index) => {
-        const point = nightSpawnPosition.copy(nightSpawnPoints[index]);
-        point.x += (Math.random() - 0.5) * 4;
-        point.z += (Math.random() - 0.5) * 4;
-
-        const dx = point.x - playerRig.position.x;
-        const dz = point.z - playerRig.position.z;
-        const distance = Math.hypot(dx, dz);
-        if (distance < 15) {
-          const scale = 15 / Math.max(distance, 0.1);
-          point.x = playerRig.position.x + dx * scale;
-          point.z = playerRig.position.z + dz * scale;
-        }
-
-        point.x = THREE.MathUtils.clamp(point.x, -82, 82);
-        point.z = THREE.MathUtils.clamp(point.z, -82, 82);
-        point.y = getTerrainHeight(point.x, point.z);
-
-        enemy.alive = true;
-        enemy.hp = 3;
-        enemy.burning = false;
-        enemy.burnTimer = 0;
-        enemy.attackCooldown = 0.8 + Math.random() * 0.6;
-        enemy.deathTimer = 0;
-        enemy.attackAnimTimer = 0;
-        enemy.hidingTimer = 0;
-        enemy.lostTrail = false;
-        enemy.group.position.copy(point);
-        resolveCircleAgainstWalls(enemy.group.position, NIGHT_RADIUS);
-        enemy.group.position.y = getTerrainHeight(enemy.group.position.x, enemy.group.position.z);
-        enemy.group.rotation.set(0, 0, 0);
-        enemy.group.scale.setScalar(1);
-        enemy.group.visible = true;
-        faceToward(enemy.group, playerRig.position.x, playerRig.position.z);
-        setEntityAnimation(enemy, 'Idle');
-      });
-    }
-
-    function startNightEnemiesBurning() {
-      nightEnemies.forEach((enemy) => {
-        if (!enemy.group.visible) return;
-        enemy.burning = true;
-        enemy.burnTimer = 1.0;
-        enemy.attackCooldown = 999;
-        enemy.attackAnimTimer = 0;
-        setEntityAnimation(enemy, 'Idle');
-
-        nightBurnStartPosition.copy(enemy.group.position);
-        nightBurnStartPosition.y += 0.9;
-        spawnImpact(nightBurnStartPosition, 0xff6a1f, 0.4);
-      });
-    }
-
-    // --- 8j. Skade på skapningene ---
-    // Alle våpentreff bruker weaponDamage (1 = standard, 2 = Gull-revolver).
-    // Nattmonstre får i tillegg nightMonsterDamage (1 = standard, 2 = Vampyrjeger-sett).
-    function damageDeer(deer) {
-      if (!deer.alive) return;
-      deer.hp -= weaponDamage;
-      playFleshHitSound();
-
-      if (deer.hp > 0) {
-        deer.state = 'flee';
-        deer.fleeTimer = 5;
-        return;
-      }
-
-      deer.alive = false;
-      deer.state = 'dead';
-      deer.deathTimer = 1.2;
-      deer.respawnTimer = 20;
-      deer.group.rotation.z = 0;
-      setEntityAnimation(deer, 'Idle');
-
-      playerState.food += 1;
-      playerState.pelt += 1;
-      playCollectSound();
-      recordQuestKill('deer');
-      updateStatusUI();
-    }
-
-    function damageWolf(wolf) {
-      if (!wolf.alive) return;
-      wolf.hp -= weaponDamage;
-      playFleshHitSound();
-
-      if (wolf.hp > 0) {
-        wolf.state = 'chase';
-        wolf.attackCooldown = Math.min(wolf.attackCooldown, 0.4);
-        return;
-      }
-
-      wolf.alive = false;
-      wolf.deathTimer = 1.2;
-      wolf.respawnTimer = 20;
-      wolf.group.rotation.z = 0;
-      setEntityAnimation(wolf, 'Idle');
-
-      playerState.pelt += 1;
-      updateStatusUI();
-      playCollectSound();
-    }
-
-    function damageBandit(bandit) {
-      if (!bandit.alive) return;
-      bandit.hp -= weaponDamage;
-      playFleshHitSound();
-
-      if (bandit.hp > 0) return;
-
-      bandit.alive = false;
-      bandit.active = false;
-      bandit.deathTimer = 1.2;
-      bandit.respawnTimer = 22;
-      bandit.group.rotation.z = 0;
-      setEntityAnimation(bandit, 'Idle');
-      recordQuestKill('bandit');
-    }
-
-    function damageNightEnemy(enemy) {
-      if (!enemy.alive || enemy.burning) return;
-      const totalDamage = weaponDamage * nightMonsterDamage;
-      enemy.hp -= totalDamage;
-      playFleshHitSound();
-
-      if (enemy.hp > 0) return;
-
-      enemy.alive = false;
-      enemy.group.visible = false;
-      enemy.group.scale.setScalar(1);
-      enemy.respawnTimer = 14;
-      setEntityAnimation(enemy, 'Idle');
-
-      nightDeathImpactPosition.copy(enemy.group.position);
-      nightDeathImpactPosition.y += 1.0;
-      spawnImpact(nightDeathImpactPosition, 0xff3a1f, 0.32);
-      recordQuestKill('night');
-    }
-
-    // --- 8k. Oppdatering av dyre-, rovdyr-, banditt- og nattmonster-AI ---
-    function updateFallingEntity(entity, dt) {
-      if (entity.deathTimer <= 0) return;
-
-      entity.deathTimer = Math.max(0, entity.deathTimer - dt);
-      const progress = 1 - entity.deathTimer / 1.2;
-      entity.group.rotation.z = -Math.PI / 2 * Math.min(1, progress * 1.5);
-
-      if (entity.deathTimer <= 0) {
-        entity.group.visible = false;
-        entity.group.rotation.z = 0;
-      }
-    }
-
-    function updateDeer(dt) {
-      for (const deer of deerList) {
-        if (!deer.alive) {
-          updateFallingEntity(deer, dt);
-          if (deer.respawnTimer > 0) {
-            deer.respawnTimer -= dt;
-            if (deer.respawnTimer <= 0) respawnDeer(deer);
-          }
-          continue;
-        }
-
-        if (isNight || !deer.group.visible) continue;
-
-        const distanceToPlayer = Math.hypot(
-          deer.group.position.x - playerRig.position.x,
-          deer.group.position.z - playerRig.position.z
-        );
-
-        if (gunshotAlertTimer > 0 && deer.group.position.distanceTo(lastGunshotPosition) < 30) {
-          deer.state = 'flee';
-          deer.fleeTimer = Math.max(deer.fleeTimer, 4.5);
-        }
-
-        if (distanceToPlayer < 8) {
-          deer.state = 'flee';
-          deer.fleeTimer = Math.max(deer.fleeTimer, 4);
-        }
-
-        let movingSpeed = 0;
-        if (deer.state === 'flee') {
-          deer.fleeTimer -= dt;
-
-          const dx = deer.group.position.x - playerRig.position.x;
-          const dz = deer.group.position.z - playerRig.position.z;
-          const len = Math.hypot(dx, dz) || 1;
-
-          moveEntityToward(
-            deer.group,
-            deer.group.position.x + (dx / len) * 12,
-            deer.group.position.z + (dz / len) * 12,
-            5.6,
-            dt,
-            0,
-            DEER_RADIUS,
-            true
-          );
-          movingSpeed = 5.6;
-
-          if (deer.fleeTimer <= 0) {
-            deer.state = 'wander';
-            deer.wanderPause = 0.8 + Math.random() * 2;
-            chooseDeerTarget(deer);
-          }
-        } else if (deer.wanderPause > 0) {
-          deer.wanderPause -= dt;
-        } else {
-          const dx = deer.wanderTarget.x - deer.group.position.x;
-          const dz = deer.wanderTarget.z - deer.group.position.z;
-
-          if (Math.hypot(dx, dz) < 0.8) {
-            deer.wanderPause = 1 + Math.random() * 4;
-            chooseDeerTarget(deer);
-          } else {
-            moveEntityToward(deer.group, deer.wanderTarget.x, deer.wanderTarget.z, 1.3, dt, 0, DEER_RADIUS, true);
-            movingSpeed = 1.3;
-          }
-        }
-
-        deer.group.position.x = THREE.MathUtils.clamp(deer.group.position.x, FOREST_BOUNDS.minX, FOREST_BOUNDS.maxX);
-        deer.group.position.z = THREE.MathUtils.clamp(deer.group.position.z, FOREST_BOUNDS.minZ, FOREST_BOUNDS.maxZ);
-        resolveWallCollisions(deer.group.position, DEER_RADIUS, true);
-        deer.group.position.x = THREE.MathUtils.clamp(deer.group.position.x, FOREST_BOUNDS.minX, FOREST_BOUNDS.maxX);
-        deer.group.position.z = THREE.MathUtils.clamp(deer.group.position.z, FOREST_BOUNDS.minZ, FOREST_BOUNDS.maxZ);
-
-        const groundY = getTerrainHeight(deer.group.position.x, deer.group.position.z);
-        if (movingSpeed > 0) {
-          deer.stride += dt * (movingSpeed > 3 ? 13 : 6);
-          deer.group.position.y = groundY + (movingSpeed > 3 ? Math.abs(Math.sin(deer.stride)) * 0.08 : 0);
-        } else {
-          deer.group.position.y = groundY;
-        }
-
-        // Animationsklippene overtar når en mixer finnes; ellers brukes den
-        // eksisterende prosedyriske beinanimasjonen.
-        if (!deer.animationMixer) {
-          if (movingSpeed > 0) {
-            animateQuadrupedLegs(deer.group, deer.stride, movingSpeed > 3 ? 0.48 : 0.24);
-          } else {
-            animateQuadrupedLegs(deer.group, 0, 0);
-          }
-        }
-
-        setEntityAnimation(deer, movingSpeed > 3 ? 'Run' : movingSpeed > 0 ? 'Walk' : 'Idle');
-      }
-    }
-
-    function updateWolfPatrol(wolf, dt, speed) {
-      wolf.attackCooldown = Math.max(0, wolf.attackCooldown - dt);
-
-      if (wolf.wanderPause > 0) {
-        wolf.wanderPause -= dt;
-        return 0;
-      }
-
-      const dx = wolf.wanderTarget.x - wolf.group.position.x;
-      const dz = wolf.wanderTarget.z - wolf.group.position.z;
-
-      if (Math.hypot(dx, dz) < 0.8) {
-        wolf.wanderPause = 1 + Math.random() * 3;
-        chooseWolfTarget(wolf);
-        return 0;
-      }
-
-      moveEntityToward(wolf.group, wolf.wanderTarget.x, wolf.wanderTarget.z, speed, dt, 0, WOLF_RADIUS, true);
-      return speed;
-    }
-
-    function updateWolves(dt) {
-      for (const wolf of wolfList) {
-        if (!wolf.alive) {
-          updateFallingEntity(wolf, dt);
-          if (wolf.respawnTimer > 0) {
-            wolf.respawnTimer -= dt;
-            if (wolf.respawnTimer <= 0) respawnWolf(wolf);
-          }
-          continue;
-        }
-
-        if (!wolf.group.visible) continue;
-
-        wolf.attackAnimTimer = Math.max(0, wolf.attackAnimTimer - dt);
-
-        const dx = playerRig.position.x - wolf.group.position.x;
-        const dz = playerRig.position.z - wolf.group.position.z;
-        const distance = Math.hypot(dx, dz);
-        let movingSpeed = 0;
-
-        if (playerHiddenStatus) {
-          // Spilleren er i Safe House: ulven kan aldri gå inn i sonen, mister sporet
-          // etter 1,5 sek (enda raskere med lukket dør) og vandrer bort i skogen/mørket.
-          const distanceToSafeHouse = Math.hypot(
-            wolf.group.position.x - safeHouseCenterWorld.x,
-            wolf.group.position.z - safeHouseCenterWorld.z
-          );
-
-          if (wolf.state === 'chase' || distanceToSafeHouse < 24) {
-            if (!wolf.lostTrail) {
-              if (wolf.hidingTimer <= 0) wolf.hidingTimer = 1.5;
-              wolf.hidingTimer -= dt * (safeHouseDoorOpen ? 1.0 : 1.35);
-
-              if (wolf.hidingTimer > 0) {
-                moveEntityToward(
-                  wolf.group,
-                  safeHouseOutsidePoint.x,
-                  safeHouseOutsidePoint.z,
-                  2.6,
-                  dt,
-                  1.8,
-                  WOLF_RADIUS,
-                  true
-                );
-                movingSpeed = 2.6;
-              } else {
-                wolf.lostTrail = true;
-                wolf.state = 'patrol';
-                wolf.wanderPause = 0;
-                chooseWolfTarget(wolf);
-                movingSpeed = updateWolfPatrol(wolf, dt, 2.1);
-              }
-            } else {
-              movingSpeed = updateWolfPatrol(wolf, dt, 1.9);
-            }
-          } else {
-            movingSpeed = updateWolfPatrol(wolf, dt, 1.6);
-          }
-        } else {
-          wolf.hidingTimer = 0;
-          wolf.lostTrail = false;
-
-          if (distance < 12) wolf.state = 'chase';
-          else if (distance > 22) wolf.state = 'patrol';
-
-          if (wolf.state === 'chase') {
-            if (wolf.attackCooldown > 0) wolf.attackCooldown -= dt;
-
-            if (distance > 1.7) {
-              moveEntityToward(wolf.group, playerRig.position.x, playerRig.position.z, 4.3, dt, 1.4, WOLF_RADIUS, true);
-              movingSpeed = 4.3;
-            } else {
-              faceToward(wolf.group, playerRig.position.x, playerRig.position.z);
-              if (wolf.attackCooldown <= 0) {
-                wolf.attackCooldown = 1.5;
-                wolf.attackAnimTimer = 0.45;
-                damagePlayer(12);
-              }
-            }
-          } else {
-            movingSpeed = updateWolfPatrol(wolf, dt, 1.7);
-          }
-        }
-
-        pushOutOfHidingZone(wolf.group, WOLF_RADIUS);
-        wolf.group.position.x = THREE.MathUtils.clamp(wolf.group.position.x, -82, 82);
-        wolf.group.position.z = THREE.MathUtils.clamp(wolf.group.position.z, -82, 82);
-        resolveWallCollisions(wolf.group.position, WOLF_RADIUS, true);
-        pushOutOfHidingZone(wolf.group, WOLF_RADIUS);
-        wolf.group.position.x = THREE.MathUtils.clamp(wolf.group.position.x, -82, 82);
-        wolf.group.position.z = THREE.MathUtils.clamp(wolf.group.position.z, -82, 82);
-
-        wolf.group.position.y = getTerrainHeight(wolf.group.position.x, wolf.group.position.z);
-
-        if (movingSpeed > 0) {
-          wolf.stride += dt * (movingSpeed > 3 ? 12 : 6.5);
-        }
-
-        if (!wolf.animationMixer) {
-          if (movingSpeed > 0) {
-            animateQuadrupedLegs(wolf.group, wolf.stride, movingSpeed > 3 ? 0.45 : 0.24);
-          } else {
-            animateQuadrupedLegs(wolf.group, 0, 0);
-          }
-        }
-
-        const animationState = playerHiddenStatus
-          ? (movingSpeed > 0 ? 'Walk' : 'Idle')
-          : (wolf.attackAnimTimer > 0 ? 'Attack' : (movingSpeed > 3 ? 'Run' : (movingSpeed > 0 ? 'Walk' : 'Idle')));
-        setEntityAnimation(wolf, animationState);
-      }
-    }
-
-    const banditShotOrigin = new THREE.Vector3();
-    const banditShotTarget = new THREE.Vector3();
-    const banditShotDir = new THREE.Vector3();
-
-    function fireBanditBullet(bandit) {
-      bandit.muzzle.getWorldPosition(banditShotOrigin);
-      updatePlayerBodyPoints();
-      banditShotTarget.copy(playerChestPosition);
-
-      banditShotDir.copy(banditShotTarget).sub(banditShotOrigin).normalize();
-      banditShotDir.x += (Math.random() - 0.5) * 0.05;
-      banditShotDir.y += (Math.random() - 0.5) * 0.035;
-      banditShotDir.z += (Math.random() - 0.5) * 0.05;
-      banditShotDir.normalize();
-
-      spawnEnemyBullet(banditShotOrigin, banditShotDir, 24, 15);
-      playBanditShotSound();
-    }
-
-    function updateBandits(dt) {
-      for (const bandit of banditList) {
-        if (!bandit.alive) {
-          updateFallingEntity(bandit, dt);
-          if (!isNight && bandit.respawnTimer > 0) {
-            bandit.respawnTimer -= dt;
-            if (bandit.respawnTimer <= 0) {
-              bandit.alive = true;
-              bandit.hp = 3;
-              bandit.active = true;
-              bandit.deathTimer = 0;
-              bandit.attackAnimTimer = 0;
-              bandit.cooldown = 1.4;
-              bandit.group.position.copy(bandit.spawn);
-              resolveWallCollisions(bandit.group.position, BANDIT_RADIUS, true);
-              bandit.group.position.y = getTerrainHeight(bandit.group.position.x, bandit.group.position.z);
-              bandit.group.rotation.set(0, bandit.baseYaw, 0);
-              bandit.group.scale.setScalar(1);
-              bandit.group.visible = true;
-              setEntityAnimation(bandit, 'Idle');
-            }
-          }
-          continue;
-        }
-
-        if (!bandit.active || isNight) continue;
-
-        bandit.attackAnimTimer = Math.max(0, bandit.attackAnimTimer - dt);
-
-        const dx = playerRig.position.x - bandit.group.position.x;
-        const dz = playerRig.position.z - bandit.group.position.z;
-        const distance = Math.hypot(dx, dz);
-
-        if (distance < 22) {
-          faceToward(bandit.group, playerRig.position.x, playerRig.position.z);
-          bandit.cooldown -= dt;
-
-          if (bandit.cooldown <= 0) {
-            bandit.cooldown = 2.2;
-            bandit.attackAnimTimer = 0.45;
-            fireBanditBullet(bandit);
-          }
-        } else {
-          bandit.cooldown = Math.max(0, bandit.cooldown - dt);
-          faceToward(bandit.group, 0, 8);
-        }
-
-        resolveWallCollisions(bandit.group.position, BANDIT_RADIUS, true);
-        bandit.group.position.y = getTerrainHeight(bandit.group.position.x, bandit.group.position.z);
-        setEntityAnimation(bandit, bandit.attackAnimTimer > 0 ? 'Attack' : 'Idle');
-      }
-    }
-
-    function updateNightEnemies(dt) {
-      for (let index = 0; index < nightEnemies.length; index++) {
-        const enemy = nightEnemies[index];
-        if (!enemy.group.visible) {
-          if (isNight && !enemy.alive && !enemy.burning && enemy.respawnTimer > 0) {
-            enemy.respawnTimer -= dt;
-            if (enemy.respawnTimer <= 0) {
-              const point = nightRespawnPosition.copy(nightSpawnPoints[index]);
-              point.x += (Math.random() - 0.5) * 4;
-              point.z += (Math.random() - 0.5) * 4;
-              const dx = point.x - playerRig.position.x;
-              const dz = point.z - playerRig.position.z;
-              const dist = Math.hypot(dx, dz);
-              if (dist < 16) {
-                const sc = 16 / Math.max(dist, 0.1);
-                point.x = playerRig.position.x + dx * sc;
-                point.z = playerRig.position.z + dz * sc;
-              }
-              point.x = THREE.MathUtils.clamp(point.x, -82, 82);
-              point.z = THREE.MathUtils.clamp(point.z, -82, 82);
-              point.y = getTerrainHeight(point.x, point.z);
-
-              enemy.alive = true;
-              enemy.hp = 3;
-              enemy.burning = false;
-              enemy.burnTimer = 0;
-              enemy.attackCooldown = 1.0;
-              enemy.attackAnimTimer = 0;
-              enemy.hidingTimer = 0;
-              enemy.lostTrail = false;
-              enemy.group.position.copy(point);
-              pushOutOfHidingZone(enemy.group, NIGHT_RADIUS);
-              resolveWallCollisions(enemy.group.position, NIGHT_RADIUS, true);
-              enemy.group.position.y = getTerrainHeight(enemy.group.position.x, enemy.group.position.z);
-              enemy.group.rotation.set(0, 0, 0);
-              enemy.group.scale.setScalar(1);
-              enemy.group.visible = true;
-              faceToward(enemy.group, playerRig.position.x, playerRig.position.z);
-              setEntityAnimation(enemy, 'Idle');
-            }
-          }
-          continue;
-        }
-
-        if (enemy.burning) {
-          enemy.burnTimer -= dt;
-          enemy.group.scale.setScalar(Math.max(0.01, enemy.burnTimer));
-          enemy.group.position.y += dt * 1.1;
-
-          if (Math.random() < dt * 14) {
-            nightBurnImpactPosition.copy(enemy.group.position);
-            nightBurnImpactPosition.y += 0.8;
-            spawnImpact(nightBurnImpactPosition, 0xff6a1f, 0.22);
-          }
-
-          if (enemy.burnTimer <= 0) {
-            enemy.group.visible = false;
-            enemy.group.scale.setScalar(1);
-            enemy.group.position.y = 0;
-            enemy.burning = false;
-            enemy.alive = false;
-          }
-          continue;
-        }
-
-        if (!enemy.alive) continue;
-
-        enemy.attackAnimTimer = Math.max(0, enemy.attackAnimTimer - dt);
-
-        const dx = playerRig.position.x - enemy.group.position.x;
-        const dz = playerRig.position.z - enemy.group.position.z;
-        const distance = Math.hypot(dx, dz);
-        let movingSpeed = 0;
-
-        if (playerHiddenStatus) {
-          // Spilleren er inne i Safe House: nattmonsteret slipper aldri inn i hidingZone,
-          // mister sporet etter 1,5 sekunder (raskere med lukket dør) og vandrer bort i mørket.
-          if (!enemy.lostTrail) {
-            if (enemy.hidingTimer <= 0) enemy.hidingTimer = 1.5;
-            enemy.hidingTimer -= dt * (safeHouseDoorOpen ? 1.0 : 1.35);
-
-            if (enemy.hidingTimer > 0) {
-              moveEntityToward(
-                enemy.group,
-                safeHouseOutsidePoint.x,
-                safeHouseOutsidePoint.z,
-                2.0,
-                dt,
-                1.8,
-                NIGHT_RADIUS,
-                true
-              );
-              movingSpeed = 2.0;
-            } else {
-              enemy.lostTrail = true;
-              chooseNightWanderAwayTarget(enemy);
-              moveEntityToward(
-                enemy.group,
-                enemy.wanderTarget.x,
-                enemy.wanderTarget.z,
-                2.15,
-                dt,
-                0,
-                NIGHT_RADIUS,
-                true
-              );
-              movingSpeed = 2.15;
-            }
-          } else {
-            const wdx = enemy.wanderTarget.x - enemy.group.position.x;
-            const wdz = enemy.wanderTarget.z - enemy.group.position.z;
-            if (wdx * wdx + wdz * wdz < 2.25) {
-              chooseNightWanderAwayTarget(enemy);
-            }
-            moveEntityToward(
-              enemy.group,
-              enemy.wanderTarget.x,
-              enemy.wanderTarget.z,
-              2.15,
-              dt,
-              0,
-              NIGHT_RADIUS,
-              true
-            );
-            movingSpeed = 2.15;
-          }
-
-          enemy.attackCooldown = Math.max(0, enemy.attackCooldown - dt);
-        } else {
-          enemy.hidingTimer = 0;
-          enemy.lostTrail = false;
-
-          if (distance > 1.8) {
-            moveEntityToward(enemy.group, playerRig.position.x, playerRig.position.z, 2.35, dt, 1.55, NIGHT_RADIUS, true);
-            movingSpeed = 2.35;
-            enemy.attackCooldown = Math.max(0, enemy.attackCooldown - dt);
-          } else {
-            faceToward(enemy.group, playerRig.position.x, playerRig.position.z);
-            enemy.attackCooldown -= dt;
-
-            if (enemy.attackCooldown <= 0) {
-              enemy.attackCooldown = 1.2;
-              enemy.attackAnimTimer = 0.45;
-              damagePlayer(20);
-
-              nightAttackImpactPosition.copy(playerChestPosition);
-              spawnImpact(nightAttackImpactPosition, 0xff2a2a, 0.18);
-            }
-          }
-        }
-
-        pushOutOfHidingZone(enemy.group, NIGHT_RADIUS);
-        enemy.group.position.x = THREE.MathUtils.clamp(enemy.group.position.x, -82, 82);
-        enemy.group.position.z = THREE.MathUtils.clamp(enemy.group.position.z, -82, 82);
-        resolveWallCollisions(enemy.group.position, NIGHT_RADIUS, true);
-        pushOutOfHidingZone(enemy.group, NIGHT_RADIUS);
-        enemy.group.position.x = THREE.MathUtils.clamp(enemy.group.position.x, -82, 82);
-        enemy.group.position.z = THREE.MathUtils.clamp(enemy.group.position.z, -82, 82);
-
-        enemy.group.rotation.z = Math.sin(worldTime * 2.4 + index) * 0.04;
-
-        if (!enemy.animationMixer) {
-          const arms = enemy.group.userData.arms;
-          if (arms && arms.length === 2) {
-            const clawReach = Math.sin(worldTime * 4.2 + index) * 0.12;
-            arms[0].rotation.x = clawReach;
-            arms[1].rotation.x = -clawReach;
-          }
-        }
-
-        enemy.group.position.y =
-          getTerrainHeight(enemy.group.position.x, enemy.group.position.z) +
-          0.05 +
-          Math.sin(worldTime * 3.1 + index) * 0.045;
-
-        const animationState = playerHiddenStatus
-          ? (movingSpeed > 0 ? 'Walk' : 'Idle')
-          : (enemy.attackAnimTimer > 0 ? 'Attack' : (movingSpeed > 0 ? 'Walk' : 'Idle'));
-        setEntityAnimation(enemy, animationState);
-      }
-    }
-
-    // --- 8l. Bandittkuler og treff på spilleren ---
-    const enemyBulletGeo = new THREE.CylinderGeometry(0.018, 0.018, 0.4, 6);
-    enemyBulletGeo.rotateX(Math.PI / 2);
-    const enemyBulletMat = new THREE.MeshBasicMaterial({ color: 0xff7a3c, fog: false });
-    const enemyBulletGlowGeo = new THREE.SphereGeometry(0.07, 6, 4);
-    const enemyBulletGlowMat = new THREE.MeshBasicMaterial({
-      color: 0xff4a2a,
-      transparent: true,
-      opacity: 0.5,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      fog: false
+      },
+      L,
+      C,
+      audio: {
+        playFleshHitSound,
+        playCollectSound,
+        playGoldPickupSound,
+        playBearRoarSound,
+        playBossVictoryFanfare,
+        playBanditShotSound
+      },
+      practiceBottles,
+      safeHouseCenterWorld,
+      safeHouseOutsidePoint,
+      DEER_RADIUS,
+      WOLF_RADIUS,
+      BEAR_RADIUS,
+      BANDIT_RADIUS,
+      NIGHT_RADIUS,
+      BOSS_RADIUS,
+      UP,
+      FORWARD,
+      PROJECTILE_MAX_HORIZONTAL,
+      PROJECTILE_MAX_HEIGHT,
+      FOREST_BOUNDS,
+      lastGunshotPosition,
+      playerHeadPosition,
+      playerChestPosition,
+      bottleWorldPos,
+      getTerrainHeight,
+      checkStoryProgression,
+      updateStatusUI,
+      resolveWallCollisions,
+      resolveCircleAgainstWalls,
+      pointHitsSolidWall,
+      pushOutOfHidingZone,
+      spawnSparkBurst,
+      spawnVampireAshDissolution,
+      spawnImpact,
+      segmentPointDistance,
+      knockBottle,
+      recordQuestKill,
+      updatePlayerBodyPoints,
+      damagePlayer,
+      tailorNPCGroup,
+      gunsmithNPCGroup,
+      sheriffVanceGroup
     });
-    const enemyBullets = [];
 
-    function spawnEnemyBullet(origin, direction, speed, damage) {
-      const mesh = new THREE.Group();
-      mesh.add(new THREE.Mesh(enemyBulletGeo, enemyBulletMat));
-
-      const glow = new THREE.Mesh(enemyBulletGlowGeo, enemyBulletGlowMat);
-      glow.position.z = 0.12;
-      mesh.add(glow);
-
-      mesh.position.copy(origin);
-      mesh.quaternion.setFromUnitVectors(FORWARD, direction);
-      scene.add(mesh);
-
-      enemyBullets.push({
-        mesh,
-        dir: direction.clone(),
-        prev: origin.clone(),
-        speed,
-        damage,
-        life: 4
-      });
-    }
-
-    function removeEnemyBullet(index) {
-      // Delt geometri/materiale – fjern bare scenenoden.
-      scene.remove(enemyBullets[index].mesh);
-      enemyBullets.splice(index, 1);
-    }
-
-    function updateEnemyBullets(dt) {
-      updatePlayerBodyPoints();
-
-      for (let i = enemyBullets.length - 1; i >= 0; i--) {
-        const bullet = enemyBullets[i];
-        bullet.prev.copy(bullet.mesh.position);
-        bullet.mesh.position.addScaledVector(bullet.dir, bullet.speed * dt);
-        bullet.life -= dt;
-
-        if (pointHitsSolidWall(bullet.mesh.position.x, bullet.mesh.position.y, bullet.mesh.position.z)) {
-          spawnImpact(bullet.mesh.position, 0xd9b07c, 0.14);
-          removeEnemyBullet(i);
-          continue;
-        }
-
-        const headHit = segmentPointDistance(bullet.prev, bullet.mesh.position, playerHeadPosition) < 0.42;
-        const chestHit = segmentPointDistance(bullet.prev, bullet.mesh.position, playerChestPosition) < 0.5;
-
-        if (headHit || chestHit) {
-          damagePlayer(bullet.damage);
-          spawnImpact(bullet.mesh.position, 0xff4030, 0.16);
-          removeEnemyBullet(i);
-          continue;
-        }
-
-        const enemyGroundY = getTerrainHeight(bullet.mesh.position.x, bullet.mesh.position.z);
-        if (bullet.mesh.position.y < enemyGroundY + 0.05) {
-          spawnImpact(bullet.mesh.position, 0xd9b07c, 0.14);
-          removeEnemyBullet(i);
-          continue;
-        }
-
-        if (
-          bullet.life <= 0 ||
-          Math.abs(bullet.mesh.position.x) > PROJECTILE_MAX_HORIZONTAL ||
-          Math.abs(bullet.mesh.position.z) > PROJECTILE_MAX_HORIZONTAL ||
-          bullet.mesh.position.y > PROJECTILE_MAX_HEIGHT
-        ) {
-          removeEnemyBullet(i);
-        }
-      }
-    }
-
-    // --- 8m. Finn spillerkulas treff blant alle skapninger ---
-    // Gjenbruker combatHitResult og unngår et nytt objekt + Vector3 per treff.
-    function considerCombatTarget(a, b, entity, type, centerY, radius) {
-      if (!entity.alive || !entity.group.visible || entity.burning) return;
-
-      combatCenter.set(
-        entity.group.position.x,
-        entity.group.position.y + centerY,
-        entity.group.position.z
-      );
-
-      if (segmentPointDistance(a, b, combatCenter) >= radius) return;
-
-      const distance = a.distanceToSquared(combatCenter);
-      if (distance < combatHitBestDistance) {
-        combatHitBestDistance = distance;
-        combatHitFound = true;
-        combatHitResult.type = type;
-        combatHitResult.entity = entity;
-        combatHitResult.point.copy(combatCenter);
-      }
-    }
-
-    function findCombatHit(a, b) {
-      combatHitFound = false;
-      combatHitBestDistance = Infinity;
-      combatHitResult.type = '';
-      combatHitResult.entity = null;
-
-      for (const deer of deerList) {
-        considerCombatTarget(a, b, deer, 'deer', 0.95, 0.8);
-      }
-      for (const wolf of wolfList) {
-        considerCombatTarget(a, b, wolf, 'wolf', 0.6, 0.62);
-      }
-      for (const bandit of banditList) {
-        considerCombatTarget(a, b, bandit, 'bandit', 1.0, 0.66);
-      }
-      for (const enemy of nightEnemies) {
-        considerCombatTarget(a, b, enemy, 'night', 1.0, 0.7);
-      }
-
-      return combatHitFound ? combatHitResult : null;
-    }
-
-    function damageCombatTarget(hit, direction) {
-      if (hit.type === 'deer') damageDeer(hit.entity, direction);
-      else if (hit.type === 'wolf') damageWolf(hit.entity, direction);
-      else if (hit.type === 'bandit') damageBandit(hit.entity, direction);
-      else if (hit.type === 'night') damageNightEnemy(hit.entity, direction);
-    }
-
-    // --- 8n. Plasser alle skapningene i verdenen ---
-    if (tailorNPCGroup && tailorNPCGroup.userData.animations && tailorNPCGroup.userData.animations.length > 0) {
-      registerEntityAnimations({ kind: 'npc', group: tailorNPCGroup }, null);
-    }
-    deerHomes.forEach((home) => createDeerAt(home.x, home.z));
-    wolfHomes.forEach((home) => createWolfAt(home.x, home.z));
-    banditPosts.forEach((post, index) => createBanditAt(post, index));
-    for (let i = 0; i < 5; i++) createNightEnemyAt(i);
-
+    const {
+      deerList,
+      wolfList,
+      bearList,
+      banditList,
+      nightEnemies,
+      bossEnemy,
+      resetBanditsForDay,
+      spawnNightEnemies,
+      startNightEnemiesBurning,
+      updateDeer,
+      updateWolves,
+      updateBears,
+      updateBandits,
+      updateNightEnemies,
+      updateBossEnemy,
+      updateAnimationMixers,
+      updateEnemyBullets,
+      findCombatHit,
+      damageCombatTarget
+    } = E;
+    refreshBossBarHook = E.syncBossHealthBarUI;
+    summonBossFromAltarHook = E.summonBossFromAltar;
+    onNightStateChangedBossHook = E.onNightStateChangedBoss;
+    applyDynamiteBlastHook = E.applyDynamiteBlast;
     // --- 8o. VR-kontrollerknapper: høyre grip = spis mat, venstre grip/trigger = dag/natt (eller butikk) ---
     function tryVRDayNightToggle(controller, data) {
       if (!renderer.xr.isPresenting) return;
@@ -3851,12 +3890,26 @@
         pushOutOfHidingZone(enemy.group, NIGHT_RADIUS);
       }
 
+      if (bossEnemy.alive && bossEnemy.group.visible) {
+        pushOutOfHidingZone(bossEnemy.group, BOSS_RADIUS);
+        resolveWallCollisions(bossEnemy.group.position, BOSS_RADIUS, true);
+        pushOutOfHidingZone(bossEnemy.group, BOSS_RADIUS);
+      }
+
       for (let i = 0; i < wolfList.length; i++) {
         const wolf = wolfList[i];
         if (!wolf.alive || !wolf.group.visible) continue;
         pushOutOfHidingZone(wolf.group, WOLF_RADIUS);
         resolveWallCollisions(wolf.group.position, WOLF_RADIUS, true);
         pushOutOfHidingZone(wolf.group, WOLF_RADIUS);
+      }
+
+      for (let i = 0; i < bearList.length; i++) {
+        const bear = bearList[i];
+        if (!bear.alive || !bear.group.visible) continue;
+        pushOutOfHidingZone(bear.group, BEAR_RADIUS);
+        resolveWallCollisions(bear.group.position, BEAR_RADIUS, true);
+        pushOutOfHidingZone(bear.group, BEAR_RADIUS);
       }
 
       for (let i = 0; i < banditList.length; i++) {
@@ -3873,26 +3926,35 @@
     }
 
     // =========================================================================
-    // 11. HOVEDLØKKE
+    // 11. HOVEDLØKKE (72–90 FPS OPTIMALISERT FOR META QUEST, 0 PER-FRAME ALLOKERINGER)
     // =========================================================================
     const clock = new THREE.Clock();
 
     renderer.setAnimationLoop(() => {
       const dt = Math.min(clock.getDelta(), 0.05);
       worldTime += dt;
+      if (shotCooldownTimer > 0) shotCooldownTimer = Math.max(0, shotCooldownTimer - dt);
 
-      // Dag/natt-syklus, flakkende lykter/leirbål, svevende støvkorn/glør, helse og skadetimere
+      // Dag/natt-syklus, flakkende lykter/leirbål, svevende støvkorn/glør/tumbleweeds, helse og skadetimere
       updateDayNight(dt);
       updateFlickeringLights(worldTime);
       updateBackgroundAmbience(dt);
       updatePlayerStatus(dt);
 
-      // Tidsbegrenset statusmelding på skreddertavlen og oppdragstavlen + skredder- og Safe House-døranimasjon
+      // Tidsbegrenset statusmelding på skredder-, våpensmed- og oppdragstavlen + NPC- og Safe House-døranimasjon
       if (tailorStatusTimer > 0) {
         tailorStatusTimer = Math.max(0, tailorStatusTimer - dt);
         if (tailorStatusTimer === 0) {
           tailorStatusMessageKey = '';
           updateTailorWorkshopUI();
+        }
+      }
+      if (gunsmithStatusTimer > 0) {
+        gunsmithStatusTimer = Math.max(0, gunsmithStatusTimer - dt);
+        if (gunsmithStatusTimer === 0) {
+          gunsmithStatusKey = '';
+          gunsmithStatusArg = null;
+          updateGunsmithUI();
         }
       }
       if (questBoardTimer > 0) {
@@ -3906,41 +3968,73 @@
       if (tailorNPCGroup) {
         tailorNPCGroup.rotation.y = 0.14 + Math.sin(worldTime * 1.4) * 0.08;
       }
+      if (gunsmithNPCGroup) {
+        gunsmithNPCGroup.rotation.y = 0.12 + Math.sin(worldTime * 1.25 + 1.1) * 0.07;
+      }
+      if (sheriffVanceGroup) {
+        sheriffVanceGroup.rotation.y = 0.28 + Math.sin(worldTime * 1.1) * 0.06;
+        // Snakk automatisk med Sheriff Vance i Akt 1 når spilleren går bort til ham (< 4.2m)
+        if (!storyState.talkedSheriff) {
+          const sdx = playerRig.position.x - sheriffVanceGroup.position.x;
+          const sdz = playerRig.position.z - sheriffVanceGroup.position.z;
+          if (sdx * sdx + sdz * sdz < 17.6) {
+            talkToSheriffVance();
+          }
+        }
+      }
       if (safeHouseDoorPivot) {
         const targetDoorAngle = safeHouseDoorOpen ? 1.62 : 0;
         safeHouseDoorAngle += (targetDoorAngle - safeHouseDoorAngle) * Math.min(1, dt * 8.5);
         safeHouseDoorPivot.rotation.y = safeHouseDoorAngle;
       }
 
-      // Bevegelse: venstre spak i VR, WASD/piltaster på PC
+      // Bevegelse og våpenbytte: venstre spak + A/X i VR, WASD/piltaster + 1–5/musehjul på PC
+      updateVRWeaponSwitchButton();
       updateVRMovement(dt);
       updatePCMovement(dt);
       updateSnapTurn(dt);
 
-      // Skapninger, fiender og solide veggkollisjoner i hver eneste frame
+      // Skapninger, Grizzlybjørn, Banditter, Nattmonstre, Lord Malakor og solide veggkollisjoner
       updateDeer(dt);
       updateWolves(dt);
+      updateBears(dt);
       updateBandits(dt);
       updateNightEnemies(dt);
+      updateBossEnemy(dt);
       enforceAllActorWallCollisions();
       updatePlayerBodyPoints();
       updatePlayerHiddenStatus();
+
+      // Akt 3 nattforsvar via Safe House: overlev 4 sekunder i skjul om natten
+      if (isNight && playerHiddenStatus && !storyState.act3NightSurvived) {
+        storyState.act3SafeHouseTimer += dt;
+        if (storyState.act3SafeHouseTimer >= 4.0) {
+          storyState.act3NightSurvived = true;
+          checkStoryProgression();
+          updateStatusUI();
+        }
+      }
+
       updateAnimationMixers(dt);
       updateEnemyBullets(dt);
+      updateGoldPickups(dt);
 
-      // Skyting: kuler, treff, blinkfysikk, støvkorn/glør og visuelle effekter
+      // Skyting, kastet dynamitt, treff, kruttrøyk/gnister/aske, blinkfysikk og rullende tumbleweeds
       updateBullets(dt);
+      updateThrownDynamites(dt);
       updateBottles(dt);
       updateImpacts(dt);
-      updateAmbientParticles(dt, playerRig.position, nightAmount, worldTime);
+      updateFXParticles(dt);
+      updateAmbientParticles(dt, playerRig.position, nightAmount, worldTime, getTerrainHeight);
       updateDamageVignette(dt);
 
       if (weaponDamage >= 2 && !hasGoldenRevolver) {
         hasGoldenRevolver = true;
         upgradeRevolverToGold();
+        updateStatusUI();
       }
-      updateRevolverFX(pcRevolver, dt);
-      if (vrRevolver) updateRevolverFX(vrRevolver, dt);
+      updateWeaponViewFX(pcWeapons[activeWeaponId], dt);
+      if (vrActiveWeapon) updateWeaponViewFX(vrActiveWeapon, dt);
 
       // Nullstill blinkene automatisk litt etter at alle er truffet
       if (targetResetTimer > 0) {
