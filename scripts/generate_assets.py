@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Master asset pipeline for Western Cowboy VR (WebXR).
-Invokes all procedural glTF 2.0 (.glb) builders to generate all 16 game-ready 3D assets
-in ./assets/*.glb with zero external dependencies.
+Master fallback asset pipeline for Western Cowboy VR (WebXR).
+Protects external / CC0 / Tripo3D / Meshy .glb files in ./assets/:
+By default, ONLY generates a .glb file if it does NOT already exist in ./assets/
+(pass --force explicitly to rebuild procedural models).
 """
 
 import os
@@ -69,7 +70,7 @@ ASSET_JOBS = [
 
 def verify_glb_header(filepath):
     if not os.path.isfile(filepath):
-        raise FileNotFoundError(f"Missing generated GLB: {filepath}")
+        raise FileNotFoundError(f"Missing GLB: {filepath}")
     size = os.path.getsize(filepath)
     if size < 28:
         raise ValueError(f"GLB too small ({size} bytes): {filepath}")
@@ -83,36 +84,40 @@ def verify_glb_header(filepath):
 
 
 def main():
+    force_overwrite = "--force" in sys.argv
     os.makedirs(ASSETS_DIR, exist_ok=True)
     t0 = time.perf_counter()
 
-    print(f"Generating {len(ASSET_JOBS)} WebXR .glb assets into: {ASSETS_DIR}")
-    print("-" * 78)
-    print(f"{'Asset':<20} {'Size (KB)':>10} {'Vertices':>10} {'Triangles':>11} {'Nodes':>7} {'Anims':>7}")
+    mode_str = "FORCE OVERWRITE" if force_overwrite else "PROTECT EXISTING (missing-only)"
+    print(f"Checking {len(ASSET_JOBS)} WebXR .glb assets in {ASSETS_DIR} [{mode_str}]")
     print("-" * 78)
 
     total_bytes = 0
-    total_tris = 0
+    built_count = 0
+    kept_count = 0
 
     for filename, builder_fn in ASSET_JOBS:
         out_path = os.path.join(ASSETS_DIR, filename)
+        if os.path.isfile(out_path) and not force_overwrite:
+            size = verify_glb_header(out_path)
+            total_bytes += size
+            kept_count += 1
+            print(f"[PROTECTED] {filename:<20} {size / 1024.0:>10.1f} KB (existing .glb preserved)")
+            continue
+
         info = builder_fn(out_path)
         size = verify_glb_header(out_path)
         verts = info.get("vertices", 0) if isinstance(info, dict) else 0
         tris = info.get("triangles", 0) if isinstance(info, dict) else 0
-        nodes = info.get("nodes", 0) if isinstance(info, dict) else 0
-        anims = info.get("animations", 0) if isinstance(info, dict) else 0
         total_bytes += size
-        total_tris += tris
-        print(
-            f"{filename:<20} {size / 1024.0:>10.1f} {verts:>10,d} {tris:>11,d} {nodes:>7d} {anims:>7d}"
-        )
+        built_count += 1
+        print(f"[GENERATED] {filename:<20} {size / 1024.0:>10.1f} KB ({verts:,d} verts, {tris:,d} tris)")
 
     elapsed = time.perf_counter() - t0
     print("-" * 78)
     print(
-        f"Done in {elapsed:.2f}s — {len(ASSET_JOBS)} valid .glb files "
-        f"({total_bytes / 1024.0:.1f} KB, {total_tris:,d} triangles total)."
+        f"Done in {elapsed:.2f}s — {kept_count} preserved, {built_count} generated "
+        f"({total_bytes / 1024.0:.1f} KB total)."
     )
 
 
