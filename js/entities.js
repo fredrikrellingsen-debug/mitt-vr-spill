@@ -364,11 +364,64 @@ export function initWorldEntities(ctx) {
       entity.currentAnimationAction = action;
     }
 
+    function setEntityShadowCasting(entity, enabled) {
+      if (entity._shadowCastState === enabled) return;
+      entity._shadowCastState = enabled;
+      const root = entity.group.userData.normalizedWrapper || entity.group;
+      root.traverse((n) => {
+        if (n.isMesh && !n.userData.neverCastShadow) {
+          n.castShadow = enabled;
+        }
+      });
+    }
+
     function updateAnimationMixers(dt) {
+      const px = playerRig.position.x;
+      const py = playerRig.position.y;
+      const pz = playerRig.position.z;
+
       for (let i = 0; i < animationMixers.length; i++) {
         const entity = animationMixers[i];
-        if (entity.animationMixer && entity.group.visible) {
-          entity.animationMixer.update(dt);
+        if (!entity.group || !entity.group.visible) continue;
+
+        const ex = entity.group.position.x;
+        const ey = entity.group.position.y;
+        const ez = entity.group.position.z;
+        const dx = ex - px;
+        const dz = ez - pz;
+        const distSq = dx * dx + dz * dz;
+
+        const wrapper = entity.group.userData.normalizedWrapper;
+        const undergroundHidden = ey < -3.0 && py > -1.4;
+        let maxCullDistSq = 62 * 62;
+        if (entity.kind === 'boss') {
+          maxCullDistSq = 120 * 120;
+        } else if (entity.kind === 'horse') {
+          maxCullDistSq = 88 * 88;
+        } else if (entity.kind === 'npc') {
+          // Skredder og børsemaker står inne i butikkene sine; sheriffen står ute på gata
+          maxCullDistSq = Math.abs(ex) > 5.0 ? 46 * 46 : 78 * 78;
+        }
+        const shouldShowMesh = !undergroundHidden && distSq <= maxCullDistSq;
+
+        if (wrapper && wrapper.visible !== shouldShowMesh) {
+          wrapper.visible = shouldShowMesh;
+        }
+        if (!shouldShowMesh) continue;
+
+        // Kun karakterer/dyr innenfor 22 meter trenger ekte retningsbestemt skyggekart (fjernere bruker rask kontaktsygge på bakken)
+        setEntityShadowCasting(entity, distSq <= 22 * 22);
+
+        if (!entity.animationMixer) continue;
+        if (distSq <= 24 * 24) {
+          entity.animationMixer.update(dt + (entity._animAccumDt || 0));
+          entity._animAccumDt = 0;
+        } else if (distSq <= 56 * 56) {
+          entity._animAccumDt = (entity._animAccumDt || 0) + dt;
+          if (entity._animAccumDt >= 0.052) {
+            entity.animationMixer.update(entity._animAccumDt);
+            entity._animAccumDt = 0;
+          }
         }
       }
     }
