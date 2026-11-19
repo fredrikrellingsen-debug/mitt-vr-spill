@@ -180,9 +180,21 @@ export function enhanceOrPreserveGLBMaterial(origMat, node, M, opts = {}) {
     }
     if (isCharacter) {
       mat.flatShading = false;
+      const isAlphaHairCard =
+        mat.alphaTest > 0 ||
+        mat.transparent ||
+        mName.includes('hair') ||
+        mName.includes('beard') ||
+        mName.includes('brow') ||
+        mName.includes('lash');
       const embeddedMetal = (origMat.metalness !== undefined && origMat.metalness >= 0.45) || mName.includes('horseshoe');
       const isEmbeddedLeather = mName.includes('saddle') || mName.includes('bridle') || mName.includes('leather');
-      if (embeddedMetal) {
+      if (isAlphaHairCard) {
+        mat.metalness = 0.0;
+        mat.roughness = THREE.MathUtils.clamp(mat.roughness ?? 0.82, 0.76, 0.90);
+        mat.envMapIntensity = 0.30;
+        mat.side = THREE.DoubleSide;
+      } else if (embeddedMetal) {
         mat.metalness = Math.max(origMat.metalness ?? 0.85, 0.80);
         mat.roughness = THREE.MathUtils.clamp(mat.roughness ?? 0.34, 0.25, 0.40);
         mat.envMapIntensity = 1.15;
@@ -192,7 +204,9 @@ export function enhanceOrPreserveGLBMaterial(origMat, node, M, opts = {}) {
         mat.envMapIntensity = 0.44;
       } else {
         mat.metalness = 0.0;
-        mat.roughness = THREE.MathUtils.clamp(mat.roughness ?? 0.88, 0.84, 0.92);
+        mat.roughness = mat.roughnessMap
+          ? THREE.MathUtils.clamp(mat.roughness ?? 0.94, 0.86, 0.98)
+          : THREE.MathUtils.clamp(mat.roughness ?? 0.88, 0.84, 0.92);
         mat.envMapIntensity = 0.35;
         if (!mat.normalMap && !mat.bumpMap && M && M.gltfOrganicNoiseBumpTex) {
           mat.bumpMap = M.gltfOrganicNoiseBumpTex;
@@ -200,7 +214,7 @@ export function enhanceOrPreserveGLBMaterial(origMat, node, M, opts = {}) {
         }
       }
       mat.needsUpdate = true;
-      if (M && M.applyCharacterRimLighting) {
+      if (M && M.applyCharacterRimLighting && !isAlphaHairCard) {
         M.applyCharacterRimLighting(mat);
       }
     } else {

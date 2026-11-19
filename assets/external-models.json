@@ -1,4 +1,16 @@
 {
+  "bandit.glb": true,
+  "bear.glb": true,
+  "boss_vampire.glb": true,
+  "deer.glb": true,
+  "gunsmith_npc.glb": true,
   "horse.glb": true,
-  "vampire.glb": true
+  "sheriff_npc.glb": true,
+  "shrubs.glb": true,
+  "tailor_npc.glb": true,
+  "trees.glb": true,
+  "undergrowth.glb": true,
+  "vampire.glb": true,
+  "wildlife.glb": true,
+  "wolf.glb": true
 }

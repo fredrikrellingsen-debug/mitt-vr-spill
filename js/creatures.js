@@ -81,11 +81,116 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     return g;
   }
 
+  const sharedStetsonDarkBrownMat = new THREE.MeshStandardMaterial({
+    color: 0x462916,
+    map: sharedLeatherTex || sharedWoodTex,
+    normalMap: sharedLeatherNormalTex || null,
+    roughnessMap: sharedLeatherRoughTex || null,
+    roughness: 0.78,
+    metalness: 0.02,
+    envMapIntensity: 0.38
+  });
+  const sharedStetsonSaddleMat = new THREE.MeshStandardMaterial({
+    color: 0x5c361d,
+    map: sharedLeatherTex || sharedWoodTex,
+    normalMap: sharedLeatherNormalTex || null,
+    roughnessMap: sharedLeatherRoughTex || null,
+    roughness: 0.76,
+    metalness: 0.02,
+    envMapIntensity: 0.38
+  });
+  const sharedStetsonOutlawMat = new THREE.MeshStandardMaterial({
+    color: 0x241913,
+    map: sharedLeatherTex || sharedWoodTex,
+    normalMap: sharedLeatherNormalTex || null,
+    roughnessMap: sharedLeatherRoughTex || null,
+    roughness: 0.82,
+    metalness: 0.02,
+    envMapIntensity: 0.34
+  });
+  const sharedStetsonCreamMat = new THREE.MeshStandardMaterial({
+    color: 0xe6d5b8,
+    roughness: 0.80,
+    metalness: 0.0,
+    envMapIntensity: 0.36
+  });
+  const sharedHolsterLeatherMat = new THREE.MeshStandardMaterial({
+    color: 0x3b2010,
+    map: sharedLeatherTex || null,
+    normalMap: sharedLeatherNormalTex || null,
+    roughnessMap: sharedLeatherRoughTex || null,
+    roughness: 0.68,
+    metalness: 0.04,
+    envMapIntensity: 0.40
+  });
+  const sharedCrimsonClothMat = new THREE.MeshStandardMaterial({
+    color: 0x9e1b1b,
+    roughness: 0.88,
+    metalness: 0.0,
+    envMapIntensity: 0.30
+  });
+
+  function attachWesternHumanGear(model, group, opts = {}) {
+    const headBone = model.getObjectByName('head') || model.getObjectByName('Head');
+    const chestBone = model.getObjectByName('spine_03') || model.getObjectByName('spine_02');
+    const pelvisBone = model.getObjectByName('pelvis');
+    const handRBone = model.getObjectByName('hand_r');
+
+    if (opts.hatMat && headBone) {
+      const hat = createSculptedCowboyHat(opts.hatMat, opts.bandMat || polishedBrassMat);
+      // MakeHuman head bone har +Y opp og +Z fremover; tilpasset ekte menneskeskalle-proporsjoner (0.56 skala)
+      hat.rotation.set(opts.hatTiltX || 0.04, Math.PI, opts.hatTiltZ || 0);
+      hat.position.set(0, 0.064, 0.004);
+      hat.scale.setScalar(opts.hatScale || 0.56);
+      headBone.add(hat);
+    }
+
+    if (opts.bandana && headBone) {
+      const bd = new THREE.Mesh(
+        new THREE.ConeGeometry(0.092, 0.135, 12),
+        sharedCrimsonClothMat
+      );
+      bd.rotation.x = Math.PI - 0.18;
+      bd.scale.set(0.92, 1.0, 1.06);
+      bd.position.set(0, -0.032, 0.044);
+      headBone.add(bd);
+    }
+
+    if (opts.holster && pelvisBone) {
+      const hol = new THREE.Mesh(
+        new THREE.ConeGeometry(0.048, 0.21, 9),
+        sharedHolsterLeatherMat
+      );
+      hol.rotation.x = Math.PI;
+      hol.rotation.z = -0.14;
+      hol.position.set(-0.185, -0.08, 0.02);
+      pelvisBone.add(hol);
+    }
+
+    return { headBone, chestBone, pelvisBone, handRBone };
+  }
+
   function createTailorNPC() {
     const tailorNpcGLTF = loadedAssets && loadedAssets.tailorNpc;
     if (tailorNpcGLTF && tailorNpcGLTF.scene) {
-      const { group: npc } = instantiateGLTFCreature(tailorNpcGLTF, 'tailorNpc', 1.80, 1);
+      const { group: npc, model } = instantiateGLTFCreature(tailorNpcGLTF, 'tailorNpc', 1.80, 1);
       if (createContactShadow) npc.add(createContactShadow(0.46, 0.46, 0.015));
+
+      const { chestBone } = attachWesternHumanGear(model, npc, {
+        hatMat: sharedStetsonDarkBrownMat,
+        bandMat: polishedBrassMat,
+        hatScale: 0.55,
+        hatTiltX: -0.03
+      });
+      if (chestBone) {
+        const tapeRing = new THREE.Mesh(
+          new THREE.TorusGeometry(0.115, 0.011, 6, 18, Math.PI * 1.35),
+          new THREE.MeshStandardMaterial({ color: 0xf0d258, roughness: 0.62 })
+        );
+        tapeRing.rotation.set(Math.PI * 0.46, 0, Math.PI * 0.82);
+        tapeRing.position.set(0, 0.21, 0.045);
+        chestBone.add(tapeRing);
+      }
 
       const npcShield = new THREE.Mesh(
         new THREE.BoxGeometry(0.85, 1.95, 0.6),
@@ -727,10 +832,48 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     if (banditGLTF && banditGLTF.scene) {
       const { group, model } = instantiateGLTFCreature(banditGLTF, 'bandit', 1.82, -1);
       if (createContactShadow) group.add(createContactShadow(0.52, 0.52));
+
+      const { handRBone } = attachWesternHumanGear(model, group, {
+        hatMat: sharedStetsonOutlawMat,
+        bandMat: sharedCrimsonClothMat,
+        hatScale: 0.57,
+        hatTiltX: 0.06,
+        hatTiltZ: -0.04,
+        bandana: true,
+        holster: true
+      });
+
       let muzzle =
         model.getObjectByName('muzzle') ||
         model.getObjectByName('Muzzle') ||
         model.getObjectByName('MuzzlePoint');
+
+      if (!muzzle && handRBone) {
+        const gunGrp = new THREE.Group();
+        const frame = new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.14, 0.032), banditGunMat);
+        frame.position.set(0.02, 0.07, 0);
+        gunGrp.add(frame);
+        const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.056, 10), banditGunMat);
+        drum.position.set(0.025, 0.065, 0);
+        gunGrp.add(drum);
+        const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.014, 0.18, 10), banditGunMat);
+        barrel.position.set(0.032, 0.17, 0);
+        gunGrp.add(barrel);
+        const grip = new THREE.Mesh(
+          new THREE.BoxGeometry(0.082, 0.038, 0.028),
+          sharedStetsonDarkBrownMat
+        );
+        grip.rotation.z = -0.34;
+        grip.position.set(-0.028, 0.015, 0);
+        gunGrp.add(grip);
+
+        muzzle = new THREE.Object3D();
+        muzzle.name = 'muzzle';
+        muzzle.position.set(0.032, 0.27, 0);
+        gunGrp.add(muzzle);
+        handRBone.add(gunGrp);
+      }
+
       if (!muzzle) {
         muzzle = new THREE.Object3D();
         muzzle.position.set(0.32, 1.28, -0.84);
@@ -1075,8 +1218,16 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
   function createGunsmithNPC(gunsmithBlockHitMeshes) {
     const gunsmithNpcGLTF = loadedAssets && loadedAssets.gunsmithNpc;
     if (gunsmithNpcGLTF && gunsmithNpcGLTF.scene) {
-      const { group: npc } = instantiateGLTFCreature(gunsmithNpcGLTF, 'gunsmithNpc', 1.82, 1);
+      const { group: npc, model } = instantiateGLTFCreature(gunsmithNpcGLTF, 'gunsmithNpc', 1.82, 1);
       if (createContactShadow) npc.add(createContactShadow(0.48, 0.48, 0.015));
+
+      attachWesternHumanGear(model, npc, {
+        hatMat: sharedStetsonSaddleMat,
+        bandMat: polishedBrassMat,
+        hatScale: 0.57,
+        hatTiltX: -0.03,
+        holster: true
+      });
 
       const shield = new THREE.Mesh(
         new THREE.BoxGeometry(0.9, 1.95, 0.65),
@@ -1140,64 +1291,38 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
       color: 0xffd857,
       emissive: 0x452d00,
       metalness: 0.92,
-      roughness: 0.18
+      roughness: 0.24
     });
 
-    const baseGLTF = loadedAssets && loadedAssets.tailorNpc;
+    const baseGLTF = (loadedAssets && loadedAssets.sheriffNpc) || (loadedAssets && loadedAssets.tailorNpc);
     if (baseGLTF && baseGLTF.scene) {
-      const { group, model } = instantiateGLTFCreature(baseGLTF, 'tailorNpc', 1.84, 1);
+      const { group, model } = instantiateGLTFCreature(baseGLTF, 'sheriffNpc', 1.84, 1);
       if (createContactShadow) group.add(createContactShadow(0.54, 0.54));
 
-      model.traverse((node) => {
-        if (!node.isMesh || !node.material) return;
-        const mName = node.material.name || '';
-        if (
-          mName === 'MeasuringTape' ||
-          mName === 'TapeTickDark' ||
-          mName === 'RedPincushion' ||
-          mName === 'ShearEdgeSteel' ||
-          mName === 'PearlPin'
-        ) {
-          node.visible = false;
-          return;
-        }
-        if (mName === 'TailorStetson') {
-          node.material = node.material.clone();
-          node.material.color.setHex(0xe4d2b2);
-        } else if (mName === 'TailorBrocadeVest' || mName === 'TailorVestLapel' || mName === 'TailorVestSatinBack') {
-          node.material = node.material.clone();
-          node.material.color.setHex(0x1f334a);
-        } else if (mName === 'TailorSilkCravat') {
-          node.material = node.material.clone();
-          node.material.color.setHex(0x8e1b1b);
-        } else if (mName === 'TailorHair') {
-          node.material = node.material.clone();
-          node.material.color.setHex(0x8c847a);
-        } else if (mName === 'TailorWoolTrousers') {
-          node.material = node.material.clone();
-          node.material.color.setHex(0x28231e);
-        }
+      const { chestBone } = attachWesternHumanGear(model, group, {
+        hatMat: sharedStetsonCreamMat,
+        bandMat: goldStarMat,
+        hatScale: 0.57,
+        hatTiltX: -0.03,
+        holster: true
       });
 
-      // Gull 6-tagget Sheriff-stjerne på venstre bryst + lær-hylster på høyre hofte
+      // Gull 6-tagget Sheriff-stjerne festet på øvre venstre brystslag (over kryssede armer)
       const starGroup = new THREE.Group();
-      const triGeo = new THREE.CylinderGeometry(0.044, 0.044, 0.012, 3);
+      const triGeo = new THREE.CylinderGeometry(0.034, 0.034, 0.010, 3);
       const tA = new THREE.Mesh(triGeo, goldStarMat);
       tA.rotation.x = Math.PI / 2;
       const tB = new THREE.Mesh(triGeo, goldStarMat);
       tB.rotation.x = Math.PI / 2;
       tB.rotation.z = Math.PI;
       starGroup.add(tA, tB);
-      starGroup.position.set(-0.105, 1.25, 0.172);
-      group.add(starGroup);
-
-      const holster = new THREE.Mesh(
-        new THREE.BoxGeometry(0.075, 0.21, 0.10),
-        new THREE.MeshStandardMaterial({ color: 0x3a2010, roughness: 0.72 })
-      );
-      holster.position.set(0.23, 0.74, 0.04);
-      holster.rotation.z = -0.14;
-      group.add(holster);
+      if (chestBone) {
+        starGroup.position.set(0.076, 0.235, 0.118);
+        chestBone.add(starGroup);
+      } else {
+        starGroup.position.set(-0.105, 1.25, 0.172);
+        group.add(starGroup);
+      }
 
       const hitBox = new THREE.Mesh(
         new THREE.BoxGeometry(0.95, 2.05, 0.75),
@@ -1320,26 +1445,42 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     const group = createBanditModel();
     group.scale.setScalar(1.14);
 
-    // Gi kapteinen mørkerød kappe-fargetone og gull/messing-detaljer på hatten
-    const captainCrimson = new THREE.Color(0x881d1d);
+    // Gi kapteinen dyp karmosinrød frakk-fargetone og gylne skulder-epauletter på brystbenet
+    const captainCrimson = new THREE.Color(0xb83232);
     group.traverse((node) => {
       if (!node.isMesh || !node.material) return;
-      const hasEmbeddedExternalMap = node.material.map && node.material.map !== M.gltfLeatherTex;
-      if (hasEmbeddedExternalMap) return;
-      const mName = node.material.name || '';
-      if (mName.toLowerCase().includes('coat') || mName.toLowerCase().includes('duster')) {
-        node.material = node.material.clone();
-        node.material.color.copy(captainCrimson);
-        if (applyCharacterRimLighting) applyCharacterRimLighting(node.material);
+      const mats = Array.isArray(node.material) ? node.material : [node.material];
+      let changed = false;
+      const nextMats = mats.map((mat) => {
+        if (!mat) return mat;
+        const mName = (mat.name || '').toLowerCase();
+        if (mName.includes('cloth') || mName.includes('coat') || mName.includes('duster')) {
+          const cloned = mat.clone();
+          cloned.color.copy(captainCrimson);
+          if (applyCharacterRimLighting) applyCharacterRimLighting(cloned);
+          changed = true;
+          return cloned;
+        }
+        return mat;
+      });
+      if (changed) {
+        node.material = Array.isArray(node.material) ? nextMats : nextMats[0];
       }
     });
 
-    // Gullskulder-epauletter slik at kapteinen skiller seg tydelig ut på lang avstand
+    const animRoot = group.userData.animRoot;
+    const chestBone = animRoot && (animRoot.getObjectByName('spine_03') || animRoot.getObjectByName('spine_02'));
     [-1, 1].forEach((side) => {
-      const ep = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.038, 0.16), polishedBrassMat);
-      ep.position.set(side * 0.24, 1.38, -0.02);
-      ep.rotation.z = side * -0.18;
-      group.add(ep);
+      const ep = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.032, 0.14), polishedBrassMat);
+      if (chestBone) {
+        ep.position.set(side * 0.185, 0.22, 0.0);
+        ep.rotation.z = side * -0.18;
+        chestBone.add(ep);
+      } else {
+        ep.position.set(side * 0.24, 1.38, -0.02);
+        ep.rotation.z = side * -0.18;
+        group.add(ep);
+      }
     });
 
     return group;
@@ -1436,6 +1577,26 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
       const arm0 = model.getObjectByName('arm0');
       const arm1 = model.getObjectByName('arm1');
       group.userData.arms = [arm0, arm1].filter(Boolean);
+
+      // Glødende blodrøde vampyrøyne og gotisk høykrage festet direkte til skjelettet til Lord Malakor
+      const headBone = model.getObjectByName('head') || model.getObjectByName('Head');
+      const chestBone = model.getObjectByName('spine_03') || model.getObjectByName('spine_02');
+      if (headBone) {
+        [-1, 1].forEach((side) => {
+          const vEye = new THREE.Mesh(new THREE.SphereGeometry(0.015, 7, 6), nightEyeMat);
+          vEye.position.set(side * 0.033, 0.028, 0.092);
+          headBone.add(vEye);
+        });
+      }
+      if (chestBone) {
+        const highCollar = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.185, 0.115, 0.16, 14, 1, true, Math.PI * 0.68, Math.PI * 1.64),
+          nightLiningMat
+        );
+        highCollar.position.set(0, 0.215, -0.028);
+        highCollar.rotation.x = -0.16;
+        chestBone.add(highCollar);
+      }
     } else {
       group = createNightEnemyModel();
       group.scale.setScalar(1.55);
