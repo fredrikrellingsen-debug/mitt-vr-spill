@@ -12,6 +12,7 @@ Safety & Plug-and-Play protection:
 """
 
 import hashlib
+import json
 import os
 import struct
 import sys
@@ -147,8 +148,21 @@ def main():
     for fname, url in CC0_GLB_FALLBACKS:
         dest = os.path.join(ASSETS_DIR, fname)
         if os.path.isfile(dest) and not force:
-            print(f"  [PROTECTED] {fname} exists ({os.path.getsize(dest) // 1024} KB) — preserving")
-            continue
+            gen = ""
+            try:
+                with open(dest, "rb") as gf:
+                    hdr = gf.read(20)
+                    if len(hdr) == 20:
+                        magic, ver, _, chunk_len, chunk_type = struct.unpack("<IIIII", hdr)
+                        if magic == 0x46546C67 and chunk_type == 0x4E4F534A and chunk_len < 5_000_000:
+                            doc = json.loads(gf.read(chunk_len).decode("utf-8", errors="ignore").rstrip(" \t\r\n\x00"))
+                            gen = str(doc.get("asset", {}).get("generator", ""))
+            except Exception:
+                gen = ""
+            if gen != "WesternVR-GLBBuilder-1.0":
+                print(f"  [PROTECTED] {fname} exists ({os.path.getsize(dest) // 1024} KB, generator={gen!r}) — preserving")
+                continue
+            print(f"  [UPGRADING LEGACY 1.0] {fname} -> external CC0 model")
         raw = download_bytes(url)
         validate_payload(fname, raw)
         with open(dest, "wb") as f:
