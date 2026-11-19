@@ -643,11 +643,72 @@ export function initRevolverAndAtmosphereFX({
     return root;
   }
 
+  function createHellfire() {
+    const root = new THREE.Group();
+    const body = new THREE.Group();
+    root.add(body);
+
+    const gltf = loadedAssets && loadedAssets.hellfire;
+    let muzzle = null;
+    let barrelCluster = null;
+    if (gltf && gltf.scene) {
+      const m = enhanceWeaponGLB(gltf.scene);
+      body.add(m);
+      muzzle = m.getObjectByName('MuzzlePoint') || m.getObjectByName('muzzle');
+      barrelCluster = m.getObjectByName('BarrelCluster') || null;
+    } else {
+      const rec = new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.068, 0.22), gunDarkMat);
+      rec.position.set(0, 0.048, -0.09);
+      body.add(rec);
+      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.075, 0.22), gunWoodMat);
+      stock.position.set(0, 0.02, 0.14);
+      body.add(stock);
+      const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.052, 0.046, 14), gunBrassMat);
+      drum.rotation.x = Math.PI / 2;
+      drum.position.set(0, 0, -0.12);
+      body.add(drum);
+      barrelCluster = new THREE.Group();
+      barrelCluster.position.set(0, 0.054, -0.19);
+      for (let b = 0; b < 4; b++) {
+        const ang = (b / 4) * Math.PI * 2 + Math.PI * 0.25;
+        const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.0085, 0.0085, 0.34, 8), silverMetalMat);
+        bar.rotation.x = Math.PI / 2;
+        bar.position.set(Math.cos(ang) * 0.015, Math.sin(ang) * 0.015, -0.15);
+        barrelCluster.add(bar);
+      }
+      body.add(barrelCluster);
+    }
+
+    if (!muzzle) {
+      muzzle = new THREE.Object3D();
+      muzzle.position.set(0, 0.054, -0.52);
+      body.add(muzzle);
+    }
+    const { flash, flashMat, flashLight } = attachMuzzleFX(muzzle);
+    flashMat.color.setHex(0x88dcff);
+    flashLight.color.setHex(0x74ccff);
+    root.userData = {
+      weaponId: 'hellfire',
+      body,
+      muzzle,
+      barrelCluster,
+      spinVel: 0,
+      flash,
+      flashMat,
+      flashLight,
+      recoilAngle: 0,
+      recoilVel: 0,
+      flashTimer: 0
+    };
+    return root;
+  }
+
   function createWeaponModel(weaponId) {
     if (weaponId === 'shotgun') return createShotgun();
     if (weaponId === 'rifle') return createRifle();
     if (weaponId === 'crossbow') return createCrossbow();
     if (weaponId === 'dynamite') return createDynamiteInHand();
+    if (weaponId === 'hellfire') return createHellfire();
     const rev = createRevolver();
     rev.userData.weaponId = 'revolver';
     return rev;
@@ -1127,6 +1188,117 @@ export function initRevolverAndAtmosphereFX({
     }
   }
 
+  // --- 8e. Object Pool (25) med glitrende tomhylser i messing ---
+  const SHELL_POOL_SIZE = 25;
+  const shellGeo = new THREE.CylinderGeometry(0.0085, 0.0092, 0.034, 8);
+  const shellMat = new THREE.MeshStandardMaterial({
+    color: 0xe6b64c,
+    metalness: 0.92,
+    roughness: 0.22,
+    envMapIntensity: 1.45
+  });
+  const shellPool = [];
+  for (let i = 0; i < SHELL_POOL_SIZE; i++) {
+    const m = new THREE.Mesh(shellGeo, shellMat);
+    m.visible = false;
+    scene.add(m);
+    shellPool.push({
+      mesh: m,
+      active: false,
+      life: 0,
+      vx: 0, vy: 0, vz: 0,
+      rx: 0, ry: 0, rz: 0,
+      bounced: false
+    });
+  }
+  let shellPoolCursor = 0;
+
+  function ejectShellCasing(origin, rightVec, upVec, fwdVec, count = 1, onBounceSfx = null) {
+    for (let c = 0; c < count; c++) {
+      const slot = shellPool[shellPoolCursor];
+      shellPoolCursor = (shellPoolCursor + 1) % SHELL_POOL_SIZE;
+      const m = slot.mesh;
+      m.position.copy(origin);
+      m.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+      m.visible = true;
+      const sideSpeed = 1.65 + Math.random() * 0.95 + c * 0.25;
+      const upSpeed = 1.55 + Math.random() * 0.65;
+      const backSpeed = -0.35 - Math.random() * 0.45;
+      slot.vx = rightVec.x * sideSpeed + upVec.x * upSpeed + fwdVec.x * backSpeed;
+      slot.vy = rightVec.y * sideSpeed + upVec.y * upSpeed + fwdVec.y * backSpeed;
+      slot.vz = rightVec.z * sideSpeed + upVec.z * upSpeed + fwdVec.z * backSpeed;
+      slot.rx = (Math.random() - 0.5) * 18;
+      slot.ry = (Math.random() - 0.5) * 16;
+      slot.rz = (Math.random() - 0.5) * 18;
+      slot.life = 4.5;
+      slot.bounced = false;
+      slot.onBounceSfx = onBounceSfx;
+      slot.active = true;
+    }
+  }
+
+  function updateShellCasings(dt, getTerrainHeightFn) {
+    for (let i = 0; i < SHELL_POOL_SIZE; i++) {
+      const s = shellPool[i];
+      if (!s.active) continue;
+      s.life -= dt;
+      if (s.life <= 0) {
+        s.active = false;
+        s.mesh.visible = false;
+        continue;
+      }
+      const m = s.mesh;
+      s.vy -= 9.8 * dt;
+      m.position.x += s.vx * dt;
+      m.position.y += s.vy * dt;
+      m.position.z += s.vz * dt;
+      m.rotation.x += s.rx * dt;
+      m.rotation.y += s.ry * dt;
+      m.rotation.z += s.rz * dt;
+
+      const floorY = getTerrainHeightFn ? getTerrainHeightFn(m.position.x, m.position.z, m.position.y) : 0;
+      if (m.position.y <= floorY + 0.018) {
+        m.position.y = floorY + 0.018;
+        if (!s.bounced) {
+          s.bounced = true;
+          s.vy = Math.abs(s.vy) * 0.34;
+          s.vx *= 0.42;
+          s.vz *= 0.42;
+          s.rx *= 0.35;
+          s.ry *= 0.35;
+          s.rz *= 0.35;
+          if (s.onBounceSfx) s.onBounceSfx();
+        } else {
+          s.vy = 0;
+          s.vx *= 0.84;
+          s.vz *= 0.84;
+          s.rx = s.ry = s.rz = 0;
+          m.rotation.x = Math.PI * 0.5;
+        }
+      }
+    }
+  }
+
+  // --- 8f. Blodmåne-visuell effekt (Level 8 Finale) ---
+  function updateBloodMoonVisuals(bloodMoonBlend) {
+    const b = Math.max(0, Math.min(1, bloodMoonBlend));
+    if (b <= 0.01) {
+      moonMesh.material.color.setHex(0xe8f0ff);
+      moonHaloMat.color.setHex(0xaec8ff);
+      moonHalo.scale.set(28, 28, 1);
+      moonGroup.scale.setScalar(1.0);
+    } else {
+      moonMesh.material.color.setHex(0xe8f0ff).lerp(new THREE.Color(0xff2b38), b);
+      moonHaloMat.color.setHex(0xaec8ff).lerp(new THREE.Color(0xff1428), b);
+      const hScale = 28 + b * 24;
+      moonHalo.scale.set(hScale, hScale, 1);
+      moonGroup.scale.setScalar(1.0 + b * 0.35);
+      moonMesh.material.opacity = Math.max(moonMesh.material.opacity, 0.85 * b);
+      moonHaloMat.opacity = Math.max(moonHaloMat.opacity, 0.72 * b);
+      moonGroup.visible = true;
+    }
+  }
+
   return {
     createRevolver,
     createWeaponModel,
@@ -1145,6 +1317,9 @@ export function initRevolverAndAtmosphereFX({
     gunsmithLantern,
     safeHouseLantern,
     updateAmbientParticles,
+    ejectShellCasing,
+    updateShellCasings,
+    updateBloodMoonVisuals,
     flashDamageVignette,
     updateDamageVignette
   };
