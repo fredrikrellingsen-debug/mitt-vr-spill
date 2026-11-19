@@ -238,15 +238,47 @@ export function initWorldEntities(ctx) {
     const nightAnimationClips = createNightAnimationClips();
     const banditAnimationClips = createBanditAnimationClips();
 
+    function findBestClipAction(actions, candidates, avoidWords = []) {
+      for (let c = 0; c < candidates.length; c++) {
+        const cand = candidates[c];
+        if (actions[cand]) return actions[cand];
+        for (const key in actions) {
+          if (
+            key === `${cand}_action` ||
+            key.endsWith(`|${cand}`) ||
+            key.endsWith(`_${cand}`)
+          ) {
+            return actions[key];
+          }
+        }
+      }
+      for (let c = 0; c < candidates.length; c++) {
+        const cand = candidates[c];
+        for (const key in actions) {
+          if (!key.includes(cand)) continue;
+          let blocked = false;
+          for (let a = 0; a < avoidWords.length; a++) {
+            if (key.includes(avoidWords[a])) {
+              blocked = true;
+              break;
+            }
+          }
+          if (!blocked) return actions[key];
+        }
+      }
+      return null;
+    }
+
     function registerEntityAnimations(entity, fallbackClips) {
       entity.animationMixer = null;
       entity.animationActions = null;
+      entity.resolvedActions = null;
+      entity.hasDeathClip = false;
       entity.animationState = '';
       entity.currentAnimationAction = null;
       entity.attackAnimTimer = 0;
 
-      // GLB-klosser kan levere clips på gruppen eller via userData. Hvis
-      // modellen er prosedyrisk, bruker vi de genererte fallback-clipene.
+      // GLB-modeller leverer clips på gruppen eller via userData; bruk animRoot slik at spor treffer klonet GLTF-scene.
       const groupClips = entity.group.animations && entity.group.animations.length
         ? entity.group.animations
         : (entity.group.userData.animations && entity.group.userData.animations.length
@@ -255,7 +287,8 @@ export function initWorldEntities(ctx) {
       const clips = entity.animationClips || groupClips || fallbackClips;
       if (!clips || clips.length === 0) return;
 
-      const mixer = new THREE.AnimationMixer(entity.group);
+      const mixerRoot = entity.group.userData.animRoot || entity.group;
+      const mixer = new THREE.AnimationMixer(mixerRoot);
       const actions = Object.create(null);
       for (let i = 0; i < clips.length; i++) {
         const clip = clips[i];
@@ -263,6 +296,22 @@ export function initWorldEntities(ctx) {
         actions[(clip.name || '').toLowerCase()] = mixer.clipAction(clip);
       }
 
+      const idleAct = findBestClipAction(actions, ['idle', 'idle1', 'stand', 'breathe'], ['hitreact', 'toidle', 'jump']);
+      const walkAct = findBestClipAction(actions, ['walk', 'walk1', 'trot', 'move'], ['back']);
+      const runAct = findBestClipAction(actions, ['run', 'gallop', 'sprint', 'fast'], ['jump', 'toidle']);
+      const gallopAct = findBestClipAction(actions, ['gallop', 'run', 'sprint'], ['jump', 'toidle']);
+      const attackAct = findBestClipAction(actions, ['attack', 'bite', 'punch', 'slash', 'claw', 'headbutt', 'strike'], []);
+      const deathAct = findBestClipAction(actions, ['death', 'die'], []);
+
+      entity.resolvedActions = {
+        idle: idleAct,
+        walk: walkAct || idleAct,
+        run: runAct || walkAct || idleAct,
+        gallop: gallopAct || runAct || walkAct || idleAct,
+        attack: attackAct || walkAct || idleAct,
+        death: deathAct
+      };
+      entity.hasDeathClip = !!deathAct;
       entity.animationMixer = mixer;
       entity.animationActions = actions;
       animationMixers.push(entity);
@@ -275,18 +324,13 @@ export function initWorldEntities(ctx) {
       if (entity.animationState === stateName) return;
 
       const lower = stateName.toLowerCase();
-      let action = actions[lower];
+      let action = (entity.resolvedActions && entity.resolvedActions[lower]) || actions[lower];
 
       if (!action) {
-        for (const key in actions) {
-          if (key.includes(lower)) {
-            action = actions[key];
-            break;
-          }
-        }
+        action = findBestClipAction(actions, [lower], []);
       }
 
-      if (!action) action = actions.idle;
+      if (!action && entity.resolvedActions) action = entity.resolvedActions.idle;
       if (!action) {
         const keys = Object.keys(actions);
         if (keys.length > 0) action = actions[keys[0]];
@@ -294,7 +338,13 @@ export function initWorldEntities(ctx) {
       if (!action) return;
 
       entity.animationState = stateName;
-      if (entity.currentAnimationAction === action) return;
+      if (entity.currentAnimationAction === action) {
+        if (stateName === 'Attack' || stateName === 'Death') {
+          action.reset();
+          action.play();
+        }
+        return;
+      }
 
       if (entity.currentAnimationAction) {
         entity.currentAnimationAction.fadeOut(0.18);
@@ -303,7 +353,7 @@ export function initWorldEntities(ctx) {
       action.reset();
       action.setEffectiveWeight(1);
       action.fadeIn(0.18);
-      if (stateName === 'Attack') {
+      if (stateName === 'Attack' || stateName === 'Death') {
         action.setLoop(THREE.LoopOnce, 1);
         action.clampWhenFinished = true;
       } else {
@@ -909,10 +959,10 @@ export function initWorldEntities(ctx) {
 
       deer.alive = false;
       deer.state = 'dead';
-      deer.deathTimer = 1.2;
+      deer.deathTimer = 1.25;
       deer.respawnTimer = 20;
       deer.group.rotation.z = 0;
-      setEntityAnimation(deer, 'Idle');
+      setEntityAnimation(deer, deer.hasDeathClip ? 'Death' : 'Idle');
 
       playerState.food += 1;
       playerState.pelt += 1;
@@ -937,10 +987,10 @@ export function initWorldEntities(ctx) {
       }
 
       wolf.alive = false;
-      wolf.deathTimer = 1.2;
+      wolf.deathTimer = 1.25;
       wolf.respawnTimer = 20;
       wolf.group.rotation.z = 0;
-      setEntityAnimation(wolf, 'Idle');
+      setEntityAnimation(wolf, wolf.hasDeathClip ? 'Death' : 'Idle');
 
       playerState.pelt += 1;
       playerState.gold += 6;
@@ -970,7 +1020,7 @@ export function initWorldEntities(ctx) {
       bear.deathTimer = 1.3;
       bear.respawnTimer = 32;
       bear.group.rotation.z = 0;
-      setEntityAnimation(bear, 'Idle');
+      setEntityAnimation(bear, bear.hasDeathClip ? 'Death' : 'Idle');
 
       playerState.food += 3;
       playerState.pelt += 3;
@@ -996,7 +1046,7 @@ export function initWorldEntities(ctx) {
       bandit.deathTimer = 1.2;
       bandit.respawnTimer = (bandit.isCaptain || bandit.isForemanSlade) ? 65 : 24;
       bandit.group.rotation.z = 0;
-      setEntityAnimation(bandit, 'Idle');
+      setEntityAnimation(bandit, bandit.hasDeathClip ? 'Death' : 'Idle');
 
       if (bandit.isForemanSlade) {
         playerState.gold += 50;
@@ -1225,8 +1275,10 @@ export function initWorldEntities(ctx) {
       if (entity.deathTimer <= 0) return;
 
       entity.deathTimer = Math.max(0, entity.deathTimer - dt);
-      const progress = 1 - entity.deathTimer / 1.2;
-      entity.group.rotation.z = -Math.PI / 2 * Math.min(1, progress * 1.5);
+      if (!entity.hasDeathClip) {
+        const progress = 1 - entity.deathTimer / 1.2;
+        entity.group.rotation.z = -Math.PI / 2 * Math.min(1, progress * 1.5);
+      }
 
       if (entity.deathTimer <= 0) {
         entity.group.visible = false;

@@ -1,79 +1,21 @@
 import * as THREE from 'three';
+import { instantiateCharacterGLB } from './glb-utils.js';
 
 export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null) {
   const {
     sharedWoodTex, sharedWoodBumpTex, sharedFoliageBumpTex,
+    sharedLeatherTex, sharedLeatherNormalTex, sharedLeatherRoughTex,
     polishedBrassMat, wroughtIronMat, sharedRedEyeGlowTex, sharedSparkGlowTex,
-    createContactShadow
+    createContactShadow, applyCharacterRimLighting
   } = M;
 
-  function prepareGLTFTemplate(gltf, prefix) {
-    if (!gltf || !gltf.scene) return;
-    if (!gltf.userData) gltf.userData = {};
-    if (gltf.userData._prepared) return;
-    gltf.userData._prepared = true;
-
-    let autoIdx = 0;
-    const uuidToName = new Map();
-
-    gltf.scene.traverse((node) => {
-      if (!node.name) {
-        node.name = `${prefix}_node_${autoIdx++}`;
-      }
-      uuidToName.set(node.uuid, node.name);
-
-      if (node.isMesh && node.material) {
-        const mats = Array.isArray(node.material) ? node.material : [node.material];
-        for (let i = 0; i < mats.length; i++) {
-          const mat = mats[i];
-          if (!mat) continue;
-          if (mat.metalness !== undefined && mat.metalness > 0.45) {
-            mat.envMapIntensity = 1.35;
-          }
-          if (
-            mat.name === 'VampireGlowingRedEyes' ||
-            (mat.emissive && (mat.emissive.r > 0.35 || mat.emissive.g > 0.35))
-          ) {
-            mat.emissiveIntensity = Math.max(mat.emissiveIntensity || 1.0, 2.2);
-          }
-        }
-      }
+  function instantiateGLTFCreature(gltf, prefix, targetHeight = 1.82, desiredForwardZ = -1, tintColorHex = null) {
+    return instantiateCharacterGLB(gltf, M, {
+      prefix,
+      targetHeight,
+      desiredForwardZ,
+      tintColorHex
     });
-
-    if (gltf.animations && gltf.animations.length > 0) {
-      for (let a = 0; a < gltf.animations.length; a++) {
-        const clip = gltf.animations[a];
-        if (!clip || !clip.tracks) continue;
-        for (let t = 0; t < clip.tracks.length; t++) {
-          const track = clip.tracks[t];
-          const dotIdx = track.name.indexOf('.');
-          if (dotIdx > 0) {
-            const targetId = track.name.slice(0, dotIdx);
-            const mapped = uuidToName.get(targetId);
-            if (mapped) {
-              track.name = mapped + track.name.slice(dotIdx);
-            }
-          }
-        }
-      }
-    }
-  }
-
-  function instantiateGLTFCreature(gltf, prefix) {
-    prepareGLTFTemplate(gltf, prefix);
-    const group = new THREE.Group();
-    const model = gltf.scene.clone(true);
-    model.traverse((node) => {
-      if (node.isMesh) {
-        node.castShadow = true;
-        node.receiveShadow = true;
-      }
-    });
-    group.add(model);
-    if (gltf.animations && gltf.animations.length > 0) {
-      group.userData.animations = gltf.animations;
-    }
-    return { group, model };
   }
 
   // --- Felles skulpturert Cowboyhatt (LatheGeometry med ekte buet brem og krone-knekk) ---
@@ -142,7 +84,7 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
   function createTailorNPC() {
     const tailorNpcGLTF = loadedAssets && loadedAssets.tailorNpc;
     if (tailorNpcGLTF && tailorNpcGLTF.scene) {
-      const { group: npc } = instantiateGLTFCreature(tailorNpcGLTF, 'tailorNpc');
+      const { group: npc } = instantiateGLTFCreature(tailorNpcGLTF, 'tailorNpc', 1.80, 1);
       if (createContactShadow) npc.add(createContactShadow(0.46, 0.46, 0.015));
 
       const npcShield = new THREE.Mesh(
@@ -441,7 +383,7 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
   function createDeerModel() {
     const deerGLTF = loadedAssets && loadedAssets.deer;
     if (deerGLTF && deerGLTF.scene) {
-      const { group, model } = instantiateGLTFCreature(deerGLTF, 'deer');
+      const { group, model } = instantiateGLTFCreature(deerGLTF, 'deer', 1.86, -1);
       if (createContactShadow) group.add(createContactShadow(0.58, 0.92));
       group.userData.legs = [0, 1, 2, 3]
         .map((i) => model.getObjectByName(`leg${i}`))
@@ -589,7 +531,7 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
   function createWolfModel() {
     const wolfGLTF = loadedAssets && loadedAssets.wolf;
     if (wolfGLTF && wolfGLTF.scene) {
-      const { group, model } = instantiateGLTFCreature(wolfGLTF, 'wolf');
+      const { group, model } = instantiateGLTFCreature(wolfGLTF, 'wolf', 0.92, -1);
       if (createContactShadow) group.add(createContactShadow(0.48, 0.78));
       group.userData.legs = [0, 1, 2, 3]
         .map((i) => model.getObjectByName(`leg${i}`))
@@ -771,7 +713,7 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
   function createBanditModel() {
     const banditGLTF = loadedAssets && loadedAssets.bandit;
     if (banditGLTF && banditGLTF.scene) {
-      const { group, model } = instantiateGLTFCreature(banditGLTF, 'bandit');
+      const { group, model } = instantiateGLTFCreature(banditGLTF, 'bandit', 1.82, -1);
       if (createContactShadow) group.add(createContactShadow(0.52, 0.52));
       let muzzle =
         model.getObjectByName('muzzle') ||
@@ -1018,12 +960,12 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
   function createNightEnemyModel() {
     const vampireGLTF = loadedAssets && loadedAssets.vampire;
     if (vampireGLTF && vampireGLTF.scene) {
-      const { group, model } = instantiateGLTFCreature(vampireGLTF, 'vampire');
+      const { group, model } = instantiateGLTFCreature(vampireGLTF, 'vampire', 1.92, -1, 0x7a7288);
       if (createContactShadow) group.add(createContactShadow(0.62, 0.62));
 
       const eyeHalo = new THREE.Sprite(nightEyeHaloMat);
-      eyeHalo.scale.set(0.46, 0.26, 1);
-      eyeHalo.position.set(0, 1.48, -0.35);
+      eyeHalo.scale.set(0.38, 0.18, 1);
+      eyeHalo.position.set(0, 1.56, -0.38);
       group.add(eyeHalo);
 
       const arm0 = model.getObjectByName('arm0');
@@ -1121,7 +1063,7 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
   function createGunsmithNPC(gunsmithBlockHitMeshes) {
     const gunsmithNpcGLTF = loadedAssets && loadedAssets.gunsmithNpc;
     if (gunsmithNpcGLTF && gunsmithNpcGLTF.scene) {
-      const { group: npc } = instantiateGLTFCreature(gunsmithNpcGLTF, 'gunsmithNpc');
+      const { group: npc } = instantiateGLTFCreature(gunsmithNpcGLTF, 'gunsmithNpc', 1.82, 1);
       if (createContactShadow) npc.add(createContactShadow(0.48, 0.48, 0.015));
 
       const shield = new THREE.Mesh(
@@ -1191,7 +1133,7 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
 
     const baseGLTF = loadedAssets && loadedAssets.tailorNpc;
     if (baseGLTF && baseGLTF.scene) {
-      const { group, model } = instantiateGLTFCreature(baseGLTF, 'tailorNpc');
+      const { group, model } = instantiateGLTFCreature(baseGLTF, 'tailorNpc', 1.84, 1);
       if (createContactShadow) group.add(createContactShadow(0.54, 0.54));
 
       model.traverse((node) => {
@@ -1367,13 +1309,16 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     group.scale.setScalar(1.14);
 
     // Gi kapteinen mørkerød kappe-fargetone og gull/messing-detaljer på hatten
-    const captainCrimson = new THREE.Color(0x6e1818);
+    const captainCrimson = new THREE.Color(0x881d1d);
     group.traverse((node) => {
-      if (!node.isMesh || !node.material || node.material.map) return;
+      if (!node.isMesh || !node.material) return;
+      const hasEmbeddedExternalMap = node.material.map && node.material.map !== M.gltfLeatherTex;
+      if (hasEmbeddedExternalMap) return;
       const mName = node.material.name || '';
       if (mName.toLowerCase().includes('coat') || mName.toLowerCase().includes('duster')) {
         node.material = node.material.clone();
         node.material.color.copy(captainCrimson);
+        if (applyCharacterRimLighting) applyCharacterRimLighting(node.material);
       }
     });
 
@@ -1406,7 +1351,7 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
   function createBearModel() {
     const bearGLTF = loadedAssets && loadedAssets.bear;
     if (bearGLTF && bearGLTF.scene) {
-      const { group, model } = instantiateGLTFCreature(bearGLTF, 'bear');
+      const { group, model } = instantiateGLTFCreature(bearGLTF, 'bear', 1.58, -1);
       if (createContactShadow) group.add(createContactShadow(0.95, 1.38));
       group.userData.legs = [0, 1, 2, 3]
         .map((i) => model.getObjectByName(`leg${i}`))
@@ -1472,7 +1417,7 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     const bossGLTF = loadedAssets && loadedAssets.bossVampire;
 
     if (bossGLTF && bossGLTF.scene) {
-      const inst = instantiateGLTFCreature(bossGLTF, 'bossVampire');
+      const inst = instantiateGLTFCreature(bossGLTF, 'bossVampire', 2.75, -1);
       group = inst.group;
       model = inst.model;
       const arm0 = model.getObjectByName('arm0');
@@ -1570,13 +1515,90 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     return group;
   }
 
+  const horseSaddleLeatherMat = new THREE.MeshStandardMaterial({
+    color: 0x5c2f16,
+    map: sharedLeatherTex || null,
+    normalMap: sharedLeatherNormalTex || null,
+    normalScale: new THREE.Vector2(0.55, 0.55),
+    roughnessMap: sharedLeatherRoughTex || null,
+    roughness: 0.58,
+    metalness: 0.05,
+    envMapIntensity: 1.1
+  });
+  const horseBlanketMat = new THREE.MeshStandardMaterial({
+    color: 0x8e2420,
+    roughness: 0.88,
+    metalness: 0.02
+  });
+  if (applyCharacterRimLighting) {
+    [deerFurMat, wolfFurMat, wolfDarkMat, banditCoatMat, nightCloakMat, bearFurMat, horseSaddleLeatherMat].forEach((m) => {
+      if (m) applyCharacterRimLighting(m);
+    });
+  }
+
+  function buildWesternSaddleGroup() {
+    const saddleGrp = new THREE.Group();
+    saddleGrp.name = 'SaddleSeat';
+
+    const blanket = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.06, 0.56), horseBlanketMat);
+    blanket.position.set(0, -0.02, 0.02);
+    blanket.castShadow = true;
+    saddleGrp.add(blanket);
+
+    const seat = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 0.24, 5, 10), horseSaddleLeatherMat);
+    seat.rotation.x = Math.PI / 2;
+    seat.scale.set(1.15, 0.42, 1.0);
+    seat.position.set(0, 0.04, 0.02);
+    seat.castShadow = true;
+    saddleGrp.add(seat);
+
+    const cantle = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.20, 0.11, 12, 1, false, -Math.PI * 0.45, Math.PI * 0.9), horseSaddleLeatherMat);
+    cantle.position.set(0, 0.09, 0.15);
+    cantle.rotation.x = -0.25;
+    saddleGrp.add(cantle);
+
+    const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), horseSaddleLeatherMat);
+    pommel.scale.set(1.2, 0.75, 0.72);
+    pommel.position.set(0, 0.08, -0.17);
+    saddleGrp.add(pommel);
+
+    const hornNeck = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.032, 0.085, 8), horseSaddleLeatherMat);
+    hornNeck.position.set(0, 0.155, -0.19);
+    hornNeck.rotation.x = 0.24;
+    saddleGrp.add(hornNeck);
+
+    const hornCap = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.036, 0.022, 10), polishedBrassMat);
+    hornCap.position.set(0, 0.198, -0.20);
+    hornCap.rotation.x = 0.24;
+    saddleGrp.add(hornCap);
+
+    [-1, 1].forEach((side) => {
+      const fender = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.34, 0.14), horseSaddleLeatherMat);
+      fender.position.set(side * 0.23, -0.17, -0.02);
+      fender.rotation.z = side * 0.12;
+      saddleGrp.add(fender);
+
+      const stirrup = new THREE.Mesh(new THREE.TorusGeometry(0.048, 0.011, 6, 10), wroughtIronMat);
+      stirrup.rotation.y = Math.PI / 2;
+      stirrup.position.set(side * 0.255, -0.35, -0.02);
+      saddleGrp.add(stirrup);
+    });
+
+    return saddleGrp;
+  }
+
   function createHorseModel() {
     const horseGLTF = loadedAssets && loadedAssets.horse;
     if (horseGLTF && horseGLTF.scene) {
-      const { group, model } = instantiateGLTFCreature(horseGLTF, 'horse');
+      const { group, model } = instantiateGLTFCreature(horseGLTF, 'horse', 1.82, -1);
       if (createContactShadow) group.add(createContactShadow(0.68, 1.18, 0.03));
-      const seat = model.getObjectByName('SaddleSeat');
-      group.userData.saddleSeat = seat || null;
+      let seat = model.getObjectByName('SaddleSeat');
+      if (!seat) {
+        seat = buildWesternSaddleGroup();
+        seat.position.set(0, 1.14, 0.05);
+        group.add(seat);
+      }
+      group.userData.saddleSeat = seat;
       return group;
     }
 
