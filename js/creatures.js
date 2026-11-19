@@ -1570,6 +1570,117 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     return group;
   }
 
+  function createHorseModel() {
+    const horseGLTF = loadedAssets && loadedAssets.horse;
+    if (horseGLTF && horseGLTF.scene) {
+      const { group, model } = instantiateGLTFCreature(horseGLTF, 'horse');
+      if (createContactShadow) group.add(createContactShadow(0.68, 1.18, 0.03));
+      const seat = model.getObjectByName('SaddleSeat');
+      group.userData.saddleSeat = seat || null;
+      return group;
+    }
+
+    const group = new THREE.Group();
+    if (createContactShadow) group.add(createContactShadow(0.68, 1.18, 0.03));
+    const coatMat = new THREE.MeshStandardMaterial({ color: 0x6e3519, roughness: 0.68 });
+    const hairMat = new THREE.MeshStandardMaterial({ color: 0x1a120f, roughness: 0.85 });
+    const leatherMat = new THREE.MeshStandardMaterial({ color: 0x3b1e0d, roughness: 0.55 });
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 0.95, 6, 12), coatMat);
+    body.rotation.x = Math.PI / 2;
+    body.position.set(0, 1.06, 0);
+    body.castShadow = true;
+    group.add(body);
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.22, 0.68, 10), coatMat);
+    neck.position.set(0, 1.44, -0.78);
+    neck.rotation.x = 0.52;
+    neck.castShadow = true;
+    group.add(neck);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.44), coatMat);
+    head.position.set(0, 1.66, -1.04);
+    head.rotation.x = 0.45;
+    group.add(head);
+    const saddle = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.14, 0.48), leatherMat);
+    saddle.position.set(0, 1.38, 0.04);
+    group.add(saddle);
+    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.72, 8), hairMat);
+    tail.position.set(0, 0.88, 0.84);
+    tail.rotation.x = 0.25;
+    group.add(tail);
+
+    const legs = [];
+    [[-0.19, -0.54], [0.19, -0.54], [-0.19, 0.58], [0.19, 0.58]].forEach(([lx, lz]) => {
+      const piv = new THREE.Group();
+      piv.position.set(lx, 0.96, lz);
+      const limb = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.055, 0.96, 8), coatMat);
+      limb.position.y = -0.48;
+      limb.castShadow = true;
+      piv.add(limb);
+      group.add(piv);
+      legs.push(piv);
+    });
+    group.userData.legs = legs;
+    return group;
+  }
+
+  function createForemanSladeModel() {
+    const g = createBanditModel(false);
+    g.scale.setScalar(1.22);
+    // Gylden gruvelykt på front/belte og gulldraktering for å skille Foreman Slade ut
+    const beltLight = new THREE.Mesh(
+      new THREE.SphereGeometry(0.10, 10, 8),
+      new THREE.MeshStandardMaterial({ color: 0xffd24c, emissive: 0xff9a18, emissiveIntensity: 1.8 })
+    );
+    beltLight.position.set(0, 1.35, -0.24);
+    g.add(beltLight);
+    return g;
+  }
+
+  function createCatacombGuardianModel() {
+    const g = createNightEnemyModel();
+    g.scale.setScalar(1.16);
+    const crest = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.13, 0),
+      new THREE.MeshStandardMaterial({ color: 0x70d4ff, emissive: 0x329eff, emissiveIntensity: 2.1 })
+    );
+    crest.position.set(0, 1.42, -0.18);
+    g.add(crest);
+    return g;
+  }
+
+  function createSilverRelicMesh() {
+    const grp = new THREE.Group();
+    const silMat = new THREE.MeshStandardMaterial({
+      color: 0xe6f2ff,
+      emissive: 0x4aa8ff,
+      emissiveIntensity: 0.95,
+      metalness: 0.92,
+      roughness: 0.16
+    });
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.30, 0.18, 12), silMat);
+    base.position.y = 0.09;
+    grp.add(base);
+    const vBar = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.56, 0.09), silMat);
+    vBar.position.y = 0.44;
+    grp.add(vBar);
+    const hBar = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.10, 0.09), silMat);
+    hBar.position.y = 0.52;
+    grp.add(hBar);
+    const halo = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: sharedSparkGlowTex || sharedRedEyeGlowTex,
+        color: 0x8ad8ff,
+        transparent: true,
+        opacity: 0.85,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      })
+    );
+    halo.scale.set(1.5, 1.5, 1);
+    halo.position.y = 0.48;
+    grp.add(halo);
+    return { group: grp, hitMesh: vBar };
+  }
+
   function animateQuadrupedLegs(group, stridePhase, amp) {
     const legs = group.userData.legs;
     if (!legs || legs.length < 4) return;
@@ -1588,10 +1699,14 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     createDeerModel,
     createWolfModel,
     createBearModel,
+    createHorseModel,
     createBanditModel,
     createBanditCaptainModel,
+    createForemanSladeModel,
     createNightEnemyModel,
+    createCatacombGuardianModel,
     createBossVampireModel,
+    createSilverRelicMesh,
     animateQuadrupedLegs
   };
 }
