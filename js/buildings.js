@@ -846,38 +846,42 @@ export function buildTownBuildings(ctx) {
       shop.add(gunsmithNPCGroup);
     }
 
-    // Interaktiv 3D-tavle («GUNSMITH'S ARMORY» / «VÅPENSMEDENS VERKSTED») med 4 klikkbare knapper
+    // Interaktiv 3D-tavle («GUNSMITH'S ARMORY» / «VÅPENSMEDENS VERKSTED») med opptil 5 klikkbare knapper
     if (gunsmithBoardTexture) {
       const armoryGroup = new THREE.Group();
       armoryGroup.position.set(0.18, 2.74, -0.54);
       armoryGroup.rotation.x = 0.08;
       shop.add(armoryGroup);
 
-      const backing = new THREE.Mesh(new THREE.BoxGeometry(3.84, 1.94, 0.08), darkWoodMat);
+      const backing = new THREE.Mesh(new THREE.BoxGeometry(3.84, 2.24, 0.08), darkWoodMat);
       backing.position.set(0, 0, -0.05);
       armoryGroup.add(backing);
       gunsmithBlockHitMeshes.push(backing);
 
       [-1.45, 1.45].forEach((hx) => {
         const hanger = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.45, 6), wroughtIronMat);
-        hanger.position.set(hx, 1.12, -0.04);
+        hanger.position.set(hx, 1.24, -0.04);
         armoryGroup.add(hanger);
       });
 
       const boardMesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(3.74, 1.84),
+        new THREE.PlaneGeometry(3.74, 2.14),
         new THREE.MeshBasicMaterial({ map: gunsmithBoardTexture, transparent: true, fog: false, toneMapped: false })
       );
       armoryGroup.add(boardMesh);
       gunsmithBlockHitMeshes.push(boardMesh);
 
-      const btnY = [0.22, -0.09, -0.40, -0.71];
+      const btnY = gunsmithButtonEntries.length > 4
+        ? [0.36, 0.08, -0.20, -0.48, -0.76]
+        : [0.22, -0.09, -0.40, -0.71];
+      const plaqueH = gunsmithButtonEntries.length > 4 ? 0.24 : 0.275;
       gunsmithButtonEntries.forEach((entry, idx) => {
-        const plaque = new THREE.Mesh(new THREE.BoxGeometry(3.48, 0.275, 0.035), darkWoodMat);
-        plaque.position.set(0, btnY[idx], 0.018);
+        const py = btnY[idx] !== undefined ? btnY[idx] : (-0.76 - (idx - 4) * 0.28);
+        const plaque = new THREE.Mesh(new THREE.BoxGeometry(3.48, plaqueH, 0.035), darkWoodMat);
+        plaque.position.set(0, py, 0.018);
         armoryGroup.add(plaque);
 
-        entry.mesh.position.set(0, btnY[idx], 0.038);
+        entry.mesh.position.set(0, py, 0.038);
         armoryGroup.add(entry.mesh);
         gunsmithButtonMeshes.push(entry.mesh);
       });
