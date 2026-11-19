@@ -116,8 +116,39 @@ export function initRevolverAndAtmosphereFX({
     roughness: 0.42
   });
 
+  // Én felles PointLight for munningsglimt på tvers av alle 12 våpeninstanser (sparer 11 permanente PointLights i hver eneste fragment-shader!)
+  const sharedMuzzleFlashLight = new THREE.PointLight(0xffb347, 0, 7.5, 2);
+  const muzzleWorldTmp = new THREE.Vector3();
+  scene.add(sharedMuzzleFlashLight);
+  let activeMuzzleProxy = null;
+
+  function createMuzzleLightProxy(anchorObj) {
+    const proxyColor = new THREE.Color(0xffb347);
+    const proxy = {
+      color: proxyColor,
+      _intensity: 0,
+      get intensity() {
+        return this._intensity;
+      },
+      set intensity(val) {
+        this._intensity = val;
+        if (val > 0.001) {
+          activeMuzzleProxy = proxy;
+          anchorObj.getWorldPosition(muzzleWorldTmp);
+          sharedMuzzleFlashLight.position.copy(muzzleWorldTmp);
+          sharedMuzzleFlashLight.color.copy(proxyColor);
+          sharedMuzzleFlashLight.intensity = val;
+        } else if (activeMuzzleProxy === proxy) {
+          sharedMuzzleFlashLight.intensity = 0;
+          activeMuzzleProxy = null;
+        }
+      }
+    };
+    return proxy;
+  }
+
   function attachMuzzleFX(muzzle) {
-    // Munningsglimt: liten glødende mesh + kortvarig PointLight
+    // Munningsglimt: liten glødende mesh + delt PointLight-proxy
     const flashMat = new THREE.MeshBasicMaterial({
       color: 0xffd257,
       transparent: true,
@@ -136,10 +167,7 @@ export function initRevolverAndAtmosphereFX({
     flash.visible = false;
     muzzle.add(flash);
 
-    // Lyset holdes alltid i scenen med intensitet 0 for å unngå shader-rekompilering på Meta Quest.
-    const flashLight = new THREE.PointLight(0xffb347, 0, 7, 2);
-    flashLight.position.set(0, 0, 0.01);
-    muzzle.add(flashLight);
+    const flashLight = createMuzzleLightProxy(muzzle);
 
     return { flash, flashMat, flashLight };
   }
@@ -321,16 +349,12 @@ export function initRevolverAndAtmosphereFX({
     flash.visible = false;
     body.add(flash);
 
-    // Lyset holdes alltid i scenen med intensitet 0. Da slipper vi å bygge
-    // om shaderne hver gang man skyter (viktig for ytelsen på Meta Quest).
-    const flashLight = new THREE.PointLight(0xffb347, 0, 7, 2);
-    flashLight.position.set(0, 0.03, -0.29);
-    body.add(flashLight);
-
     // Munningspunkt der kula starter
     const muzzle = new THREE.Object3D();
     muzzle.position.set(0, 0.03, -0.3);
     body.add(muzzle);
+
+    const flashLight = createMuzzleLightProxy(muzzle);
 
     root.userData = {
       body,
@@ -866,9 +890,8 @@ export function initRevolverAndAtmosphereFX({
     outerHalo.scale.set(1.85, 1.85, 1);
     group.add(outerHalo);
 
-    // Konstant lysantall: intensiteten moduleres mykt uten å fjerne lyset fra scenen
-    const light = new THREE.PointLight(0xffa448, 0.5, 18, 2);
-    group.add(light);
+    // Virtuell lyskilde som styres av spillets 2-lys nærhets-pool (sparer 4 ekstra PointLights per piksel!)
+    const light = { intensity: 0.5, colorHex: 0xffa448, distance: 18, group };
 
     return { group, light };
   }
