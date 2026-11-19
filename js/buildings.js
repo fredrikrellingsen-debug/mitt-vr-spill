@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { instantiateBuildingGLB } from './glb-utils.js';
+import { instantiateBuildingGLB, batchStaticMeshesInGroup } from './glb-utils.js';
 
 export function buildTownBuildings(ctx) {
   const {
@@ -666,6 +666,7 @@ export function buildTownBuildings(ctx) {
     cabin.add(backStreetSign);
     safeHouseStreetSignMesh.userData.mirrorSign = backStreetSign;
 
+    batchStaticMeshesInGroup(cabin, { protectedObjects: new Set([safeHouseDoorPivot]) });
     return cabin;
   }
 
