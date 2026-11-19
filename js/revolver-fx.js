@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { createSeededRng } from './textures.js';
+import { instantiateWeaponGLB } from './glb-utils.js';
 
 export function initRevolverAndAtmosphereFX({
   scene,
@@ -150,46 +151,21 @@ export function initRevolverAndAtmosphereFX({
       const body = new THREE.Group();
       root.add(body);
 
-      const gltfModel = revolverGLTF.scene.clone(true);
-      const clonedMatMap = new Map();
-
-      gltfModel.traverse((node) => {
-        if (!node.isMesh || !node.material) return;
-        node.castShadow = false;
-        node.receiveShadow = false;
-
-        const origMat = node.material;
-        let mat = clonedMatMap.get(origMat);
-        if (!mat) {
-          mat = origMat.clone();
+      const gltfModel = instantiateWeaponGLB(revolverGLTF.scene, M, {
+        targetLength: 0.34,
+        onMaterialCloned(mat) {
           const mName = mat.name || '';
           if (mName === 'GunSteel') {
-            mat.envMapIntensity = 1.5;
             goldSteelMaterials.push(mat);
             if (isGoldUpgraded) applyGoldSteel(mat);
           } else if (mName === 'GunDarkSteel') {
-            mat.envMapIntensity = 1.4;
             goldDarkMaterials.push(mat);
             if (isGoldUpgraded) applyGoldDark(mat);
           } else if (mName === 'GunBrass') {
-            mat.envMapIntensity = 1.55;
             goldBrassMaterials.push(mat);
             if (isGoldUpgraded) applyGoldBrass(mat);
-          } else if (mName === 'GunCopper') {
-            mat.envMapIntensity = 1.35;
-          } else if (mName === 'GunWalnut') {
-            mat.envMapIntensity = 0.95;
-            if (gltfWoodNormalTex) {
-              mat.normalMap = gltfWoodNormalTex;
-              mat.normalScale = new THREE.Vector2(0.32, -0.32);
-            }
-            if (gltfWoodRoughTex) {
-              mat.roughnessMap = gltfWoodRoughTex;
-            }
           }
-          clonedMatMap.set(origMat, mat);
         }
-        node.material = mat;
       });
 
       body.add(gltfModel);
@@ -204,6 +180,7 @@ export function initRevolverAndAtmosphereFX({
       const { flash, flashMat, flashLight } = attachMuzzleFX(muzzle);
 
       root.userData = {
+        weaponId: 'revolver',
         body,
         muzzle,
         flash,
@@ -369,36 +346,9 @@ export function initRevolverAndAtmosphereFX({
     return root;
   }
 
-  // Felles PBR-forbedring for nye .glb-våpen (Shotgun, Winchester, Crossbow, Dynamite)
-  function enhanceWeaponGLB(gltfScene) {
-    const model = gltfScene.clone(true);
-    const clonedMap = new Map();
-    model.traverse((node) => {
-      if (!node.isMesh || !node.material) return;
-      node.castShadow = false;
-      node.receiveShadow = false;
-      const orig = node.material;
-      let mat = clonedMap.get(orig);
-      if (!mat) {
-        mat = orig.clone();
-        const mName = mat.name || '';
-        if (mName === 'GunSteel' || mName === 'SilverMetal') {
-          mat.envMapIntensity = 1.55;
-        } else if (mName === 'GunDarkSteel' || mName === 'GunBrass') {
-          mat.envMapIntensity = 1.45;
-        } else if (mName === 'GunWalnut') {
-          mat.envMapIntensity = 0.92;
-          if (gltfWoodNormalTex) {
-            mat.normalMap = gltfWoodNormalTex;
-            mat.normalScale = new THREE.Vector2(0.32, -0.32);
-          }
-          if (gltfWoodRoughTex) mat.roughnessMap = gltfWoodRoughTex;
-        }
-        clonedMap.set(orig, mat);
-      }
-      node.material = mat;
-    });
-    return model;
+  // Felles Plug-and-Play PBR-normalisering for våpen (Shotgun, Winchester, Crossbow, Dynamite, Hellfire)
+  function enhanceWeaponGLB(gltfScene, targetLength = 0.56) {
+    return instantiateWeaponGLB(gltfScene, M, { targetLength });
   }
 
   const silverMetalMat = new THREE.MeshStandardMaterial({
@@ -438,7 +388,7 @@ export function initRevolverAndAtmosphereFX({
     const gltf = loadedAssets && loadedAssets.shotgun;
     let muzzle = null;
     if (gltf && gltf.scene) {
-      const m = enhanceWeaponGLB(gltf.scene);
+      const m = enhanceWeaponGLB(gltf.scene, 0.62);
       body.add(m);
       muzzle = m.getObjectByName('MuzzlePoint') || m.getObjectByName('muzzle');
     } else {
@@ -490,7 +440,7 @@ export function initRevolverAndAtmosphereFX({
     let muzzle = null;
     let lever = null;
     if (gltf && gltf.scene) {
-      const m = enhanceWeaponGLB(gltf.scene);
+      const m = enhanceWeaponGLB(gltf.scene, 0.86);
       body.add(m);
       muzzle = m.getObjectByName('MuzzlePoint') || m.getObjectByName('muzzle');
       lever = m.getObjectByName('Lever') || null;
@@ -542,7 +492,7 @@ export function initRevolverAndAtmosphereFX({
     let muzzle = null;
     let loadedBolt = null;
     if (gltf && gltf.scene) {
-      const m = enhanceWeaponGLB(gltf.scene);
+      const m = enhanceWeaponGLB(gltf.scene, 0.66);
       body.add(m);
       muzzle = m.getObjectByName('MuzzlePoint') || m.getObjectByName('muzzle');
       loadedBolt = m.getObjectByName('LoadedBolt') || null;
@@ -590,7 +540,7 @@ export function initRevolverAndAtmosphereFX({
     const holder = new THREE.Group();
     let fuseTip = null;
     if (gltf && gltf.scene) {
-      const m = enhanceWeaponGLB(gltf.scene);
+      const m = enhanceWeaponGLB(gltf.scene, 0.24);
       holder.add(m);
       fuseTip = m.getObjectByName('FuseTip') || null;
     } else {
@@ -652,7 +602,7 @@ export function initRevolverAndAtmosphereFX({
     let muzzle = null;
     let barrelCluster = null;
     if (gltf && gltf.scene) {
-      const m = enhanceWeaponGLB(gltf.scene);
+      const m = enhanceWeaponGLB(gltf.scene, 0.72);
       body.add(m);
       muzzle = m.getObjectByName('MuzzlePoint') || m.getObjectByName('muzzle');
       barrelCluster = m.getObjectByName('BarrelCluster') || null;

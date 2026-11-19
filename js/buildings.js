@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { instantiateBuildingGLB } from './glb-utils.js';
 
 export function buildTownBuildings(ctx) {
   const {
@@ -14,9 +15,6 @@ export function buildTownBuildings(ctx) {
 
   const {
     sharedWoodTex, sharedWoodNormalTex, sharedWoodRoughTex,
-    gltfWoodNormalTex, gltfWoodRoughTex,
-    gltfShingleNormalTex, gltfShingleRoughTex,
-    gltfSandstoneNormalTex, gltfSandstoneRoughTex,
     woodWallMat, lightWoodMat, darkWoodMat, weatheredPlankMatA,
     logTimberMat, roofMat, wroughtIronMat, polishedBrassMat,
     stonePlinthMat, windowMat, darkInteriorMat, createContactShadow
@@ -29,73 +27,8 @@ export function buildTownBuildings(ctx) {
 
   const { createSculptedCowboyHat, createTailorNPC, createGunsmithNPC, createSheriffVanceNPC } = C;
 
-  function enhanceBuildingGLB(gltfScene) {
-    const model = gltfScene.clone(true);
-    const clonedMats = new Map();
-
-    model.traverse((node) => {
-      if (!node.isMesh || !node.material) return;
-      const origMat = node.material;
-      const mName = origMat.name || '';
-
-      if (mName === 'WindowGlass') {
-        node.material = windowMat;
-        node.castShadow = false;
-        node.receiveShadow = true;
-        return;
-      }
-
-      node.castShadow = true;
-      node.receiveShadow = true;
-
-      let mat = clonedMats.get(origMat);
-      if (!mat) {
-        mat = origMat.clone();
-        if (
-          mName === 'WeatheredSiding' ||
-          mName === 'WarmPine' ||
-          mName === 'DarkTimber' ||
-          mName === 'PaintedShutters' ||
-          mName === 'PolishedCounterWood'
-        ) {
-          const ns = mName === 'PolishedCounterWood' ? 0.24 : (mName === 'DarkTimber' ? 0.62 : 0.52);
-          if (gltfWoodNormalTex) {
-            mat.normalMap = gltfWoodNormalTex;
-            mat.normalScale = new THREE.Vector2(ns, -ns);
-          }
-          if (gltfWoodRoughTex) {
-            mat.roughnessMap = gltfWoodRoughTex;
-          }
-          if (mName === 'PolishedCounterWood') {
-            mat.envMapIntensity = 1.15;
-          }
-        } else if (mName === 'CedarShingles') {
-          if (gltfShingleNormalTex) {
-            mat.normalMap = gltfShingleNormalTex;
-            mat.normalScale = new THREE.Vector2(0.74, -0.74);
-          }
-          if (gltfShingleRoughTex) {
-            mat.roughnessMap = gltfShingleRoughTex;
-          }
-        } else if (mName === 'StoneFoundation' || mName === 'ChimneyBrick') {
-          if (gltfSandstoneNormalTex) {
-            mat.normalMap = gltfSandstoneNormalTex;
-            mat.normalScale = new THREE.Vector2(0.84, -0.84);
-          }
-          if (gltfSandstoneRoughTex) {
-            mat.roughnessMap = gltfSandstoneRoughTex;
-          }
-        } else if (mName === 'WroughtIron') {
-          mat.envMapIntensity = 1.2;
-        } else if (mName === 'PolishedBrass') {
-          mat.envMapIntensity = 1.35;
-        }
-        clonedMats.set(origMat, mat);
-      }
-      node.material = mat;
-    });
-
-    return model;
+  function enhanceBuildingGLB(gltfScene, targetHeight = 0) {
+    return instantiateBuildingGLB(gltfScene, M, { targetHeight });
   }
 
   let saloonMainSignMesh = null;
@@ -114,7 +47,7 @@ export function buildTownBuildings(ctx) {
     const saloonGLTF = loadedAssets && loadedAssets.saloon;
 
     if (saloonGLTF && saloonGLTF.scene) {
-      saloon.add(enhanceBuildingGLB(saloonGLTF.scene));
+      saloon.add(enhanceBuildingGLB(saloonGLTF.scene, 6.12));
     } else {
       // Prosedyrisk fallback dersom saloon.glb ikke er tilgjengelig
       const deck = new THREE.Mesh(new THREE.BoxGeometry(6.6, 0.22, 6.0), darkWoodMat);
@@ -353,7 +286,7 @@ export function buildTownBuildings(ctx) {
     const tailorGLTF = loadedAssets && loadedAssets.tailor;
 
     if (tailorGLTF && tailorGLTF.scene) {
-      shop.add(enhanceBuildingGLB(tailorGLTF.scene));
+      shop.add(enhanceBuildingGLB(tailorGLTF.scene, 5.64));
 
       const counterAnchor = new THREE.Object3D();
       counterAnchor.position.set(0, 1.26, 1.25);
@@ -746,7 +679,7 @@ export function buildTownBuildings(ctx) {
     const gunsmithGLTF = loadedAssets && loadedAssets.gunsmith;
 
     if (gunsmithGLTF && gunsmithGLTF.scene) {
-      shop.add(enhanceBuildingGLB(gunsmithGLTF.scene));
+      shop.add(enhanceBuildingGLB(gunsmithGLTF.scene, 5.64));
 
       const counterAnchor = new THREE.Object3D();
       counterAnchor.position.set(0, 1.26, 1.25);
