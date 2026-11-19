@@ -18,40 +18,46 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     });
   }
 
-  // --- Felles skulpturert Cowboyhatt (LatheGeometry med ekte buet brem og krone-knekk) ---
+  // --- Felles skulpturert Cowboyhatt (LatheGeometry nedenfra-og-opp med utadrettede normaler, glatt krone og buet brem) ---
   function buildSculptedCowboyHatGeo() {
-    const profile = [
-      new THREE.Vector2(0.001, 0.225),
-      new THREE.Vector2(0.065, 0.215),
-      new THREE.Vector2(0.132, 0.232),
-      new THREE.Vector2(0.162, 0.165),
-      new THREE.Vector2(0.178, 0.042),
-      new THREE.Vector2(0.184, 0.015),
-      new THREE.Vector2(0.275, 0.004),
-      new THREE.Vector2(0.355, 0.022),
-      new THREE.Vector2(0.362, 0.006),
-      new THREE.Vector2(0.270, -0.012),
-      new THREE.Vector2(0.172, -0.002),
-      new THREE.Vector2(0.155, 0.03)
+    // VIKTIG: I Three.js LatheGeometry må profilpunktene gå NEDENFRA OG OPP (stigende Y langs ytterveggen)
+    // for at trekant-normalene skal peke UTAD (ellers vrenges hatten på vrangen og fronten blir usynlig!).
+    const rawControlPts = [
+      new THREE.Vector2(0.154, 0.028),  // Innvendig svetterem
+      new THREE.Vector2(0.172, -0.004), // Underside brem-rot
+      new THREE.Vector2(0.275, -0.014), // Underside midtre brem
+      new THREE.Vector2(0.358, 0.004),  // Ytterkant brem nede
+      new THREE.Vector2(0.362, 0.018),  // Ytterkant brem oppe
+      new THREE.Vector2(0.276, 0.005),  // Overside midtre brem
+      new THREE.Vector2(0.186, 0.014),  // Brem-rot ved hattebånd
+      new THREE.Vector2(0.182, 0.048),  // Nedre kronevegg
+      new THREE.Vector2(0.174, 0.115),  // Midtre kronevegg
+      new THREE.Vector2(0.160, 0.178),  // Øvre kronevegg
+      new THREE.Vector2(0.132, 0.226),  // Krone-skulder (Cattleman ridge)
+      new THREE.Vector2(0.068, 0.212),  // Midtre kronegrop
+      new THREE.Vector2(0.001, 0.220)   // Topp senter (lukket)
     ];
-    const geo = new THREE.LatheGeometry(profile, 24);
+    const smoothCurve = new THREE.SplineCurve(rawControlPts);
+    const profile = smoothCurve.getPoints(32);
+    profile[profile.length - 1].x = 0.0005;
+
+    const geo = new THREE.LatheGeometry(profile, 48);
     const pos = geo.attributes.position;
     for (let i = 0; i < pos.count; i++) {
       let x = pos.getX(i);
       let y = pos.getY(i);
       let z = pos.getZ(i);
       const r = Math.hypot(x, z);
-      // Klassisk Stetson-fasong: litt lengre foran/bak, oppbøyd brem på sidene og knekk i kronen foran
-      z *= 1.12;
-      x *= 0.94;
-      if (r > 0.185) {
+      // Klassisk Stetson-fasong: oval hodeform (lengre foran/bak), oppbøyd sidebrem og front-knekk (pinch)
+      z *= 1.14;
+      x *= 0.95;
+      if (r > 0.188) {
         const sideFrac = Math.abs(x) / 0.34;
-        y += sideFrac * sideFrac * 0.078;
-        if (z < -0.15) y -= 0.018; // Svak cowboy-dupp foran på bremmen
-      } else if (y > 0.13 && z < 0) {
-        // Krone-knekk (pinch) foran
-        const pinch = Math.max(0, -z / 0.18) * ((y - 0.13) / 0.11);
-        x *= 1 - pinch * 0.24;
+        y += sideFrac * sideFrac * 0.082;
+        if (z < -0.15) y -= 0.020; // Svak cowboy-dupp foran på bremmen
+      } else if (y > 0.125 && z < 0) {
+        const pinch = Math.max(0, -z / 0.19) * ((y - 0.125) / 0.105);
+        x *= 1 - pinch * 0.22;
       }
       pos.setXYZ(i, x, y, z);
     }
@@ -60,22 +66,24 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
   }
 
   const sharedCowboyHatGeo = buildSculptedCowboyHatGeo();
-  const sharedHatBandGeo = new THREE.TorusGeometry(0.176, 0.015, 8, 22);
+  const sharedHatBandGeo = new THREE.TorusGeometry(0.181, 0.015, 10, 36);
   sharedHatBandGeo.rotateX(Math.PI / 2);
-  sharedHatBandGeo.scale(0.95, 1, 1.11);
+  sharedHatBandGeo.scale(0.95, 1, 1.13);
 
   function createSculptedCowboyHat(hatMat, bandMat = polishedBrassMat) {
     const g = new THREE.Group();
     const hatMesh = new THREE.Mesh(sharedCowboyHatGeo, hatMat);
     hatMesh.castShadow = true;
+    hatMesh.receiveShadow = true;
     g.add(hatMesh);
 
     const band = new THREE.Mesh(sharedHatBandGeo, bandMat);
     band.position.y = 0.028;
+    band.castShadow = true;
     g.add(band);
 
     const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.034, 0.028, 0.012), polishedBrassMat);
-    buckle.position.set(-0.168, 0.028, -0.04);
+    buckle.position.set(-0.172, 0.028, -0.04);
     buckle.rotation.y = 0.35;
     g.add(buckle);
     return g;
@@ -88,7 +96,8 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     roughnessMap: sharedLeatherRoughTex || null,
     roughness: 0.78,
     metalness: 0.02,
-    envMapIntensity: 0.38
+    envMapIntensity: 0.38,
+    side: THREE.DoubleSide
   });
   const sharedStetsonSaddleMat = new THREE.MeshStandardMaterial({
     color: 0x5c361d,
@@ -97,7 +106,8 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     roughnessMap: sharedLeatherRoughTex || null,
     roughness: 0.76,
     metalness: 0.02,
-    envMapIntensity: 0.38
+    envMapIntensity: 0.38,
+    side: THREE.DoubleSide
   });
   const sharedStetsonOutlawMat = new THREE.MeshStandardMaterial({
     color: 0x241913,
@@ -106,13 +116,18 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     roughnessMap: sharedLeatherRoughTex || null,
     roughness: 0.82,
     metalness: 0.02,
-    envMapIntensity: 0.34
+    envMapIntensity: 0.34,
+    side: THREE.DoubleSide
   });
   const sharedStetsonCreamMat = new THREE.MeshStandardMaterial({
     color: 0xe6d5b8,
-    roughness: 0.80,
+    roughnessMap: sharedLeatherRoughTex || null,
+    normalMap: sharedLeatherNormalTex || null,
+    normalScale: new THREE.Vector2(0.22, 0.22),
+    roughness: 0.82,
     metalness: 0.0,
-    envMapIntensity: 0.36
+    envMapIntensity: 0.36,
+    side: THREE.DoubleSide
   });
   const sharedHolsterLeatherMat = new THREE.MeshStandardMaterial({
     color: 0x3b2010,
@@ -138,10 +153,10 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
 
     if (opts.hatMat && headBone) {
       const hat = createSculptedCowboyHat(opts.hatMat, opts.bandMat || polishedBrassMat);
-      // MakeHuman head bone har +Y opp og +Z fremover; tilpasset ekte menneskeskalle-proporsjoner (0.56 skala)
+      // MakeHuman head bone har +Y opp og +Z fremover; tilpasset ekte menneskeskalle-proporsjoner
       hat.rotation.set(opts.hatTiltX || 0.04, Math.PI, opts.hatTiltZ || 0);
-      hat.position.set(0, 0.064, 0.004);
-      hat.scale.setScalar(opts.hatScale || 0.56);
+      hat.position.set(0, 0.075, -0.002);
+      hat.scale.setScalar((opts.hatScale || 0.56) * 1.11);
       headBone.add(hat);
     }
 
