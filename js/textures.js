@@ -227,6 +227,89 @@ export function initTexturesAndMaterials(maxAnisotropy = 8) {
   const gltfLeatherNormalTex = loadPhotoTex('./assets/textures/leather_nor.jpg', 2.2, 2.2, false, false);
   const gltfLeatherRoughTex = loadPhotoTex('./assets/textures/leather_rough.jpg', 2.2, 2.2, false, false);
 
+  // 9. Subtil prosedyrisk pels-/hud-støytekstur (bumpMap) så dyr og hud aldri ser ut som glatt plast
+  const organicNoiseCanvas = document.createElement('canvas');
+  organicNoiseCanvas.width = 256;
+  organicNoiseCanvas.height = 256;
+  {
+    const nCtx = organicNoiseCanvas.getContext('2d');
+    const nImg = nCtx.createImageData(256, 256);
+    const nData = nImg.data;
+    const rng = createSeededRng(918273);
+    const g0 = new Float32Array(256 * 256);
+    for (let i = 0; i < g0.length; i++) g0[i] = rng();
+    for (let y = 0; y < 256; y++) {
+      const ym1 = ((y - 1 + 256) & 255) * 256;
+      const y0 = y * 256;
+      const yp1 = ((y + 1) & 255) * 256;
+      for (let x = 0; x < 256; x++) {
+        const xm1 = (x - 1 + 256) & 255;
+        const xp1 = (x + 1) & 255;
+        // Fin 2-oktavs hårfiber-/porestøy (litt strekt langs Y for naturlig pelsretning)
+        const fine = g0[y0 + x] * 0.48 + (g0[ym1 + x] + g0[yp1 + x]) * 0.19 + (g0[y0 + xm1] + g0[y0 + xp1]) * 0.07;
+        const streak = Math.sin(x * 0.62 + Math.sin(y * 0.14) * 2.2) * 0.08;
+        const val = Math.max(0, Math.min(255, Math.round((fine + streak) * 255)));
+        const idx = (y0 + x) << 2;
+        nData[idx] = val;
+        nData[idx + 1] = val;
+        nData[idx + 2] = val;
+        nData[idx + 3] = 255;
+      }
+    }
+    nCtx.putImageData(nImg, 0, 0);
+  }
+  const sharedOrganicNoiseBumpTex = new THREE.CanvasTexture(organicNoiseCanvas);
+  sharedOrganicNoiseBumpTex.colorSpace = THREE.LinearSRGBColorSpace;
+  sharedOrganicNoiseBumpTex.wrapS = THREE.RepeatWrapping;
+  sharedOrganicNoiseBumpTex.wrapT = THREE.RepeatWrapping;
+  sharedOrganicNoiseBumpTex.repeat.set(6, 6);
+  sharedOrganicNoiseBumpTex.anisotropy = maxAnisotropy;
+
+  const gltfOrganicNoiseBumpTex = new THREE.CanvasTexture(organicNoiseCanvas);
+  gltfOrganicNoiseBumpTex.colorSpace = THREE.LinearSRGBColorSpace;
+  gltfOrganicNoiseBumpTex.flipY = false;
+  gltfOrganicNoiseBumpTex.wrapS = THREE.RepeatWrapping;
+  gltfOrganicNoiseBumpTex.wrapT = THREE.RepeatWrapping;
+  gltfOrganicNoiseBumpTex.repeat.set(5, 5);
+  gltfOrganicNoiseBumpTex.anisotropy = maxAnisotropy;
+
+  // 10. Fin krusnings-normalMap til vanntrauets vannoverflate (konsentriske ringer + svake vindkrusninger)
+  const rippleHeightCanvas = document.createElement('canvas');
+  rippleHeightCanvas.width = 256;
+  rippleHeightCanvas.height = 256;
+  {
+    const wCtx = rippleHeightCanvas.getContext('2d');
+    const wImg = wCtx.createImageData(256, 256);
+    const wData = wImg.data;
+    for (let y = 0; y < 256; y++) {
+      for (let x = 0; x < 256; x++) {
+        const u = (x / 256) * Math.PI * 2;
+        const v = (y / 256) * Math.PI * 2;
+        const dx1 = (x - 68) / 256;
+        const dy1 = (y - 128) / 256;
+        const r1 = Math.hypot(dx1, dy1);
+        const dropRing = Math.sin(r1 * 56.0) * Math.exp(-r1 * 4.5) * 0.38;
+        const windWave =
+          Math.sin(u * 4.0 + v * 2.0) * 0.22 +
+          Math.cos(u * 7.0 - v * 5.0) * 0.15 +
+          Math.sin(u * 11.0 + v * 9.0) * 0.08;
+        const hVal = Math.max(0, Math.min(255, Math.round((0.5 + (dropRing + windWave) * 0.45) * 255)));
+        const idx = (y * 256 + x) << 2;
+        wData[idx] = hVal;
+        wData[idx + 1] = hVal;
+        wData[idx + 2] = hVal;
+        wData[idx + 3] = 255;
+      }
+    }
+    wCtx.putImageData(wImg, 0, 0);
+  }
+  const sharedWaterRippleNormalTex = new THREE.CanvasTexture(createNormalCanvasFromHeight(rippleHeightCanvas, 1.65));
+  sharedWaterRippleNormalTex.colorSpace = THREE.LinearSRGBColorSpace;
+  sharedWaterRippleNormalTex.wrapS = THREE.RepeatWrapping;
+  sharedWaterRippleNormalTex.wrapT = THREE.RepeatWrapping;
+  sharedWaterRippleNormalTex.repeat.set(2.4, 1.2);
+  sharedWaterRippleNormalTex.anisotropy = maxAnisotropy;
+
   // --- Subtil Fresnel «Rim Lighting» (onBeforeCompile) for alle karakterer, fiender og dyr ---
   const rimUniforms = {
     uRimColor: { value: new THREE.Color(0xffbe76) },
@@ -260,120 +343,120 @@ export function initTexturesAndMaterials(maxAnisotropy = 8) {
     return mat;
   }
 
-  // --- Felles fotografiske PBR-bygningsmaterialer med anti-tiling og HDRI-miljørefleksjoner ---
+  // --- Felles fotografiske PBR-bygningsmaterialer (ekte matt værbitt treverk uten plastglans!) ---
   const woodWallMat = applyAntiTilingSurfaceShader(new THREE.MeshStandardMaterial({
-    color: 0xd4a47a,
+    color: 0xc99b72,
     map: sharedWoodTex,
     normalMap: sharedWoodNormalTex,
     normalScale: new THREE.Vector2(0.88, 0.88),
     roughnessMap: sharedWoodRoughTex,
-    roughness: 0.86,
-    metalness: 0.02,
-    envMapIntensity: 0.95
+    roughness: 0.88,
+    metalness: 0.0,
+    envMapIntensity: 0.38
   }), 0.15, 0.95);
 
   const lightWoodMat = applyAntiTilingSurfaceShader(new THREE.MeshStandardMaterial({
-    color: 0xe6bc90,
+    color: 0xd8b086,
     map: sharedWoodTex,
     normalMap: sharedWoodNormalTex,
     normalScale: new THREE.Vector2(0.72, 0.72),
     roughnessMap: sharedWoodRoughTex,
-    roughness: 0.78,
-    metalness: 0.03,
-    envMapIntensity: 1.0
+    roughness: 0.84,
+    metalness: 0.0,
+    envMapIntensity: 0.38
   }), 0.12, 0.75);
 
   const darkWoodMat = applyAntiTilingSurfaceShader(new THREE.MeshStandardMaterial({
-    color: 0x8b6242,
+    color: 0x825b3d,
     map: sharedRoofShingleTex,
     normalMap: sharedShingleNormalTex,
     normalScale: new THREE.Vector2(0.92, 0.92),
     roughnessMap: sharedShingleRoughTex,
-    roughness: 0.84,
-    metalness: 0.04,
-    envMapIntensity: 1.0
+    roughness: 0.88,
+    metalness: 0.0,
+    envMapIntensity: 0.36
   }), 0.14, 0.8);
 
   const weatheredPlankMatA = applyAntiTilingSurfaceShader(new THREE.MeshStandardMaterial({
-    color: 0xc29066,
+    color: 0xb8875e,
     map: sharedWoodTex,
     normalMap: sharedWoodNormalTex,
     normalScale: new THREE.Vector2(0.96, 0.96),
     roughnessMap: sharedWoodRoughTex,
-    roughness: 0.89,
-    metalness: 0.02,
-    envMapIntensity: 0.92
+    roughness: 0.90,
+    metalness: 0.0,
+    envMapIntensity: 0.35
   }), 0.16, 0.9);
 
   const weatheredPlankMatB = applyAntiTilingSurfaceShader(new THREE.MeshStandardMaterial({
-    color: 0xdcb084,
+    color: 0xcfa379,
     map: sharedWoodTex,
     normalMap: sharedWoodNormalTex,
     normalScale: new THREE.Vector2(0.85, 0.85),
     roughnessMap: sharedWoodRoughTex,
-    roughness: 0.85,
-    metalness: 0.03,
-    envMapIntensity: 0.95
+    roughness: 0.86,
+    metalness: 0.0,
+    envMapIntensity: 0.36
   }), 0.14, 0.85);
 
   const shutterWoodMat = applyAntiTilingSurfaceShader(new THREE.MeshStandardMaterial({
-    color: 0x6b8264,
+    color: 0x657b5e,
     map: sharedWoodTex,
     normalMap: sharedWoodNormalTex,
     normalScale: new THREE.Vector2(0.72, 0.72),
     roughnessMap: sharedWoodRoughTex,
-    roughness: 0.80,
-    metalness: 0.03,
-    envMapIntensity: 0.95
+    roughness: 0.86,
+    metalness: 0.0,
+    envMapIntensity: 0.36
   }), 0.10, 0.5);
 
   const logTimberMat = applyAntiTilingSurfaceShader(new THREE.MeshStandardMaterial({
-    color: 0xb58358,
+    color: 0xad7c52,
     map: sharedBarkTex,
     normalMap: sharedBarkNormalTex,
     normalScale: new THREE.Vector2(1.05, 1.05),
     roughnessMap: sharedBarkRoughTex,
-    roughness: 0.90,
-    metalness: 0.02,
-    envMapIntensity: 0.9
+    roughness: 0.91,
+    metalness: 0.0,
+    envMapIntensity: 0.34
   }), 0.15, 0.9);
 
   const roofMat = applyAntiTilingSurfaceShader(new THREE.MeshStandardMaterial({
-    color: 0x987254,
+    color: 0x8f6b4e,
     map: sharedRoofShingleTex,
     normalMap: sharedShingleNormalTex,
     normalScale: new THREE.Vector2(1.0, 1.0),
     roughnessMap: sharedShingleRoughTex,
-    roughness: 0.87,
-    metalness: 0.03,
-    envMapIntensity: 0.95
+    roughness: 0.89,
+    metalness: 0.0,
+    envMapIntensity: 0.36
   }), 0.14, 0.4);
 
   const wroughtIronMat = new THREE.MeshStandardMaterial({
     color: 0x353b42,
     roughnessMap: sharedLeatherRoughTex,
-    metalness: 0.86,
-    roughness: 0.36,
-    envMapIntensity: 1.35
+    metalness: 0.88,
+    roughness: 0.34,
+    envMapIntensity: 1.30
   });
 
   const polishedBrassMat = new THREE.MeshStandardMaterial({
     color: 0xe8bd62,
     roughnessMap: sharedLeatherRoughTex,
     metalness: 0.92,
-    roughness: 0.22,
-    envMapIntensity: 1.55
+    roughness: 0.26,
+    envMapIntensity: 1.45
   });
 
   const stonePlinthMat = applyAntiTilingSurfaceShader(new THREE.MeshStandardMaterial({
-    color: 0xbda894,
+    color: 0xa69482,
     map: sharedSandstoneTex,
     normalMap: sharedSandstoneNormalTex,
     normalScale: new THREE.Vector2(1.05, 1.05),
     roughnessMap: sharedSandstoneRoughTex,
-    roughness: 0.90,
-    metalness: 0.02,
-    envMapIntensity: 0.9
+    roughness: 0.91,
+    metalness: 0.0,
+    envMapIntensity: 0.35
   }), 0.15, 0.85);
 
   // Ekte fotografisk reflekterende vindusglass om dagen som gløder varmt gult innenfra om natten
@@ -391,17 +474,17 @@ export function initTexturesAndMaterials(maxAnisotropy = 8) {
   const sharedRedEyeGlowTex = createSoftRadialGlowTexture(255, 38, 38);
   const sharedSparkGlowTex = createSoftRadialGlowTexture(255, 215, 95);
 
-  // Delt myk radial kontaktsygge-tekstur
+  // Delt mørkere og bredere radial kontaktskygge-tekstur (plantet tungt i sanden)
   const shadowCanvas = document.createElement('canvas');
   shadowCanvas.width = 64;
   shadowCanvas.height = 64;
   {
     const sCtx = shadowCanvas.getContext('2d');
     const sGrad = sCtx.createRadialGradient(32, 32, 2, 32, 32, 31);
-    sGrad.addColorStop(0.0, 'rgba(10, 6, 3, 0.72)');
-    sGrad.addColorStop(0.45, 'rgba(12, 7, 4, 0.44)');
-    sGrad.addColorStop(0.78, 'rgba(14, 8, 5, 0.15)');
-    sGrad.addColorStop(1.0, 'rgba(14, 8, 5, 0.0)');
+    sGrad.addColorStop(0.0, 'rgba(8, 5, 2, 0.92)');
+    sGrad.addColorStop(0.42, 'rgba(10, 6, 3, 0.68)');
+    sGrad.addColorStop(0.76, 'rgba(12, 7, 4, 0.28)');
+    sGrad.addColorStop(1.0, 'rgba(12, 7, 4, 0.0)');
     sCtx.fillStyle = sGrad;
     sCtx.fillRect(0, 0, 64, 64);
   }
@@ -411,7 +494,7 @@ export function initTexturesAndMaterials(maxAnisotropy = 8) {
   const sharedContactShadowMat = new THREE.MeshBasicMaterial({
     map: sharedContactShadowTex,
     transparent: true,
-    opacity: 0.74,
+    opacity: 0.88,
     depthWrite: false,
     polygonOffset: true,
     polygonOffsetFactor: -1,
@@ -422,7 +505,7 @@ export function initTexturesAndMaterials(maxAnisotropy = 8) {
 
   function createContactShadow(radiusX = 0.65, radiusZ = radiusX, yOffset = 0.026) {
     const mesh = new THREE.Mesh(sharedContactShadowGeo, sharedContactShadowMat);
-    mesh.scale.set(radiusX * 2, 1, radiusZ * 2);
+    mesh.scale.set(radiusX * 2.35, 1, radiusZ * 2.35);
     mesh.position.y = yOffset;
     mesh.renderOrder = 1;
     return mesh;
@@ -470,27 +553,28 @@ export function initTexturesAndMaterials(maxAnisotropy = 8) {
   const sharedGodRayTex = new THREE.CanvasTexture(rayCanvas);
   sharedGodRayTex.colorSpace = THREE.SRGBColorSpace;
 
+  // Dempet, jordnær rødbrun sandstein (ingen knalloransje glans; matcher HDRI-fjellene)
   const crimsonRockMat = applyAntiTilingSurfaceShader(new THREE.MeshStandardMaterial({
-    color: 0xc85538,
+    color: 0x8e6b56,
     map: sharedSandstoneTex,
     normalMap: sharedSandstoneNormalTex,
-    normalScale: new THREE.Vector2(1.3, 1.3),
+    normalScale: new THREE.Vector2(1.35, 1.35),
     roughnessMap: sharedSandstoneRoughTex,
-    roughness: 0.88,
-    metalness: 0.03,
-    envMapIntensity: 0.92
-  }), 0.16, 0.7);
+    roughness: 0.92,
+    metalness: 0.0,
+    envMapIntensity: 0.34
+  }), 0.18, 0.75);
 
   const darkGraveStoneMat = applyAntiTilingSurfaceShader(new THREE.MeshStandardMaterial({
-    color: 0x767580,
+    color: 0x6f7078,
     map: sharedSandstoneTex,
     normalMap: sharedSandstoneNormalTex,
-    normalScale: new THREE.Vector2(1.1, 1.1),
+    normalScale: new THREE.Vector2(1.15, 1.15),
     roughnessMap: sharedSandstoneRoughTex,
-    roughness: 0.90,
-    metalness: 0.04,
-    envMapIntensity: 0.9
-  }), 0.14, 0.6);
+    roughness: 0.92,
+    metalness: 0.0,
+    envMapIntensity: 0.34
+  }), 0.15, 0.65);
 
   const texturesReadyPromise = Promise.all(loadPromises);
 
@@ -509,6 +593,7 @@ export function initTexturesAndMaterials(maxAnisotropy = 8) {
     sharedBarkTex, sharedBarkBumpTex, sharedBarkNormalTex, sharedBarkRoughTex,
     sharedFoliageTex, sharedFoliageBumpTex, sharedFoliageNormalTex, sharedFoliageRoughTex,
     sharedLeatherTex, sharedLeatherNormalTex, sharedLeatherRoughTex,
+    sharedOrganicNoiseBumpTex, gltfOrganicNoiseBumpTex, sharedWaterRippleNormalTex,
     gltfWoodTex, gltfWoodNormalTex, gltfWoodRoughTex,
     gltfShingleTex, gltfShingleNormalTex, gltfShingleRoughTex,
     gltfSandstoneTex, gltfSandstoneNormalTex, gltfSandstoneRoughTex,

@@ -380,11 +380,22 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     return antlerGroup;
   }
 
+  function addQuadrupedFootShadows(group, footCoords, footRadius = 0.16) {
+    if (!createContactShadow) return;
+    for (let i = 0; i < footCoords.length; i++) {
+      const sh = createContactShadow(footRadius, footRadius, 0.020);
+      sh.position.x = footCoords[i][0];
+      sh.position.z = footCoords[i][1];
+      group.add(sh);
+    }
+  }
+
   function createDeerModel() {
     const deerGLTF = loadedAssets && loadedAssets.deer;
     if (deerGLTF && deerGLTF.scene) {
       const { group, model } = instantiateGLTFCreature(deerGLTF, 'deer', 1.86, -1);
-      if (createContactShadow) group.add(createContactShadow(0.58, 0.92));
+      if (createContactShadow) group.add(createContactShadow(0.64, 1.04));
+      addQuadrupedFootShadows(group, [[-0.16, -0.37], [0.16, -0.37], [-0.16, 0.37], [0.16, 0.37]], 0.15);
       group.userData.legs = [0, 1, 2, 3]
         .map((i) => model.getObjectByName(`leg${i}`))
         .filter(Boolean);
@@ -532,7 +543,8 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     const wolfGLTF = loadedAssets && loadedAssets.wolf;
     if (wolfGLTF && wolfGLTF.scene) {
       const { group, model } = instantiateGLTFCreature(wolfGLTF, 'wolf', 0.92, -1);
-      if (createContactShadow) group.add(createContactShadow(0.48, 0.78));
+      if (createContactShadow) group.add(createContactShadow(0.54, 0.88));
+      addQuadrupedFootShadows(group, [[-0.14, -0.31], [0.14, -0.31], [-0.14, 0.31], [0.14, 0.31]], 0.14);
       group.userData.legs = [0, 1, 2, 3]
         .map((i) => model.getObjectByName(`leg${i}`))
         .filter(Boolean);
@@ -1352,7 +1364,8 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     const bearGLTF = loadedAssets && loadedAssets.bear;
     if (bearGLTF && bearGLTF.scene) {
       const { group, model } = instantiateGLTFCreature(bearGLTF, 'bear', 1.58, -1);
-      if (createContactShadow) group.add(createContactShadow(0.95, 1.38));
+      if (createContactShadow) group.add(createContactShadow(1.04, 1.48));
+      addQuadrupedFootShadows(group, [[-0.30, -0.52], [0.30, -0.52], [-0.30, 0.52], [0.30, 0.52]], 0.24);
       group.userData.legs = [0, 1, 2, 3]
         .map((i) => model.getObjectByName(`leg${i}`))
         .filter(Boolean);
@@ -1516,19 +1529,20 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
   }
 
   const horseSaddleLeatherMat = new THREE.MeshStandardMaterial({
-    color: 0x5c2f16,
+    color: 0x562c15,
     map: sharedLeatherTex || null,
     normalMap: sharedLeatherNormalTex || null,
-    normalScale: new THREE.Vector2(0.55, 0.55),
+    normalScale: new THREE.Vector2(0.42, 0.42),
     roughnessMap: sharedLeatherRoughTex || null,
-    roughness: 0.58,
+    roughness: 0.66,
     metalness: 0.05,
-    envMapIntensity: 1.1
+    envMapIntensity: 0.42
   });
   const horseBlanketMat = new THREE.MeshStandardMaterial({
-    color: 0x8e2420,
-    roughness: 0.88,
-    metalness: 0.02
+    color: 0x5c201a,
+    roughness: 0.92,
+    metalness: 0.0,
+    envMapIntensity: 0.30
   });
   if (applyCharacterRimLighting) {
     [deerFurMat, wolfFurMat, wolfDarkMat, banditCoatMat, nightCloakMat, bearFurMat, horseSaddleLeatherMat].forEach((m) => {
@@ -1540,47 +1554,52 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     const saddleGrp = new THREE.Group();
     saddleGrp.name = 'SaddleSeat';
 
-    const blanket = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.06, 0.56), horseBlanketMat);
-    blanket.position.set(0, -0.02, 0.02);
+    // Krummet salteppe som følger hesteryggen tett (ingen firkantede hjørner som stikker ut)
+    const blanketGeo = new THREE.CylinderGeometry(0.24, 0.24, 0.54, 16, 1, false, -Math.PI * 0.42, Math.PI * 0.84);
+    blanketGeo.rotateZ(Math.PI * 0.5);
+    blanketGeo.rotateY(Math.PI * 0.5);
+    const blanket = new THREE.Mesh(blanketGeo, horseBlanketMat);
+    blanket.position.set(0, -0.22, 0.02);
     blanket.castShadow = true;
     saddleGrp.add(blanket);
 
-    const seat = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 0.24, 5, 10), horseSaddleLeatherMat);
+    const seat = new THREE.Mesh(new THREE.CapsuleGeometry(0.15, 0.24, 6, 12), horseSaddleLeatherMat);
     seat.rotation.x = Math.PI / 2;
-    seat.scale.set(1.15, 0.42, 1.0);
+    seat.scale.set(1.12, 0.42, 1.0);
     seat.position.set(0, 0.04, 0.02);
     seat.castShadow = true;
     saddleGrp.add(seat);
 
-    const cantle = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.20, 0.11, 12, 1, false, -Math.PI * 0.45, Math.PI * 0.9), horseSaddleLeatherMat);
+    const cantle = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.19, 0.11, 14, 1, false, -Math.PI * 0.45, Math.PI * 0.9), horseSaddleLeatherMat);
     cantle.position.set(0, 0.09, 0.15);
     cantle.rotation.x = -0.25;
     saddleGrp.add(cantle);
 
-    const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), horseSaddleLeatherMat);
-    pommel.scale.set(1.2, 0.75, 0.72);
+    const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 10), horseSaddleLeatherMat);
+    pommel.scale.set(1.15, 0.75, 0.72);
     pommel.position.set(0, 0.08, -0.17);
     saddleGrp.add(pommel);
 
-    const hornNeck = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.032, 0.085, 8), horseSaddleLeatherMat);
+    const hornNeck = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.032, 0.085, 10), horseSaddleLeatherMat);
     hornNeck.position.set(0, 0.155, -0.19);
     hornNeck.rotation.x = 0.24;
     saddleGrp.add(hornNeck);
 
-    const hornCap = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.036, 0.022, 10), polishedBrassMat);
+    const hornCap = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.036, 0.022, 12), polishedBrassMat);
     hornCap.position.set(0, 0.198, -0.20);
     hornCap.rotation.x = 0.24;
     saddleGrp.add(hornCap);
 
     [-1, 1].forEach((side) => {
-      const fender = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.34, 0.14), horseSaddleLeatherMat);
-      fender.position.set(side * 0.23, -0.17, -0.02);
+      const fender = new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.24, 4, 8), horseSaddleLeatherMat);
+      fender.scale.set(0.22, 1.0, 1.0);
+      fender.position.set(side * 0.21, -0.17, -0.02);
       fender.rotation.z = side * 0.12;
       saddleGrp.add(fender);
 
-      const stirrup = new THREE.Mesh(new THREE.TorusGeometry(0.048, 0.011, 6, 10), wroughtIronMat);
+      const stirrup = new THREE.Mesh(new THREE.TorusGeometry(0.046, 0.011, 6, 12), wroughtIronMat);
       stirrup.rotation.y = Math.PI / 2;
-      stirrup.position.set(side * 0.255, -0.35, -0.02);
+      stirrup.position.set(side * 0.23, -0.35, -0.02);
       saddleGrp.add(stirrup);
     });
 
@@ -1591,7 +1610,8 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     const horseGLTF = loadedAssets && loadedAssets.horse;
     if (horseGLTF && horseGLTF.scene) {
       const { group, model } = instantiateGLTFCreature(horseGLTF, 'horse', 1.82, -1);
-      if (createContactShadow) group.add(createContactShadow(0.68, 1.18, 0.03));
+      if (createContactShadow) group.add(createContactShadow(0.76, 1.32, 0.028));
+      addQuadrupedFootShadows(group, [[-0.185, -0.54], [0.185, -0.54], [-0.19, 0.58], [0.19, 0.58]], 0.18);
       let seat = model.getObjectByName('SaddleSeat');
       if (!seat) {
         seat = buildWesternSaddleGroup();
@@ -1599,6 +1619,9 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
         group.add(seat);
       }
       group.userData.saddleSeat = seat;
+      group.userData.legs = [0, 1, 2, 3]
+        .map((i) => model.getObjectByName(`leg${i}`))
+        .filter(Boolean);
       return group;
     }
 

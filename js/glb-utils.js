@@ -171,22 +171,41 @@ export function enhanceOrPreserveGLBMaterial(origMat, node, M, opts = {}) {
     origMat.metalnessMap
   );
 
-  // 1. Bevar ekte, innebygde PBR-teksturer (f.eks. fra Tripo3D, Meshy eller Quaternius PBR-modeller) 100 % urørt!
+  // 1. Bevar ekte, innebygde PBR-teksturer (f.eks. fra Tripo3D, Meshy eller eksterne PBR-modeller),
+  //    men tving glatt shading og realistisk matt hud/pels-ruhet så ingenting ser ut som blank plast!
   if (hasEmbeddedPBR) {
     configureEmbeddedTextures(mat, maxAniso);
     if (opts.tintColorHex) {
       mat.color.multiply(new THREE.Color(opts.tintColorHex));
     }
-    mat.envMapIntensity = Math.max(mat.envMapIntensity || 1.0, isWeapon ? 1.4 : 1.15);
-    if (isCharacter && M && M.applyCharacterRimLighting) {
-      M.applyCharacterRimLighting(mat);
+    if (isCharacter) {
+      mat.flatShading = false;
+      const embeddedMetal = (origMat.metalness !== undefined && origMat.metalness >= 0.45);
+      if (!embeddedMetal) {
+        mat.metalness = 0.0;
+        mat.roughness = THREE.MathUtils.clamp(mat.roughness ?? 0.88, 0.84, 0.92);
+        mat.envMapIntensity = 0.35;
+        if (!mat.normalMap && !mat.bumpMap && M && M.gltfOrganicNoiseBumpTex) {
+          mat.bumpMap = M.gltfOrganicNoiseBumpTex;
+          mat.bumpScale = 0.016;
+        }
+      } else {
+        mat.roughness = THREE.MathUtils.clamp(mat.roughness ?? 0.32, 0.25, 0.38);
+        mat.envMapIntensity = 1.25;
+      }
+      mat.needsUpdate = true;
+      if (M && M.applyCharacterRimLighting) {
+        M.applyCharacterRimLighting(mat);
+      }
+    } else {
+      mat.envMapIntensity = isWeapon ? 1.35 : 0.45;
     }
     return mat;
   }
 
-  // 2. For modeller uten innebygde teksturer: oppgrader flate farger med fotografiske 1K PBR-teksturer fra ./assets/textures/
+  // 2. For modeller uten innebygde teksturer: oppgrader med riktige PBR-verdier og teksturer uten plastglans
   if (node && node.geometry) {
-    ensureGeometryUVs(node.geometry, isBuilding ? 1.6 : (isWeapon ? 2.8 : 2.6));
+    ensureGeometryUVs(node.geometry, isBuilding ? 1.6 : (isWeapon ? 2.8 : 3.0));
   }
 
   const isGlowing =
@@ -196,17 +215,30 @@ export function enhanceOrPreserveGLBMaterial(origMat, node, M, opts = {}) {
     (mat.emissive && (mat.emissive.r > 0.32 || mat.emissive.g > 0.32 || mat.emissive.b > 0.32));
 
   if (isGlowing) {
+    mat.flatShading = false;
     mat.emissiveIntensity = Math.max(mat.emissiveIntensity || 1.0, 2.2);
     return mat;
   }
 
-  const isEyeOrTeeth = mName.includes('eye') || mName.includes('pupil') || mName.includes('tooth') || mName.includes('teeth') || mName.includes('fang');
-  if (isEyeOrTeeth) {
-    mat.roughness = Math.min(mat.roughness ?? 0.25, 0.18);
-    mat.envMapIntensity = 1.55;
+  const isEye = mName.includes('eye') || mName.includes('pupil') || mName.includes('sclera') || mName.includes('iris');
+  if (isEye) {
+    mat.flatShading = false;
+    mat.metalness = 0.02;
+    mat.roughness = 0.22;
+    mat.envMapIntensity = 0.75;
     return mat;
   }
 
+  const isTeethOrClaw = mName.includes('tooth') || mName.includes('teeth') || mName.includes('fang') || mName.includes('claw');
+  if (isTeethOrClaw) {
+    mat.flatShading = false;
+    mat.metalness = 0.0;
+    mat.roughness = 0.58;
+    mat.envMapIntensity = 0.40;
+    return mat;
+  }
+
+  // Kun faktisk metall (revolver/våpen, spenner, sporer, beslag, kjelestål) skal ha lav roughness (0.25–0.38) og høy metalness
   const isMetallic =
     (mat.metalness !== undefined && mat.metalness >= 0.45) ||
     mName.includes('steel') ||
@@ -216,16 +248,19 @@ export function enhanceOrPreserveGLBMaterial(origMat, node, M, opts = {}) {
     mName.includes('silver') ||
     mName.includes('copper') ||
     mName.includes('metal') ||
-    mName.includes('armor') ||
-    mName.includes('boiler');
+    mName.includes('boiler') ||
+    mName.includes('buckle') ||
+    mName.includes('spur') ||
+    mName.includes('ferrule') ||
+    mName.includes('shear');
 
   if (isMetallic) {
     if (M && M.gltfLeatherRoughTex) {
       mat.roughnessMap = M.gltfLeatherRoughTex;
     }
-    mat.metalness = Math.max(mat.metalness ?? 0.85, 0.82);
-    mat.roughness = THREE.MathUtils.clamp(mat.roughness ?? 0.28, 0.14, 0.42);
-    mat.envMapIntensity = isWeapon ? 1.6 : 1.45;
+    mat.metalness = Math.max(mat.metalness ?? 0.88, 0.84);
+    mat.roughness = THREE.MathUtils.clamp(mat.roughness ?? 0.30, 0.25, 0.38);
+    mat.envMapIntensity = isWeapon ? 1.45 : 1.25;
     if (isCharacter && M && M.applyCharacterRimLighting) {
       M.applyCharacterRimLighting(mat);
     }
@@ -237,14 +272,18 @@ export function enhanceOrPreserveGLBMaterial(origMat, node, M, opts = {}) {
     mName.includes('roof') ||
     mName.includes('darktimber')
   ) {
+    mat.flatShading = false;
     if (M && M.gltfShingleTex) {
-      mat.color.lerp(WHITE_COLOR, 0.38);
+      const lum = mat.color.r * 0.299 + mat.color.g * 0.587 + mat.color.b * 0.114;
+      if (lum < 0.24) mat.color.lerp(WHITE_COLOR, 0.26);
       mat.map = M.gltfShingleTex;
       mat.normalMap = M.gltfShingleNormalTex;
       mat.normalScale = new THREE.Vector2(0.85, -0.85);
       mat.roughnessMap = M.gltfShingleRoughTex;
     }
-    mat.envMapIntensity = 0.95;
+    mat.metalness = 0.0;
+    mat.roughness = THREE.MathUtils.clamp(mat.roughness ?? 0.88, 0.82, 0.92);
+    mat.envMapIntensity = 0.38;
     if (isBuilding && M && M.applyAntiTilingSurfaceShader) {
       M.applyAntiTilingSurfaceShader(mat, 0.14, 0.55);
     }
@@ -257,14 +296,18 @@ export function enhanceOrPreserveGLBMaterial(origMat, node, M, opts = {}) {
     mName.includes('obsidian') ||
     mName.includes('rock')
   ) {
+    mat.flatShading = false;
     if (M && M.gltfSandstoneTex) {
-      mat.color.lerp(WHITE_COLOR, 0.32);
+      const lum = mat.color.r * 0.299 + mat.color.g * 0.587 + mat.color.b * 0.114;
+      if (lum < 0.28) mat.color.lerp(WHITE_COLOR, 0.24);
       mat.map = M.gltfSandstoneTex;
       mat.normalMap = M.gltfSandstoneNormalTex;
       mat.normalScale = new THREE.Vector2(0.92, -0.92);
       mat.roughnessMap = M.gltfSandstoneRoughTex;
     }
-    mat.envMapIntensity = 0.95;
+    mat.metalness = 0.0;
+    mat.roughness = 0.90;
+    mat.envMapIntensity = 0.35;
     if (isBuilding && M && M.applyAntiTilingSurfaceShader) {
       M.applyAntiTilingSurfaceShader(mat, 0.15, 0.85);
     }
@@ -280,12 +323,14 @@ export function enhanceOrPreserveGLBMaterial(origMat, node, M, opts = {}) {
     mName.includes('plank') ||
     mName.includes('counter') ||
     mName.includes('shutter') ||
-    mName.includes('stock')
+    mName.includes('stock') ||
+    mName.includes('tiller')
   ) {
+    mat.flatShading = false;
     if (M && M.gltfWoodTex) {
       const lum = mat.color.r * 0.299 + mat.color.g * 0.587 + mat.color.b * 0.114;
       if (lum < 0.26) {
-        mat.color.lerp(WHITE_COLOR, isWeapon ? 0.26 : 0.28);
+        mat.color.lerp(WHITE_COLOR, isWeapon ? 0.24 : 0.26);
       }
       mat.map = M.gltfWoodTex;
       mat.normalMap = M.gltfWoodNormalTex;
@@ -293,46 +338,98 @@ export function enhanceOrPreserveGLBMaterial(origMat, node, M, opts = {}) {
       mat.normalScale = new THREE.Vector2(ns, -ns);
       mat.roughnessMap = M.gltfWoodRoughTex;
     }
-    mat.envMapIntensity = mName.includes('counter') ? 1.2 : 0.98;
+    mat.metalness = 0.0;
+    mat.roughness = isWeapon ? 0.68 : THREE.MathUtils.clamp(mat.roughness ?? 0.86, 0.82, 0.92);
+    mat.envMapIntensity = isWeapon ? 0.55 : 0.38;
     if (isBuilding && M && M.applyAntiTilingSurfaceShader) {
       M.applyAntiTilingSurfaceShader(mat, 0.15, 0.9);
     }
     return mat;
   }
 
-  // Karakterer, fiender og dyr uten egne innebygde teksturer: gi ekte lær-/pels-/stoff-tekstur + Fresnel rim-light
+  // Karakterer, fiender og dyr: tving flatShading = false og eksakt PBR-ruhet for lær, stoff og pels/hud!
   if (isCharacter && M) {
-    const isSkinOrShirt =
-      mName.includes('skin') ||
-      mName.includes('face') ||
-      mName.includes('shirt') ||
-      mName.includes('linen') ||
-      mName.includes('cravat') ||
-      mName.includes('silk');
+    mat.flatShading = false;
 
-    if (!isSkinOrShirt && M.gltfLeatherTex) {
-      // Løft mørke lineære farger (f.eks. Quaternius lineær baseColor) litt så lær-/pels-albedo gir rik metning
-      const lum = mat.color.r * 0.299 + mat.color.g * 0.587 + mat.color.b * 0.114;
-      mat.color.lerp(WHITE_COLOR, lum < 0.12 ? 0.30 : 0.40);
-      mat.map = M.gltfLeatherTex;
+    const isLeather =
+      mName.includes('leather') ||
+      mName.includes('boot') ||
+      mName.includes('holster') ||
+      mName.includes('belt') ||
+      mName.includes('bridle') ||
+      mName.includes('cinch') ||
+      mName.includes('apron');
+
+    const isCloth =
+      mName.includes('trouser') ||
+      mName.includes('pants') ||
+      mName.includes('vest') ||
+      mName.includes('shirt') ||
+      mName.includes('bandana') ||
+      mName.includes('cloak') ||
+      mName.includes('silk') ||
+      mName.includes('wool') ||
+      mName.includes('blanket') ||
+      mName.includes('stetson') ||
+      mName.includes('hat') ||
+      mName.includes('cravat') ||
+      mName.includes('tape') ||
+      mName.includes('linen') ||
+      mName.includes('canvas') ||
+      mName.includes('duster') ||
+      mName.includes('robe') ||
+      mName.includes('hood') ||
+      mName.includes('collar') ||
+      mName.includes('pincushion');
+
+    if (isLeather) {
+      // Lær (sal, støvler, belte, hylster): roughness 0.62–0.72, metalness 0.05
+      if (M.gltfLeatherTex) {
+        const lum = mat.color.r * 0.299 + mat.color.g * 0.587 + mat.color.b * 0.114;
+        if (lum < 0.18) mat.color.lerp(WHITE_COLOR, 0.24);
+        mat.map = M.gltfLeatherTex;
+      }
+      if (M.gltfLeatherNormalTex) {
+        mat.normalMap = M.gltfLeatherNormalTex;
+        mat.normalScale = new THREE.Vector2(0.36, -0.36);
+      }
+      if (M.gltfLeatherRoughTex) {
+        mat.roughnessMap = M.gltfLeatherRoughTex;
+      }
+      mat.metalness = 0.05;
+      mat.roughness = THREE.MathUtils.clamp(mat.roughness ?? 0.66, 0.62, 0.72);
+      mat.envMapIntensity = 0.42;
+    } else if (isCloth) {
+      // Stoff/klær: roughness 0.88–0.95, metalness 0.0
+      if (M.gltfOrganicNoiseBumpTex) {
+        mat.bumpMap = M.gltfOrganicNoiseBumpTex;
+        mat.bumpScale = 0.012;
+      }
+      mat.metalness = 0.0;
+      mat.roughness = THREE.MathUtils.clamp(mat.roughness ?? 0.91, 0.88, 0.95);
+      mat.envMapIntensity = 0.30;
+    } else {
+      // Hestepels, dyrepels, man, hale og hud: roughness 0.84–0.92, metalness 0.0, envMapIntensity 0.35 + støy-bumpMap
+      if (M.gltfOrganicNoiseBumpTex) {
+        mat.bumpMap = M.gltfOrganicNoiseBumpTex;
+        mat.bumpScale = 0.018;
+      }
+      mat.metalness = 0.0;
+      mat.roughness = THREE.MathUtils.clamp(mat.roughness ?? 0.88, 0.84, 0.92);
+      mat.envMapIntensity = 0.35;
     }
-    if (M.gltfLeatherNormalTex) {
-      mat.normalMap = M.gltfLeatherNormalTex;
-      const ns = isSkinOrShirt ? 0.14 : 0.38;
-      mat.normalScale = new THREE.Vector2(ns, -ns);
-    }
-    if (M.gltfLeatherRoughTex) {
-      mat.roughnessMap = M.gltfLeatherRoughTex;
-    }
-    mat.roughness = THREE.MathUtils.clamp(mat.roughness ?? 0.76, 0.42, 0.92);
-    mat.envMapIntensity = 1.08;
+
+    mat.needsUpdate = true;
     if (M.applyCharacterRimLighting) {
       M.applyCharacterRimLighting(mat);
     }
     return mat;
   }
 
-  mat.envMapIntensity = Math.max(mat.envMapIntensity || 1.0, 1.05);
+  mat.flatShading = false;
+  mat.metalness = Math.min(mat.metalness ?? 0.0, 0.05);
+  mat.roughness = Math.max(mat.roughness ?? 0.85, 0.82);
+  mat.envMapIntensity = 0.38;
   return mat;
 }
 
