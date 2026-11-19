@@ -405,6 +405,10 @@
         <button id="sens-vr-btn" class="sens-mini-btn" type="button">Snap 30°</button>
       </div>
       <div class="sens-row">
+        <span id="sens-perf-label">Graphics / FPS</span>
+        <button id="sens-perf-btn" class="sens-mini-btn active" type="button">Auto (Smooth)</button>
+      </div>
+      <div class="sens-row">
         <button id="sens-reset-btn" class="sens-mini-btn" type="button" style="width: 100%;">Reset 100%</button>
       </div>
     </div>
@@ -453,11 +457,13 @@
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     const isSmallMobileScreen = Math.min(window.innerWidth, window.innerHeight) < 600;
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isSmallMobileScreen ? 1.65 : 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isSmallMobileScreen ? 1.4 : 1.25));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.08;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.autoUpdate = false;
+    renderer.shadowMap.needsUpdate = true;
     renderer.xr.enabled = true;
     document.body.appendChild(renderer.domElement);
     const vrBtnEl = VRButton.createButton(renderer);
@@ -476,7 +482,7 @@
 
     // Lydkontekst klar for videre spillmekanikk
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
+    const maxAnisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
 
     // =========================================================================
     // 2. SENTRALT SPRÅKSYSTEM (EN STANDARD / NO VALG), STATUS OG WRISTBOARD
@@ -584,6 +590,8 @@
     const sensInvertBtnEl = document.getElementById('sens-invert-btn');
     const sensVrLabelEl = document.getElementById('sens-vr-label');
     const sensVrBtnEl = document.getElementById('sens-vr-btn');
+    const sensPerfLabelEl = document.getElementById('sens-perf-label');
+    const sensPerfBtnEl = document.getElementById('sens-perf-btn');
     const sensResetBtnEl = document.getElementById('sens-reset-btn');
 
     const touchJoyRingEl = document.getElementById('touch-joy-ring');
@@ -594,12 +602,13 @@
     const btnTouchUseEl = document.getElementById('btn-touch-use');
     const btnTouchFireEl = document.getElementById('btn-touch-fire');
 
-    // Lagrede følsomhets- og kontrollinnstillinger for VR, Telefon, PC og Pad
+    // Lagrede følsomhets-, grafikk- og kontrollinnstillinger for VR, Telefon, PC og Pad
     const CONTROL_STORAGE_KEY = 'western_vr_controls_v1';
     const controlSettings = {
       sensPct: 100,
       invertY: false,
-      vrSmoothTurn: false
+      vrSmoothTurn: false,
+      perfMode: 'auto' // 'auto' | 'fast' | 'ultra'
     };
     try {
       const savedRaw = localStorage.getItem(CONTROL_STORAGE_KEY);
@@ -610,6 +619,9 @@
         }
         if (typeof parsed.invertY === 'boolean') controlSettings.invertY = parsed.invertY;
         if (typeof parsed.vrSmoothTurn === 'boolean') controlSettings.vrSmoothTurn = parsed.vrSmoothTurn;
+        if (parsed.perfMode === 'auto' || parsed.perfMode === 'fast' || parsed.perfMode === 'ultra') {
+          controlSettings.perfMode = parsed.perfMode;
+        }
       }
     } catch (_) {
       // localStorage er valgfri
@@ -622,6 +634,23 @@
         // localStorage er valgfri
       }
     }
+
+    let adaptiveDprCap = isSmallMobileScreen ? 1.35 : 1.25;
+    function applyQualityPixelRatio() {
+      if (renderer.xr.isPresenting) return;
+      const hwDpr = window.devicePixelRatio || 1;
+      let targetDpr = Math.min(hwDpr, adaptiveDprCap);
+      if (controlSettings.perfMode === 'fast') {
+        targetDpr = Math.min(hwDpr, 0.92);
+      } else if (controlSettings.perfMode === 'ultra') {
+        targetDpr = Math.min(hwDpr, 1.75);
+      }
+      if (Math.abs(renderer.getPixelRatio() - targetDpr) > 0.03) {
+        renderer.setPixelRatio(targetDpr);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+    }
+    applyQualityPixelRatio();
 
     let touchStickX = 0;
     let touchStickY = 0;
@@ -645,6 +674,17 @@
           ? (dict.sensVrSmooth || 'Smooth')
           : (dict.sensVrSnap || 'Snap 30°');
         sensVrBtnEl.classList.toggle('active', controlSettings.vrSmoothTurn);
+      }
+      if (sensPerfLabelEl && dict.sensPerfLabel) sensPerfLabelEl.textContent = dict.sensPerfLabel;
+      if (sensPerfBtnEl) {
+        if (controlSettings.perfMode === 'fast') {
+          sensPerfBtnEl.textContent = dict.sensPerfFast || 'Max FPS';
+        } else if (controlSettings.perfMode === 'ultra') {
+          sensPerfBtnEl.textContent = dict.sensPerfUltra || 'Ultra';
+        } else {
+          sensPerfBtnEl.textContent = dict.sensPerfAuto || 'Auto (Smooth)';
+        }
+        sensPerfBtnEl.classList.toggle('active', controlSettings.perfMode !== 'ultra');
       }
       if (sensResetBtnEl && dict.sensResetBtn) sensResetBtnEl.textContent = dict.sensResetBtn;
       if (btnTouchFireEl && dict.touchFire) btnTouchFireEl.textContent = dict.touchFire;
@@ -1261,6 +1301,8 @@
       mountTrainAsset,
       mountWorldBotanicalAndWildlifeAssets,
       updateAmbientWildlife,
+      registerWorldVirtualLight,
+      updateWorldPerformanceAndLights,
       trainGatlingHitMeshes,
       gatlingHalo,
       windUniforms,
@@ -2411,6 +2453,13 @@
       flashDamageVignette,
       updateDamageVignette
     } = FX;
+
+    if (registerWorldVirtualLight) {
+      if (saloonLantern && saloonLantern.light) registerWorldVirtualLight(saloonLantern.light);
+      if (tailorLantern && tailorLantern.light) registerWorldVirtualLight(tailorLantern.light);
+      if (gunsmithLantern && gunsmithLantern.light) registerWorldVirtualLight(gunsmithLantern.light);
+      if (safeHouseLantern && safeHouseLantern.light) registerWorldVirtualLight(safeHouseLantern.light);
+    }
 
     // --- 7a. 6 Spillbare Våpen på PC og i VR (Revolver, Shotgun, Winchester, Silver Crossbow, Dynamite, Hellfire Repeater) ---
     const PC_WEAPON_TRANSFORMS = {
@@ -4859,12 +4908,27 @@
         syncControlsLocalizationUI();
       });
     }
+    if (sensPerfBtnEl) {
+      sensPerfBtnEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const order = ['auto', 'fast', 'ultra'];
+        const nextIdx = (order.indexOf(controlSettings.perfMode) + 1) % order.length;
+        controlSettings.perfMode = order[nextIdx];
+        adaptiveDprCap = isSmallMobileScreen ? 1.35 : 1.25;
+        applyQualityPixelRatio();
+        saveControlSettings();
+        syncControlsLocalizationUI();
+      });
+    }
     if (sensResetBtnEl) {
       sensResetBtnEl.addEventListener('click', (e) => {
         e.stopPropagation();
         controlSettings.sensPct = 100;
         controlSettings.invertY = false;
         controlSettings.vrSmoothTurn = false;
+        controlSettings.perfMode = 'auto';
+        adaptiveDprCap = isSmallMobileScreen ? 1.35 : 1.25;
+        applyQualityPixelRatio();
         saveControlSettings();
         syncControlsLocalizationUI();
       });
@@ -5247,6 +5311,7 @@
     window.addEventListener('resize', () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
+      applyQualityPixelRatio();
       renderer.setSize(window.innerWidth, window.innerHeight);
     });
 
@@ -5302,6 +5367,9 @@
     // 11. HOVEDLØKKE (72–90 FPS OPTIMALISERT FOR META QUEST, 0 PER-FRAME ALLOKERINGER)
     // =========================================================================
     const clock = new THREE.Clock();
+    let perfFrameCounter = 0;
+    let perfWindowStart = 0;
+    let perfWindowFrames = 0;
 
     renderer.setAnimationLoop(() => {
       const dt = Math.min(clock.getDelta(), 0.05);
@@ -5444,6 +5512,36 @@
       if (targetResetTimer > 0) {
         targetResetTimer -= dt;
         if (targetResetTimer <= 0) resetTargets();
+      }
+
+      if (updateWorldPerformanceAndLights) {
+        updateWorldPerformanceAndLights(playerRig.position);
+      }
+
+      // Dynamisk skyggekart-oppdatering og automatisk oppløsningsvern mot hakking på PC/Laptop
+      perfFrameCounter = (perfFrameCounter + 1) | 0;
+      const shadowStride = controlSettings.perfMode === 'ultra' ? 1 : (controlSettings.perfMode === 'fast' ? 3 : 2);
+      if (perfFrameCounter % shadowStride === 0) {
+        renderer.shadowMap.needsUpdate = true;
+      }
+
+      if (!renderer.xr.isPresenting && controlSettings.perfMode === 'auto') {
+        const nowPerf = performance.now();
+        if (perfWindowStart === 0) perfWindowStart = nowPerf;
+        perfWindowFrames++;
+        const elapsedMs = nowPerf - perfWindowStart;
+        if (elapsedMs >= 1400) {
+          const avgFps = (perfWindowFrames * 1000) / elapsedMs;
+          if (avgFps < 48 && adaptiveDprCap > 0.85) {
+            adaptiveDprCap = Math.max(0.85, Math.round((adaptiveDprCap - 0.18) * 100) / 100);
+            applyQualityPixelRatio();
+          } else if (avgFps > 59 && adaptiveDprCap < 1.25) {
+            adaptiveDprCap = Math.min(1.25, Math.round((adaptiveDprCap + 0.08) * 100) / 100);
+            applyQualityPixelRatio();
+          }
+          perfWindowStart = nowPerf;
+          perfWindowFrames = 0;
+        }
       }
 
       renderer.render(scene, camera);
