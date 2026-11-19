@@ -120,6 +120,15 @@ export function getTerrainHeight(x, z, refY = 0) {
   if (Math.abs(x) <= 2.05 && z >= -84.0 && z <= -72.0) {
     return Math.max(baseH, getBridgeDeckY(z));
   }
+  // Trerampe opp til Gatling-flakvognen (x = 12.15..15.05, z = 70.20..73.95)
+  if (x >= 12.15 && x <= 15.05 && z >= 70.2 && z <= 73.95) {
+    const t = THREE.MathUtils.clamp((z - 70.2) / 3.75, 0, 1);
+    return Math.max(baseH, THREE.MathUtils.lerp(0.25, 1.46, t));
+  }
+  // Gatling-flakvognen på Southern Railway (x = 11.15..20.55, z = 73.75..76.25)
+  if (x >= 11.15 && x <= 20.55 && z >= 73.75 && z <= 76.25) {
+    return Math.max(baseH, 1.46);
+  }
   return baseH;
 }
 
