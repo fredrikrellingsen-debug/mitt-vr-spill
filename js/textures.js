@@ -24,19 +24,24 @@ export function createNormalCanvasFromHeight(bumpCanvas, strength = 2.0) {
   const dstImg = dstCtx.createImageData(w, h);
   const dstData = dstImg.data;
 
-  const heights = new Float32Array(w * h);
-  for (let i = 0, p = 0; i < heights.length; i++, p += 4) {
-    heights[i] = srcData[p] / 255.0;
+  const len = w * h;
+  const heights = new Float32Array(len);
+  const inv255 = 1.0 / 255.0;
+  for (let i = 0, p = 0; i < len; i++, p += 4) {
+    heights[i] = srcData[p] * inv255;
   }
 
+  const wMask = (w & (w - 1)) === 0 ? (w - 1) : -1;
+  const hMask = (h & (h - 1)) === 0 ? (h - 1) : -1;
+
   for (let y = 0; y < h; y++) {
-    const ym1 = ((y - 1 + h) % h) * w;
+    const ym1 = (hMask >= 0 ? ((y - 1) & hMask) : ((y - 1 + h) % h)) * w;
     const y0 = y * w;
-    const yp1 = ((y + 1) % h) * w;
+    const yp1 = (hMask >= 0 ? ((y + 1) & hMask) : ((y + 1) % h)) * w;
 
     for (let x = 0; x < w; x++) {
-      const xm1 = (x - 1 + w) % w;
-      const xp1 = (x + 1) % w;
+      const xm1 = wMask >= 0 ? ((x - 1) & wMask) : ((x - 1 + w) % w);
+      const xp1 = wMask >= 0 ? ((x + 1) & wMask) : ((x + 1) % w);
 
       const tl = heights[ym1 + xm1];
       const tc = heights[ym1 + x];
@@ -52,13 +57,12 @@ export function createNormalCanvasFromHeight(bumpCanvas, strength = 2.0) {
 
       const nx = -dX * strength;
       const ny = dY * strength;
-      const nz = 1.0;
-      const invLen = 1.0 / Math.sqrt(nx * nx + ny * ny + nz * nz);
+      const invLen = 1.0 / Math.sqrt(nx * nx + ny * ny + 1.0);
 
-      const outIdx = (y0 + x) * 4;
-      dstData[outIdx] = Math.max(0, Math.min(255, Math.round((nx * invLen * 0.5 + 0.5) * 255)));
-      dstData[outIdx + 1] = Math.max(0, Math.min(255, Math.round((ny * invLen * 0.5 + 0.5) * 255)));
-      dstData[outIdx + 2] = Math.max(0, Math.min(255, Math.round((nz * invLen * 0.5 + 0.5) * 255)));
+      const outIdx = (y0 + x) << 2;
+      dstData[outIdx] = (nx * invLen * 127.5 + 127.5) | 0;
+      dstData[outIdx + 1] = (ny * invLen * 127.5 + 127.5) | 0;
+      dstData[outIdx + 2] = (invLen * 127.5 + 127.5) | 0;
       dstData[outIdx + 3] = 255;
     }
   }
@@ -67,60 +71,103 @@ export function createNormalCanvasFromHeight(bumpCanvas, strength = 2.0) {
   return normalCanvas;
 }
 
-// 3a. Værbitt treverk: fargekart + bumpMap/normalMap (sprekker/årringer/spiker) + roughnessMap
+// Rask mikro-korn/fiber-pass med ImageData for 1024x1024 PBR-detalj uten treg løkke
+function applyPixelMicroDetail(cCtx, bCtx, rCtx, w, h, seed, colorAmp, bumpAmp, roughAmp, streakX = 1) {
+  const cImg = cCtx.getImageData(0, 0, w, h);
+  const bImg = bCtx.getImageData(0, 0, w, h);
+  const rImg = rCtx.getImageData(0, 0, w, h);
+  const cd = cImg.data;
+  const bd = bImg.data;
+  const rd = rImg.data;
+  let s = (seed >>> 0) || 1;
+  const total = w * h * 4;
+  for (let i = 0; i < total; i += 4) {
+    if (streakX <= 1 || ((i >> 2) % streakX) === 0) {
+      s ^= s << 13;
+      s ^= s >>> 17;
+      s ^= s << 5;
+    }
+    const n = ((s & 255) - 128) * 0.0078125;
+    if (colorAmp !== 0) {
+      const dc = (n * colorAmp) | 0;
+      const r = cd[i] + dc;
+      const g = cd[i + 1] + ((dc * 3) >> 2);
+      const b = cd[i + 2] + (dc >> 1);
+      cd[i] = r < 0 ? 0 : (r > 255 ? 255 : r);
+      cd[i + 1] = g < 0 ? 0 : (g > 255 ? 255 : g);
+      cd[i + 2] = b < 0 ? 0 : (b > 255 ? 255 : b);
+    }
+    if (bumpAmp !== 0) {
+      let bv = bd[i] + ((n * bumpAmp) | 0);
+      bv = bv < 0 ? 0 : (bv > 255 ? 255 : bv);
+      bd[i] = bd[i + 1] = bd[i + 2] = bv;
+    }
+    if (roughAmp !== 0) {
+      let rv = rd[i] + ((n * roughAmp) | 0);
+      rv = rv < 0 ? 0 : (rv > 255 ? 255 : rv);
+      rd[i] = rd[i + 1] = rd[i + 2] = rv;
+    }
+  }
+  cCtx.putImageData(cImg, 0, 0);
+  bCtx.putImageData(bImg, 0, 0);
+  rCtx.putImageData(rImg, 0, 0);
+}
+
+// 3a. Værbitt treverk (1024x1024): fargekart + bumpMap/normalMap + roughnessMap
 function createWeatheredWoodMaps() {
+  const S = 1024;
+  const K = 4;
   const rng = createSeededRng(1885);
   const colorCanvas = document.createElement('canvas');
   const bumpCanvas = document.createElement('canvas');
   const roughCanvas = document.createElement('canvas');
-  colorCanvas.width = bumpCanvas.width = roughCanvas.width = 256;
-  colorCanvas.height = bumpCanvas.height = roughCanvas.height = 256;
+  colorCanvas.width = bumpCanvas.width = roughCanvas.width = S;
+  colorCanvas.height = bumpCanvas.height = roughCanvas.height = S;
 
   const cCtx = colorCanvas.getContext('2d');
   const bCtx = bumpCanvas.getContext('2d');
   const rCtx = roughCanvas.getContext('2d');
 
   bCtx.fillStyle = 'rgb(150,150,150)';
-  bCtx.fillRect(0, 0, 256, 256);
+  bCtx.fillRect(0, 0, S, S);
   rCtx.fillStyle = 'rgb(198,198,198)';
-  rCtx.fillRect(0, 0, 256, 256);
+  rCtx.fillRect(0, 0, S, S);
 
-  const plankCount = 6;
-  const plankH = 256 / plankCount;
+  const plankCount = 8;
+  const plankH = S / plankCount;
 
   for (let p = 0; p < plankCount; p++) {
     const y0 = p * plankH;
-    const shade = 158 + Math.floor((rng() - 0.5) * 34);
+    const shade = 154 + Math.floor((rng() - 0.5) * 36);
     const r = Math.min(255, shade + 28);
     const g = Math.floor(shade * 0.76);
     const b = Math.floor(shade * 0.50);
     cCtx.fillStyle = `rgb(${r},${g},${b})`;
-    cCtx.fillRect(0, y0, 256, plankH);
+    cCtx.fillRect(0, y0, S, plankH);
 
     const plankBump = 138 + Math.floor((rng() - 0.5) * 28);
     bCtx.fillStyle = `rgb(${plankBump},${plankBump},${plankBump})`;
-    bCtx.fillRect(0, y0 + 2, 256, plankH - 3);
+    bCtx.fillRect(0, y0 + 2 * K, S, plankH - 3 * K);
 
     const plankRough = 175 + Math.floor((rng() - 0.5) * 36);
     rCtx.fillStyle = `rgb(${plankRough},${plankRough},${plankRough})`;
-    rCtx.fillRect(0, y0, 256, plankH);
+    rCtx.fillRect(0, y0, S, plankH);
 
-    // Årringer langs planken
-    for (let line = 0; line < 18; line++) {
-      const ly = y0 + 2.5 + (line / 18) * (plankH - 5);
-      const waveAmp = 0.8 + rng() * 1.9;
+    for (let line = 0; line < 24; line++) {
+      const ly = y0 + 8 + (line / 24) * (plankH - 16);
+      const waveAmp = (0.8 + rng() * 1.9) * K * 0.7;
       const phase = rng() * Math.PI * 2;
       const isDarkGrain = line % 2 === 0;
-      cCtx.strokeStyle = isDarkGrain ? 'rgba(54, 28, 11, 0.28)' : 'rgba(238, 198, 148, 0.16)';
-      bCtx.strokeStyle = isDarkGrain ? 'rgba(72, 72, 72, 0.55)' : 'rgba(215, 215, 215, 0.42)';
-      rCtx.strokeStyle = isDarkGrain ? 'rgba(235, 235, 235, 0.4)' : 'rgba(135, 135, 135, 0.35)';
-      cCtx.lineWidth = bCtx.lineWidth = rCtx.lineWidth = 1.1;
+      cCtx.strokeStyle = isDarkGrain ? 'rgba(54, 28, 11, 0.28)' : 'rgba(238, 198, 148, 0.17)';
+      bCtx.strokeStyle = isDarkGrain ? 'rgba(72, 72, 72, 0.52)' : 'rgba(215, 215, 215, 0.40)';
+      rCtx.strokeStyle = isDarkGrain ? 'rgba(235, 235, 235, 0.38)' : 'rgba(135, 135, 135, 0.34)';
+      cCtx.lineWidth = bCtx.lineWidth = rCtx.lineWidth = 2.4;
 
       cCtx.beginPath();
       bCtx.beginPath();
       rCtx.beginPath();
-      for (let x = 0; x <= 256; x += 12) {
-        const wy = ly + Math.sin((x / 256) * Math.PI * 2 + phase) * waveAmp;
+      for (let x = 0; x <= S; x += 32) {
+        const wy = ly + Math.sin((x / S) * Math.PI * 2 + phase) * waveAmp;
         if (x === 0) {
           cCtx.moveTo(x, wy);
           bCtx.moveTo(x, wy);
@@ -136,174 +183,195 @@ function createWeatheredWoodMaps() {
       rCtx.stroke();
     }
 
-    // Kvister og dype tørrsprekker
-    if (rng() > 0.3) {
-      const kx = 34 + rng() * 188;
+    if (rng() > 0.28) {
+      const kx = (34 + rng() * 188) * K;
       const ky = y0 + plankH * (0.32 + rng() * 0.36);
+      cCtx.lineWidth = bCtx.lineWidth = 2.6;
       for (let ring = 4; ring >= 1; ring--) {
         cCtx.beginPath();
-        cCtx.ellipse(kx, ky, ring * 4.0, ring * 2.0, 0, 0, Math.PI * 2);
+        cCtx.ellipse(kx, ky, ring * 4.0 * K, ring * 1.9 * K, 0, 0, Math.PI * 2);
         cCtx.strokeStyle = 'rgba(48, 23, 8, 0.36)';
         cCtx.stroke();
 
         bCtx.beginPath();
-        bCtx.ellipse(kx, ky, ring * 4.0, ring * 2.0, 0, 0, Math.PI * 2);
-        bCtx.strokeStyle = ring === 1 ? 'rgba(40,40,40,0.85)' : 'rgba(95,95,95,0.6)';
+        bCtx.ellipse(kx, ky, ring * 4.0 * K, ring * 1.9 * K, 0, 0, Math.PI * 2);
+        bCtx.strokeStyle = ring === 1 ? 'rgba(40,40,40,0.85)' : 'rgba(95,95,95,0.58)';
         bCtx.stroke();
       }
     }
-    for (let cr = 0; cr < 2; cr++) {
-      if (rng() > 0.35) {
-        const cx = 14 + rng() * 180;
-        const cy = y0 + 5 + rng() * (plankH - 10);
-        const len = 24 + rng() * 38;
-        const dy = (rng() - 0.5) * 3.2;
+    for (let cr = 0; cr < 3; cr++) {
+      if (rng() > 0.32) {
+        const cx = (14 + rng() * 180) * K;
+        const cy = y0 + 16 + rng() * (plankH - 32);
+        const len = (24 + rng() * 44) * K;
+        const dy = (rng() - 0.5) * 10;
         cCtx.strokeStyle = 'rgba(30, 14, 5, 0.55)';
         bCtx.strokeStyle = 'rgba(18, 18, 18, 0.9)';
         rCtx.strokeStyle = 'rgba(248, 248, 248, 0.8)';
-        cCtx.lineWidth = bCtx.lineWidth = 1.3;
+        cCtx.lineWidth = bCtx.lineWidth = 3.0;
         cCtx.beginPath(); cCtx.moveTo(cx, cy); cCtx.lineTo(cx + len, cy + dy); cCtx.stroke();
         bCtx.beginPath(); bCtx.moveTo(cx, cy); bCtx.lineTo(cx + len, cy + dy); bCtx.stroke();
         rCtx.beginPath(); rCtx.moveTo(cx, cy); rCtx.lineTo(cx + len, cy + dy); rCtx.stroke();
       }
     }
 
-    // Dyp plankeskjøt og smidde spikerhoder
     cCtx.fillStyle = 'rgba(26, 12, 4, 0.78)';
-    cCtx.fillRect(0, y0, 256, 2.5);
+    cCtx.fillRect(0, y0, S, 7);
     bCtx.fillStyle = 'rgb(14, 14, 14)';
-    bCtx.fillRect(0, y0, 256, 3);
+    bCtx.fillRect(0, y0, S, 9);
     rCtx.fillStyle = 'rgb(250, 250, 250)';
-    rCtx.fillRect(0, y0, 256, 3);
+    rCtx.fillRect(0, y0, S, 9);
 
-    [10, 246].forEach((nx) => {
+    [38, 512, 986].forEach((nx) => {
       [0.27, 0.73].forEach((nyFrac) => {
         const ny = y0 + plankH * nyFrac;
-        cCtx.fillStyle = 'rgba(32, 20, 12, 0.82)';
-        cCtx.beginPath(); cCtx.arc(nx, ny, 2.0, 0, Math.PI * 2); cCtx.fill();
+        cCtx.fillStyle = 'rgba(32, 20, 12, 0.84)';
+        cCtx.beginPath(); cCtx.arc(nx, ny, 5.5, 0, Math.PI * 2); cCtx.fill();
         bCtx.fillStyle = 'rgb(235, 235, 235)';
-        bCtx.beginPath(); bCtx.arc(nx, ny, 1.9, 0, Math.PI * 2); bCtx.fill();
+        bCtx.beginPath(); bCtx.arc(nx, ny, 5.2, 0, Math.PI * 2); bCtx.fill();
         rCtx.fillStyle = 'rgb(95, 95, 95)';
-        rCtx.beginPath(); rCtx.arc(nx, ny, 2.0, 0, Math.PI * 2); rCtx.fill();
+        rCtx.beginPath(); rCtx.arc(nx, ny, 5.5, 0, Math.PI * 2); rCtx.fill();
       });
     });
   }
 
+  applyPixelMicroDetail(cCtx, bCtx, rCtx, S, S, 188501, 14, 18, 12, 4);
   const normalCanvas = createNormalCanvasFromHeight(bumpCanvas, 2.2);
   return { colorCanvas, bumpCanvas, roughCanvas, normalCanvas };
 }
 
-// 3b. Takshingel (farge + bump/normal + roughness)
+// 3b. Takshingel (1024x1024: farge + bump/normal + roughness)
 function createShingleRoofMaps() {
+  const S = 1024;
   const rng = createSeededRng(2911);
   const colorCanvas = document.createElement('canvas');
   const bumpCanvas = document.createElement('canvas');
   const roughCanvas = document.createElement('canvas');
-  colorCanvas.width = bumpCanvas.width = roughCanvas.width = 256;
-  colorCanvas.height = bumpCanvas.height = roughCanvas.height = 256;
+  colorCanvas.width = bumpCanvas.width = roughCanvas.width = S;
+  colorCanvas.height = bumpCanvas.height = roughCanvas.height = S;
   const cCtx = colorCanvas.getContext('2d');
   const bCtx = bumpCanvas.getContext('2d');
   const rCtx = roughCanvas.getContext('2d');
 
   cCtx.fillStyle = '#3e2311';
-  cCtx.fillRect(0, 0, 256, 256);
+  cCtx.fillRect(0, 0, S, S);
   bCtx.fillStyle = 'rgb(30,30,30)';
-  bCtx.fillRect(0, 0, 256, 256);
+  bCtx.fillRect(0, 0, S, S);
   rCtx.fillStyle = 'rgb(246,246,246)';
-  rCtx.fillRect(0, 0, 256, 256);
+  rCtx.fillRect(0, 0, S, S);
 
-  const rows = 8;
-  const cols = 8;
-  const rh = 256 / rows;
-  const cw = 256 / cols;
+  const rows = 10;
+  const cols = 10;
+  const rh = S / rows;
+  const cw = S / cols;
   for (let r = 0; r < rows; r++) {
     const offset = (r % 2) * (cw * 0.5);
     for (let c = -1; c <= cols; c++) {
       const x = c * cw + offset;
       const y = r * rh;
-      const v = 88 + Math.floor((rng() - 0.5) * 30);
+      const v = 86 + Math.floor((rng() - 0.5) * 34);
       cCtx.fillStyle = `rgb(${v + 26},${Math.floor(v * 0.70)},${Math.floor(v * 0.44)})`;
-      cCtx.fillRect(x + 1, y + 1, cw - 2, rh - 3);
-      cCtx.fillStyle = 'rgba(18, 8, 3, 0.65)';
-      cCtx.fillRect(x, y + rh - 3, cw, 3);
+      cCtx.fillRect(x + 3, y + 3, cw - 6, rh - 9);
+      cCtx.fillStyle = 'rgba(18, 8, 3, 0.68)';
+      cCtx.fillRect(x, y + rh - 9, cw, 9);
 
-      const grad = bCtx.createLinearGradient(0, y, 0, y + rh - 2);
-      grad.addColorStop(0, 'rgb(105,105,105)');
+      const grad = bCtx.createLinearGradient(0, y, 0, y + rh - 6);
+      grad.addColorStop(0, 'rgb(102,102,102)');
       grad.addColorStop(0.85, 'rgb(218,218,218)');
-      grad.addColorStop(1, 'rgb(25,25,25)');
+      grad.addColorStop(1, 'rgb(24,24,24)');
       bCtx.fillStyle = grad;
-      bCtx.fillRect(x + 1, y + 1, cw - 2, rh - 2);
+      bCtx.fillRect(x + 3, y + 3, cw - 6, rh - 6);
 
-      const rVal = 178 + Math.floor((rng() - 0.5) * 34);
+      const rVal = 176 + Math.floor((rng() - 0.5) * 34);
       rCtx.fillStyle = `rgb(${rVal},${rVal},${rVal})`;
-      rCtx.fillRect(x + 1, y + 1, cw - 2, rh - 3);
+      rCtx.fillRect(x + 3, y + 3, cw - 6, rh - 9);
       rCtx.fillStyle = 'rgb(248,248,248)';
-      rCtx.fillRect(x, y + rh - 3, cw, 3);
+      rCtx.fillRect(x, y + rh - 9, cw, 9);
     }
   }
 
-  const normalCanvas = createNormalCanvasFromHeight(bumpCanvas, 2.4);
+  applyPixelMicroDetail(cCtx, bCtx, rCtx, S, S, 291101, 14, 16, 12, 2);
+  const normalCanvas = createNormalCanvasFromHeight(bumpCanvas, 2.35);
   return { colorCanvas, bumpCanvas, roughCanvas, normalCanvas };
 }
 
-// 3c. Ørkensand med vindbølger, mineralglitter og småstein (farge + bump/normal + roughness)
+// 3c. Ørkensand (1024x1024) med skarpe vindribber, glimmerkorn og småstein
 function createDesertSandMaps() {
+  const S = 1024;
   const rng = createSeededRng(4407);
   const colorCanvas = document.createElement('canvas');
   const bumpCanvas = document.createElement('canvas');
   const roughCanvas = document.createElement('canvas');
-  colorCanvas.width = bumpCanvas.width = roughCanvas.width = 256;
-  colorCanvas.height = bumpCanvas.height = roughCanvas.height = 256;
+  colorCanvas.width = bumpCanvas.width = roughCanvas.width = S;
+  colorCanvas.height = bumpCanvas.height = roughCanvas.height = S;
 
   const cCtx = colorCanvas.getContext('2d');
   const bCtx = bumpCanvas.getContext('2d');
   const rCtx = roughCanvas.getContext('2d');
 
-  cCtx.fillStyle = '#dba96d';
-  cCtx.fillRect(0, 0, 256, 256);
-  bCtx.fillStyle = 'rgb(128,128,128)';
-  bCtx.fillRect(0, 0, 256, 256);
-  rCtx.fillStyle = 'rgb(216,216,216)';
-  rCtx.fillRect(0, 0, 256, 256);
+  const cImg = cCtx.createImageData(S, S);
+  const bImg = bCtx.createImageData(S, S);
+  const rImg = rCtx.createImageData(S, S);
+  const cd = cImg.data;
+  const bd = bImg.data;
+  const rd = rImg.data;
 
-  for (let y = 0; y < 256; y += 2) {
-    for (let x = 0; x < 256; x += 4) {
-      const wave =
-        Math.sin((y / 256) * Math.PI * 16 + Math.sin((x / 256) * Math.PI * 4) * 1.5) * 0.5 + 0.5;
-      cCtx.fillStyle = wave > 0.5
-        ? `rgba(248, 214, 164, ${(wave - 0.5) * 0.30})`
-        : `rgba(150, 98, 50, ${(0.5 - wave) * 0.28})`;
-      cCtx.fillRect(x, y, 4, 2);
+  const twoPiInvS = (Math.PI * 2) / S;
+  const rowShift = new Float32Array(S);
+  for (let x = 0; x < S; x++) {
+    rowShift[x] = Math.sin(x * twoPiInvS * 3.0) * 1.45 + Math.cos(x * twoPiInvS * 7.0) * 0.45;
+  }
 
-      const bVal = Math.floor(72 + wave * 124);
-      bCtx.fillStyle = `rgb(${bVal},${bVal},${bVal})`;
-      bCtx.fillRect(x, y, 4, 2);
+  let s = 440713 >>> 0;
+  for (let y = 0; y < S; y++) {
+    const yPhase = y * twoPiInvS * 14.0;
+    const ySub = y * twoPiInvS * 28.0;
+    const rowOff = y * S;
+    for (let x = 0; x < S; x++) {
+      s ^= s << 13;
+      s ^= s >>> 17;
+      s ^= s << 5;
+      const grain = ((s & 255) - 128) * 0.0078125;
+      const rawSin = Math.sin(yPhase + rowShift[x]);
+      const asymmetric = rawSin + 0.28 * Math.sin(2.0 * (yPhase + rowShift[x]) + 0.6);
+      const wave = 0.5 + 0.42 * asymmetric + 0.08 * Math.sin(ySub + x * twoPiInvS * 5.0);
 
-      const rVal = Math.floor(232 - wave * 34);
-      rCtx.fillStyle = `rgb(${rVal},${rVal},${rVal})`;
-      rCtx.fillRect(x, y, 4, 2);
+      let cr = 216 + (wave - 0.5) * 42 + grain * 15;
+      let cg = 165 + (wave - 0.5) * 34 + grain * 12;
+      let cb = 104 + (wave - 0.5) * 24 + grain * 10;
+
+      const isSparkle = (s & 1023) < 6;
+      if (isSparkle) {
+        cr += 28;
+        cg += 24;
+        cb += 16;
+      }
+
+      const idx = (rowOff + x) << 2;
+      cd[idx] = cr < 0 ? 0 : (cr > 255 ? 255 : cr | 0);
+      cd[idx + 1] = cg < 0 ? 0 : (cg > 255 ? 255 : cg | 0);
+      cd[idx + 2] = cb < 0 ? 0 : (cb > 255 ? 255 : cb | 0);
+      cd[idx + 3] = 255;
+
+      const bv = Math.max(0, Math.min(255, (64 + wave * 136 + grain * 24) | 0));
+      bd[idx] = bd[idx + 1] = bd[idx + 2] = bv;
+      bd[idx + 3] = 255;
+
+      const rv = isSparkle ? 105 : Math.max(135, Math.min(248, (234 - wave * 36 + grain * 18) | 0));
+      rd[idx] = rd[idx + 1] = rd[idx + 2] = rv;
+      rd[idx + 3] = 255;
     }
   }
 
-  for (let i = 0; i < 650; i++) {
-    const px = rng() * 256;
-    const py = rng() * 256;
-    const bright = rng() > 0.48;
-    cCtx.fillStyle = bright ? 'rgba(255, 236, 198, 0.25)' : 'rgba(122, 80, 38, 0.24)';
-    cCtx.fillRect(px, py, 1.6, 1.6);
-    bCtx.fillStyle = bright ? 'rgba(215,215,215,0.45)' : 'rgba(65,65,65,0.45)';
-    bCtx.fillRect(px, py, 1.6, 1.6);
-    if (bright && rng() > 0.65) {
-      // Små kvarts-/glimmerkorn som glitrer svakt i sollyset
-      rCtx.fillStyle = 'rgb(110,110,110)';
-      rCtx.fillRect(px, py, 1.8, 1.8);
-    }
-  }
-  for (let p = 0; p < 46; p++) {
-    const px = 5 + rng() * 246;
-    const py = 5 + rng() * 246;
-    const rx = 1.6 + rng() * 3.0;
-    const ry = 1.2 + rng() * 2.1;
+  cCtx.putImageData(cImg, 0, 0);
+  bCtx.putImageData(bImg, 0, 0);
+  rCtx.putImageData(rImg, 0, 0);
+
+  for (let p = 0; p < 180; p++) {
+    const px = 12 + rng() * (S - 24);
+    const py = 12 + rng() * (S - 24);
+    const rx = 3.2 + rng() * 7.5;
+    const ry = 2.4 + rng() * 5.2;
     const rot = rng() * Math.PI;
     cCtx.fillStyle = rng() > 0.45 ? 'rgba(122, 88, 56, 0.62)' : 'rgba(166, 126, 86, 0.56)';
     cCtx.beginPath(); cCtx.ellipse(px, py, rx, ry, rot, 0, Math.PI * 2); cCtx.fill();
@@ -311,75 +379,65 @@ function createDesertSandMaps() {
     bCtx.fillStyle = 'rgb(236,236,236)';
     bCtx.beginPath(); bCtx.ellipse(px, py, rx, ry, rot, 0, Math.PI * 2); bCtx.fill();
 
-    rCtx.fillStyle = 'rgb(155,155,155)';
+    rCtx.fillStyle = 'rgb(152,152,152)';
     rCtx.beginPath(); rCtx.ellipse(px, py, rx, ry, rot, 0, Math.PI * 2); rCtx.fill();
   }
 
-  const normalCanvas = createNormalCanvasFromHeight(bumpCanvas, 1.85);
+  const normalCanvas = createNormalCanvasFromHeight(bumpCanvas, 2.0);
   return { colorCanvas, bumpCanvas, roughCanvas, normalCanvas };
 }
 
-// 3d. Ru lagdelt sandstein til klipper, Monument Valley-mesas og steiner
+// 3d. Ru lagdelt sandstein (1024x1024) til klipper, Monument Valley-mesas og steiner
 function createSandstoneMaps() {
+  const S = 1024;
   const rng = createSeededRng(7719);
   const colorCanvas = document.createElement('canvas');
   const bumpCanvas = document.createElement('canvas');
   const roughCanvas = document.createElement('canvas');
-  colorCanvas.width = bumpCanvas.width = roughCanvas.width = 256;
-  colorCanvas.height = bumpCanvas.height = roughCanvas.height = 256;
+  colorCanvas.width = bumpCanvas.width = roughCanvas.width = S;
+  colorCanvas.height = bumpCanvas.height = roughCanvas.height = S;
 
   const cCtx = colorCanvas.getContext('2d');
   const bCtx = bumpCanvas.getContext('2d');
   const rCtx = roughCanvas.getContext('2d');
 
   cCtx.fillStyle = '#c2784e';
-  cCtx.fillRect(0, 0, 256, 256);
+  cCtx.fillRect(0, 0, S, S);
   bCtx.fillStyle = 'rgb(138,138,138)';
-  bCtx.fillRect(0, 0, 256, 256);
+  bCtx.fillRect(0, 0, S, S);
   rCtx.fillStyle = 'rgb(212,212,212)';
-  rCtx.fillRect(0, 0, 256, 256);
+  rCtx.fillRect(0, 0, S, S);
 
-  // Sedimentære horisontale klippelag
-  for (let y = 0; y < 256; y += 4) {
-    const strata = Math.sin((y / 256) * Math.PI * 12) * 22 + Math.cos((y / 256) * Math.PI * 28) * 10 + (rng() - 0.5) * 14;
+  for (let y = 0; y < S; y += 8) {
+    const strata = Math.sin((y / S) * Math.PI * 14) * 22 + Math.cos((y / S) * Math.PI * 32) * 10 + (rng() - 0.5) * 14;
     const r = Math.min(255, Math.max(82, 196 + strata));
     const g = Math.min(255, Math.max(54, 122 + strata * 0.68));
     const b = Math.min(255, Math.max(38, 84 + strata * 0.46));
     cCtx.fillStyle = `rgba(${r | 0},${g | 0},${b | 0},0.65)`;
-    cCtx.fillRect(0, y, 256, 4);
+    cCtx.fillRect(0, y, S, 8);
 
     const ledge = Math.min(245, Math.max(35, 138 + strata * 2.1));
     bCtx.fillStyle = `rgb(${ledge | 0},${ledge | 0},${ledge | 0})`;
-    bCtx.fillRect(0, y, 256, 4);
+    bCtx.fillRect(0, y, S, 8);
 
     const rBand = Math.min(245, Math.max(150, 206 - strata * 0.9));
     rCtx.fillStyle = `rgb(${rBand | 0},${rBand | 0},${rBand | 0})`;
-    rCtx.fillRect(0, y, 256, 4);
+    rCtx.fillRect(0, y, S, 8);
   }
 
-  for (let i = 0; i < 650; i++) {
-    const rx = rng() * 256;
-    const ry = rng() * 256;
-    const dark = rng() > 0.5;
-    cCtx.fillStyle = dark ? 'rgba(62, 36, 22, 0.28)' : 'rgba(244, 202, 162, 0.20)';
-    cCtx.fillRect(rx, ry, 2.3, 2.3);
-    bCtx.fillStyle = dark ? 'rgba(42,42,42,0.5)' : 'rgba(222,222,222,0.4)';
-    bCtx.fillRect(rx, ry, 2.3, 2.3);
-  }
-
-  for (let c = 0; c < 20; c++) {
-    let cx = rng() * 256;
-    let cy = rng() * 256;
+  for (let c = 0; c < 48; c++) {
+    let cx = rng() * S;
+    let cy = rng() * S;
     cCtx.strokeStyle = 'rgba(48, 26, 15, 0.52)';
     bCtx.strokeStyle = 'rgba(15, 15, 15, 0.92)';
     rCtx.strokeStyle = 'rgba(250, 250, 250, 0.8)';
-    cCtx.lineWidth = bCtx.lineWidth = 1.5;
+    cCtx.lineWidth = bCtx.lineWidth = 3.2;
     cCtx.beginPath(); cCtx.moveTo(cx, cy);
     bCtx.beginPath(); bCtx.moveTo(cx, cy);
     rCtx.beginPath(); rCtx.moveTo(cx, cy);
-    for (let seg = 0; seg < 5; seg++) {
-      cx += (rng() - 0.35) * 20;
-      cy += (rng() - 0.45) * 18;
+    for (let seg = 0; seg < 6; seg++) {
+      cx += (rng() - 0.35) * 65;
+      cy += (rng() - 0.45) * 58;
       cCtx.lineTo(cx, cy);
       bCtx.lineTo(cx, cy);
       rCtx.lineTo(cx, cy);
@@ -389,82 +447,86 @@ function createSandstoneMaps() {
     rCtx.stroke();
   }
 
-  const normalCanvas = createNormalCanvasFromHeight(bumpCanvas, 2.6);
+  applyPixelMicroDetail(cCtx, bCtx, rCtx, S, S, 771901, 20, 26, 16, 1);
+  const normalCanvas = createNormalCanvasFromHeight(bumpCanvas, 2.5);
   return { colorCanvas, bumpCanvas, roughCanvas, normalCanvas };
 }
 
-// 3e. Trebark og løvverk (farge + bump/normal + roughness)
+// 3e. Trebark og løvverk (1024x1024: farge + bump/normal + roughness)
 function createTreeBarkMaps() {
+  const S = 1024;
   const rng = createSeededRng(9013);
   const colorCanvas = document.createElement('canvas');
   const bumpCanvas = document.createElement('canvas');
   const roughCanvas = document.createElement('canvas');
-  colorCanvas.width = bumpCanvas.width = roughCanvas.width = 128;
-  colorCanvas.height = bumpCanvas.height = roughCanvas.height = 256;
+  colorCanvas.width = bumpCanvas.width = roughCanvas.width = S;
+  colorCanvas.height = bumpCanvas.height = roughCanvas.height = S;
 
   const cCtx = colorCanvas.getContext('2d');
   const bCtx = bumpCanvas.getContext('2d');
   const rCtx = roughCanvas.getContext('2d');
 
   cCtx.fillStyle = '#6b4323';
-  cCtx.fillRect(0, 0, 128, 256);
+  cCtx.fillRect(0, 0, S, S);
   bCtx.fillStyle = 'rgb(148,148,148)';
-  bCtx.fillRect(0, 0, 128, 256);
+  bCtx.fillRect(0, 0, S, S);
   rCtx.fillStyle = 'rgb(224,224,224)';
-  rCtx.fillRect(0, 0, 128, 256);
+  rCtx.fillRect(0, 0, S, S);
 
-  for (let x = 0; x < 128; x += 3) {
-    const ridge = Math.sin((x / 128) * Math.PI * 16) * 0.5 + 0.5;
+  for (let x = 0; x < S; x += 8) {
+    const ridge = Math.sin((x / S) * Math.PI * 24) * 0.5 + 0.5;
     const dark = rng() > 0.48;
     cCtx.fillStyle = dark ? 'rgba(38, 20, 8, 0.44)' : 'rgba(154, 106, 62, 0.30)';
-    cCtx.fillRect(x, 0, 3, 256);
+    cCtx.fillRect(x, 0, 8, S);
     const bv = Math.floor(65 + ridge * 145 + (dark ? -25 : 20));
     bCtx.fillStyle = `rgb(${bv},${bv},${bv})`;
-    bCtx.fillRect(x, 0, 3, 256);
+    bCtx.fillRect(x, 0, 8, S);
     const rv = Math.max(150, Math.min(250, Math.floor(236 - ridge * 48)));
     rCtx.fillStyle = `rgb(${rv},${rv},${rv})`;
-    rCtx.fillRect(x, 0, 3, 256);
+    rCtx.fillRect(x, 0, 8, S);
   }
-  for (let f = 0; f < 75; f++) {
-    const fx = rng() * 128;
-    const fy = rng() * 256;
-    const len = 18 + rng() * 30;
-    const dx = (rng() - 0.5) * 5;
+  for (let f = 0; f < 220; f++) {
+    const fx = rng() * S;
+    const fy = rng() * S;
+    const len = 48 + rng() * 96;
+    const dx = (rng() - 0.5) * 14;
     cCtx.strokeStyle = 'rgba(24, 12, 4, 0.65)';
     bCtx.strokeStyle = 'rgba(12, 12, 12, 0.92)';
     rCtx.strokeStyle = 'rgba(250, 250, 250, 0.85)';
-    cCtx.lineWidth = bCtx.lineWidth = 1.8;
+    cCtx.lineWidth = bCtx.lineWidth = 3.5;
     cCtx.beginPath(); cCtx.moveTo(fx, fy); cCtx.lineTo(fx + dx, fy + len); cCtx.stroke();
     bCtx.beginPath(); bCtx.moveTo(fx, fy); bCtx.lineTo(fx + dx, fy + len); bCtx.stroke();
     rCtx.beginPath(); rCtx.moveTo(fx, fy); rCtx.lineTo(fx + dx, fy + len); rCtx.stroke();
   }
 
+  applyPixelMicroDetail(cCtx, bCtx, rCtx, S, S, 901301, 16, 22, 14, 1);
   const normalCanvas = createNormalCanvasFromHeight(bumpCanvas, 2.5);
   return { colorCanvas, bumpCanvas, roughCanvas, normalCanvas };
 }
 
 function createFoliageMaps() {
+  const S = 1024;
   const rng = createSeededRng(6151);
   const colorCanvas = document.createElement('canvas');
   const bumpCanvas = document.createElement('canvas');
   const roughCanvas = document.createElement('canvas');
-  colorCanvas.width = bumpCanvas.width = roughCanvas.width = 256;
-  colorCanvas.height = bumpCanvas.height = roughCanvas.height = 256;
+  colorCanvas.width = bumpCanvas.width = roughCanvas.width = S;
+  colorCanvas.height = bumpCanvas.height = roughCanvas.height = S;
   const cCtx = colorCanvas.getContext('2d');
   const bCtx = bumpCanvas.getContext('2d');
   const rCtx = roughCanvas.getContext('2d');
 
   cCtx.fillStyle = '#346d33';
-  cCtx.fillRect(0, 0, 256, 256);
+  cCtx.fillRect(0, 0, S, S);
   bCtx.fillStyle = 'rgb(110,110,110)';
-  bCtx.fillRect(0, 0, 256, 256);
+  bCtx.fillRect(0, 0, S, S);
   rCtx.fillStyle = 'rgb(214,214,214)';
-  rCtx.fillRect(0, 0, 256, 256);
+  rCtx.fillRect(0, 0, S, S);
 
-  for (let i = 0; i < 420; i++) {
-    const x = rng() * 256;
-    const y = rng() * 256;
-    const rad = 3.5 + rng() * 9.5;
+  for (let i = 0; i < 1100; i++) {
+    const x = rng() * S;
+    const y = rng() * S;
+    const rad = 10 + rng() * 28;
     const pick = rng();
     if (pick < 0.34) {
       cCtx.fillStyle = 'rgba(22, 56, 24, 0.48)';
@@ -480,10 +542,11 @@ function createFoliageMaps() {
       rCtx.fillStyle = 'rgba(168, 168, 168, 0.45)';
     }
     cCtx.beginPath(); cCtx.arc(x, y, rad, 0, Math.PI * 2); cCtx.fill();
-    bCtx.beginPath(); bCtx.arc(x, y, rad, 0, Math.PI * 2); cCtx.fill();
+    bCtx.beginPath(); bCtx.arc(x, y, rad, 0, Math.PI * 2); bCtx.fill();
     rCtx.beginPath(); rCtx.arc(x, y, rad, 0, Math.PI * 2); rCtx.fill();
   }
 
+  applyPixelMicroDetail(cCtx, bCtx, rCtx, S, S, 615101, 14, 18, 12, 1);
   const normalCanvas = createNormalCanvasFromHeight(bumpCanvas, 1.85);
   return { colorCanvas, bumpCanvas, roughCanvas, normalCanvas };
 }
@@ -535,10 +598,10 @@ export function initTexturesAndMaterials(maxAnisotropy) {
   const sharedShingleNormalTex = makeRepeatingTexture(shingleMaps.normalCanvas, 3, 2, false);
   const sharedShingleRoughTex = makeRepeatingTexture(shingleMaps.roughCanvas, 3, 2, false);
 
-  const sharedDesertSandTex = makeRepeatingTexture(sandMaps.colorCanvas, 42, 42, true);
-  const sharedDesertSandBumpTex = makeRepeatingTexture(sandMaps.bumpCanvas, 42, 42, false);
-  const sharedDesertSandNormalTex = makeRepeatingTexture(sandMaps.normalCanvas, 42, 42, false);
-  const sharedDesertSandRoughTex = makeRepeatingTexture(sandMaps.roughCanvas, 42, 42, false);
+  const sharedDesertSandTex = makeRepeatingTexture(sandMaps.colorCanvas, 62, 62, true);
+  const sharedDesertSandBumpTex = makeRepeatingTexture(sandMaps.bumpCanvas, 62, 62, false);
+  const sharedDesertSandNormalTex = makeRepeatingTexture(sandMaps.normalCanvas, 62, 62, false);
+  const sharedDesertSandRoughTex = makeRepeatingTexture(sandMaps.roughCanvas, 62, 62, false);
 
   const sharedRoadSandTex = makeRepeatingTexture(sandMaps.colorCanvas, 3, 15, true);
   const sharedRoadBumpTex = makeRepeatingTexture(sandMaps.bumpCanvas, 3, 15, false);
@@ -736,6 +799,31 @@ export function initTexturesAndMaterials(maxAnisotropy) {
   const sharedSmokePuffTex = new THREE.CanvasTexture(smokeCanvas);
   sharedSmokePuffTex.colorSpace = THREE.SRGBColorSpace;
 
+  // Volumetrisk lysstråle-tekstur (God Rays) med myk vertikal og horisontal avtoning
+  const rayCanvas = document.createElement('canvas');
+  rayCanvas.width = 64;
+  rayCanvas.height = 128;
+  {
+    const rCtx = rayCanvas.getContext('2d');
+    const vGrad = rCtx.createLinearGradient(0, 0, 0, 128);
+    vGrad.addColorStop(0.0, 'rgba(255, 240, 200, 0.0)');
+    vGrad.addColorStop(0.18, 'rgba(255, 240, 200, 0.85)');
+    vGrad.addColorStop(0.65, 'rgba(255, 228, 175, 0.36)');
+    vGrad.addColorStop(1.0, 'rgba(255, 220, 160, 0.0)');
+    rCtx.fillStyle = vGrad;
+    rCtx.fillRect(0, 0, 64, 128);
+    rCtx.globalCompositeOperation = 'destination-in';
+    const hGrad = rCtx.createLinearGradient(0, 0, 64, 0);
+    hGrad.addColorStop(0.0, 'rgba(0,0,0,0)');
+    hGrad.addColorStop(0.5, 'rgba(0,0,0,1)');
+    hGrad.addColorStop(1.0, 'rgba(0,0,0,0)');
+    rCtx.fillStyle = hGrad;
+    rCtx.fillRect(0, 0, 64, 128);
+    rCtx.globalCompositeOperation = 'source-over';
+  }
+  const sharedGodRayTex = new THREE.CanvasTexture(rayCanvas);
+  sharedGodRayTex.colorSpace = THREE.SRGBColorSpace;
+
   // Delte region-materialer for Crimson Canyon (rød sandstein) og Boot Hill Kapell (mørk forvitret granitt)
   const crimsonRockMat = new THREE.MeshStandardMaterial({
     color: 0xb8462c,
@@ -774,6 +862,6 @@ export function initTexturesAndMaterials(maxAnisotropy) {
     stonePlinthMat, crimsonRockMat, darkGraveStoneMat, windowMat, darkInteriorMat,
     sharedParticleGlowTex, sharedRedEyeGlowTex, sharedSparkGlowTex,
     sharedContactShadowTex, sharedContactShadowMat, createContactShadow,
-    sharedSmokePuffTex
+    sharedSmokePuffTex, sharedGodRayTex
   };
 }
