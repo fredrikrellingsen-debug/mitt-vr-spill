@@ -45,17 +45,22 @@ export function initWorldEntities(ctx) {
     damagePlayer,
     tailorNPCGroup,
     gunsmithNPCGroup,
-    sheriffVanceGroup
+    sheriffVanceGroup,
+    mineBarricades = []
   } = ctx;
 
   const {
     createDeerModel,
     createWolfModel,
     createBearModel,
+    createHorseModel,
     createBanditModel,
     createBanditCaptainModel,
+    createForemanSladeModel,
     createNightEnemyModel,
+    createCatacombGuardianModel,
     createBossVampireModel,
+    createSilverRelicMesh,
     animateQuadrupedLegs
   } = C;
 
@@ -65,7 +70,11 @@ export function initWorldEntities(ctx) {
     playGoldPickupSound,
     playBearRoarSound,
     playBossVictoryFanfare,
-    playBanditShotSound
+    playBanditShotSound,
+    playHorseWhistleSound,
+    playHoofbeatSound,
+    playBarricadeBlastSound,
+    playRelicPickupSound
   } = audio;
 
   const combatCenter = new THREE.Vector3();
@@ -454,7 +463,7 @@ export function initWorldEntities(ctx) {
       bearList.push(bear);
     }
 
-    // --- Banditter ved bygrensen + Crimson Canyon bandittleir & Bandittkaptein ved Gullgruven ---
+    // --- Banditter i byen, Crimson Canyon, Formann Slade (Gruven) og 4 Tog-skarpskyttere ---
     const banditDefs = [
       { pos: new THREE.Vector3(-28, 0, 4), isCaptain: false, faceX: 0, faceZ: 8 },
       { pos: new THREE.Vector3(32, 0, -16), isCaptain: false, faceX: 0, faceZ: 0 },
@@ -462,21 +471,40 @@ export function initWorldEntities(ctx) {
       { pos: new THREE.Vector3(80, 0, 6.2), isCaptain: false, faceX: 60, faceZ: -1.5 },
       { pos: new THREE.Vector3(88, 0, -7.2), isCaptain: false, faceX: 70, faceZ: -1.5 },
       { pos: new THREE.Vector3(96, 0, 5.0), isCaptain: false, faceX: 78, faceZ: -1.5 },
-      { pos: new THREE.Vector3(107, 0, -1.5), isCaptain: true, faceX: 75, faceZ: -1.5 }
+      { pos: new THREE.Vector3(107, 0, -1.5), isCaptain: true, faceX: 75, faceZ: -1.5 },
+      // Level 4 Boss: Formann Slade innerst i Den forlatte Gullgruven (x = 158, z = -1.5)
+      { pos: new THREE.Vector3(158, 0, -1.5), isCaptain: false, isForemanSlade: true, faceX: 124, faceZ: -1.5 },
+      // Level 5: 4 Tog-skarpskyttere ved Det Pansrede Damptoget (z = +75)
+      { pos: new THREE.Vector3(-15.5, 0, 72.0), isCaptain: false, isTrainSniper: true, faceX: 0, faceZ: 45 },
+      { pos: new THREE.Vector3(-3.0, 0, 78.2), isCaptain: false, isTrainSniper: true, faceX: 0, faceZ: 55 },
+      { pos: new THREE.Vector3(7.5, 0, 71.8), isCaptain: false, isTrainSniper: true, faceX: 4, faceZ: 45 },
+      { pos: new THREE.Vector3(17.4, 0, 74.8), isCaptain: false, isTrainSniper: true, customGroundY: 1.46, faceX: 12, faceZ: 60 }
     ];
 
     function createBanditFromDef(def, index) {
-      const group = def.isCaptain ? createBanditCaptainModel() : createBanditModel();
+      let group;
+      if (def.isForemanSlade && createForemanSladeModel) {
+        group = createForemanSladeModel();
+      } else if (def.isCaptain) {
+        group = createBanditCaptainModel();
+      } else {
+        group = createBanditModel();
+      }
       const spawnGrounded = def.pos.clone();
-      spawnGrounded.y = getTerrainHeight(spawnGrounded.x, spawnGrounded.z);
+      spawnGrounded.y = def.customGroundY !== undefined
+        ? def.customGroundY
+        : getTerrainHeight(spawnGrounded.x, spawnGrounded.z);
       group.position.copy(spawnGrounded);
       faceToward(group, def.faceX, def.faceZ);
       scene.add(group);
 
-      const maxHp = def.isCaptain ? 8 : 3;
+      const maxHp = def.isForemanSlade ? 12 : (def.isCaptain ? 8 : (def.isTrainSniper ? 4 : 3));
       const bandit = {
         kind: 'bandit',
-        isCaptain: def.isCaptain,
+        isCaptain: !!def.isCaptain,
+        isForemanSlade: !!def.isForemanSlade,
+        isTrainSniper: !!def.isTrainSniper,
+        customGroundY: def.customGroundY,
         group,
         muzzle: group.userData.muzzle,
         alive: true,
@@ -496,7 +524,7 @@ export function initWorldEntities(ctx) {
       banditList.push(bandit);
     }
 
-    // --- 8 Nattmonstre (4 rundt byen/skogen + 4 rundt Boot Hill Kirkegård i vest) ---
+    // --- 8 Nattmonstre + 3 Underjordiske Katakombe-voktere ---
     const nightSpawnPoints = [
       new THREE.Vector3(-30, 0, -8),
       new THREE.Vector3(30, 0, -4),
@@ -505,7 +533,10 @@ export function initWorldEntities(ctx) {
       new THREE.Vector3(-74, 0, -6),
       new THREE.Vector3(-86, 0, 6.5),
       new THREE.Vector3(-98, 0, -7),
-      new THREE.Vector3(-108, 0, 6)
+      new THREE.Vector3(-108, 0, 6),
+      new THREE.Vector3(-146, -6.5, -5.5),
+      new THREE.Vector3(-154, -6.5, 3.5),
+      new THREE.Vector3(-162, -6.5, -1.5)
     ];
 
     function chooseNightWanderAwayTarget(enemy) {
@@ -516,23 +547,30 @@ export function initWorldEntities(ctx) {
         : (Math.random() * Math.PI * 2);
       const spreadAngle = baseAngle + (Math.random() - 0.5) * 1.45;
       const dist = 34 + Math.random() * 26;
-      const tx = THREE.MathUtils.clamp(safeHouseCenterWorld.x + Math.cos(spreadAngle) * dist, -148, 148);
-      const tz = THREE.MathUtils.clamp(safeHouseCenterWorld.z + Math.sin(spreadAngle) * dist, -148, 148);
+      const tx = THREE.MathUtils.clamp(safeHouseCenterWorld.x + Math.cos(spreadAngle) * dist, -205, 205);
+      const tz = THREE.MathUtils.clamp(safeHouseCenterWorld.z + Math.sin(spreadAngle) * dist, -205, 205);
       enemy.wanderTarget.set(tx, 0, tz);
     }
 
     function createNightEnemyAt(index) {
-      const group = createNightEnemyModel();
+      const isCatacomb = index >= 8;
+      const group = (isCatacomb && createCatacombGuardianModel)
+        ? createCatacombGuardianModel()
+        : createNightEnemyModel();
       const sp = nightSpawnPoints[index];
-      group.position.set(sp.x, getTerrainHeight(sp.x, sp.z), sp.z);
-      group.visible = false;
+      const spawnY = isCatacomb ? -6.5 : getTerrainHeight(sp.x, sp.z);
+      group.position.set(sp.x, spawnY, sp.z);
+      group.visible = isCatacomb;
       scene.add(group);
 
+      const maxHp = isCatacomb ? 5 : 3;
       const enemy = {
         kind: 'night',
+        isCatacombGuardian: isCatacomb,
         group,
-        alive: false,
-        hp: 3,
+        alive: isCatacomb,
+        hp: maxHp,
+        maxHp,
         burning: false,
         burnTimer: 0,
         igniteTimer: 0,
@@ -540,13 +578,65 @@ export function initWorldEntities(ctx) {
         attackCooldown: 0,
         spawnIndex: index,
         deathTimer: 0,
+        respawnTimer: 0,
         hidingTimer: 0,
         lostTrail: false,
-        wanderTarget: new THREE.Vector3(sp.x, 0, sp.z)
+        wanderTarget: new THREE.Vector3(sp.x, spawnY, sp.z)
       };
 
       registerEntityAnimations(enemy, nightAnimationClips);
       nightEnemies.push(enemy);
+    }
+
+    // --- Level 6: 2 Glødende Sølvrelikvier på Boot Hill Kirkegård ---
+    const silverRelics = [];
+    const silverRelicHitMeshes = [];
+    if (createSilverRelicMesh) {
+      [
+        { x: -84.0, z: -8.5 },
+        { x: -106.0, z: 7.2 }
+      ].forEach((posSpec) => {
+        const { group, hitMesh } = createSilverRelicMesh();
+        const ry = getTerrainHeight(posSpec.x, posSpec.z);
+        group.position.set(posSpec.x, ry, posSpec.z);
+        scene.add(group);
+        const relicEntry = { group, hitMesh, collected: false };
+        hitMesh.userData.relicEntry = relicEntry;
+        silverRelics.push(relicEntry);
+        silverRelicHitMeshes.push(hitMesh);
+      });
+    }
+
+    // --- Ridbar Western Mustang (Hest) utenfor Saloonen ---
+    const horseHomePos = new THREE.Vector3(-3.6, getTerrainHeight(-3.6, 9.6), 9.6);
+    const horseGroup = createHorseModel ? createHorseModel() : new THREE.Group();
+    horseGroup.position.copy(horseHomePos);
+    horseGroup.rotation.y = Math.PI * 0.15;
+    scene.add(horseGroup);
+    const horseEntity = {
+      kind: 'horse',
+      group: horseGroup,
+      calling: false,
+      targetPos: horseHomePos.clone(),
+      stride: 0,
+      hoofTimer: 0
+    };
+    registerEntityAnimations(horseEntity, null);
+
+    function callHorseToPlayer() {
+      const yaw = playerRig.rotation.y;
+      const sideX = Math.cos(yaw) * 2.8 - Math.sin(yaw) * 1.8;
+      const sideZ = -Math.sin(yaw) * 2.8 - Math.cos(yaw) * 1.8;
+      const tx = THREE.MathUtils.clamp(playerRig.position.x + sideX, -210, 210);
+      const tz = THREE.MathUtils.clamp(playerRig.position.z + sideZ, -210, 210);
+      if (playerRig.position.y < -1.8) {
+        horseEntity.targetPos.set(-112.0, getTerrainHeight(-112.0, -1.5), -1.5);
+      } else {
+        horseEntity.targetPos.set(tx, getTerrainHeight(tx, tz), tz);
+      }
+      resolveWallCollisions(horseEntity.targetPos, 0.75, true);
+      horseEntity.calling = true;
+      if (playHorseWhistleSound) playHorseWhistleSound();
     }
 
     // --- Sluttboss: Lord Malakor ved Boot Hill Ruined Chapel (-113, z = -1.5) ---
@@ -628,7 +718,7 @@ export function initWorldEntities(ctx) {
 
     const onNightStateChangedBoss = (night) => {
       if (night) {
-        if (!storyState.bossDefeated && (storyState.currentAct >= 4 || playerRig.position.x < -60)) {
+        if (!storyState.bossDefeated && (storyState.currentLevel >= 8 || storyState.currentAct >= 4 || playerRig.position.x < -60)) {
           awakenBossMalakor(false);
         }
       } else if (bossEnemy.alive && !bossEnemy.summonedByAltar) {
@@ -730,16 +820,19 @@ export function initWorldEntities(ctx) {
         bandit.cooldown = 1.0 + (index % 4) * 0.38;
         bandit.group.position.copy(bandit.spawn);
         resolveCircleAgainstWalls(bandit.group.position, BANDIT_RADIUS);
-        bandit.group.position.y = getTerrainHeight(bandit.group.position.x, bandit.group.position.z);
+        bandit.group.position.y = bandit.customGroundY !== undefined
+          ? bandit.customGroundY
+          : getTerrainHeight(bandit.group.position.x, bandit.group.position.z);
         bandit.group.rotation.set(0, bandit.baseYaw, 0);
         bandit.group.scale.setScalar(1);
-        bandit.group.visible = !S.isNight;
+        bandit.group.visible = !S.isNight || bandit.isForemanSlade;
         setEntityAnimation(bandit, 'Idle');
       });
     }
 
     function spawnNightEnemies() {
       nightEnemies.forEach((enemy, index) => {
+        if (enemy.isCatacombGuardian) return;
         const point = nightSpawnPosition.copy(nightSpawnPoints[index]);
         point.x += (Math.random() - 0.5) * 4;
         point.z += (Math.random() - 0.5) * 4;
@@ -753,8 +846,8 @@ export function initWorldEntities(ctx) {
           point.z = playerRig.position.z + dz * scale;
         }
 
-        point.x = THREE.MathUtils.clamp(point.x, -148, 148);
-        point.z = THREE.MathUtils.clamp(point.z, -148, 148);
+        point.x = THREE.MathUtils.clamp(point.x, -205, 205);
+        point.z = THREE.MathUtils.clamp(point.z, -205, 205);
         point.y = getTerrainHeight(point.x, point.z);
 
         enemy.alive = true;
@@ -782,7 +875,7 @@ export function initWorldEntities(ctx) {
 
     function startNightEnemiesBurning() {
       nightEnemies.forEach((enemy) => {
-        if (!enemy.group.visible) return;
+        if (!enemy.group.visible || enemy.isCatacombGuardian) return;
         enemy.burning = true;
         enemy.burnTimer = 1.0;
         enemy.igniteTimer = 0;
@@ -851,6 +944,8 @@ export function initWorldEntities(ctx) {
 
       playerState.pelt += 1;
       playerState.gold += 6;
+      storyState.level2Wolves += 1;
+      checkStoryProgression();
       updateStatusUI();
       playCollectSound();
     }
@@ -881,6 +976,7 @@ export function initWorldEntities(ctx) {
       playerState.pelt += 3;
       playerState.gold += 15;
       storyState.act1Deer += 1;
+      storyState.grizzlyDefeated = true;
       playGoldPickupSound();
       recordQuestKill('deer');
       checkStoryProgression();
@@ -898,18 +994,26 @@ export function initWorldEntities(ctx) {
       bandit.alive = false;
       bandit.active = false;
       bandit.deathTimer = 1.2;
-      bandit.respawnTimer = bandit.isCaptain ? 60 : 24;
+      bandit.respawnTimer = (bandit.isCaptain || bandit.isForemanSlade) ? 65 : 24;
       bandit.group.rotation.z = 0;
       setEntityAnimation(bandit, 'Idle');
 
-      if (bandit.isCaptain) {
+      if (bandit.isForemanSlade) {
+        playerState.gold += 50;
+        storyState.sladeDefeated = true;
+        playGoldPickupSound();
+      } else if (bandit.isTrainSniper) {
+        playerState.gold += 15;
+        storyState.trainSnipersKilled += 1;
+      } else if (bandit.isCaptain) {
         playerState.gold += 35;
         storyState.captainDefeated = true;
+        storyState.act2Bandits += 1;
         playGoldPickupSound();
       } else {
         playerState.gold += 10;
+        storyState.act2Bandits += 1;
       }
-      storyState.act2Bandits += 1;
       recordQuestKill('bandit');
       checkStoryProgression();
       updateStatusUI();
@@ -920,18 +1024,26 @@ export function initWorldEntities(ctx) {
       enemy.igniteTimer = 0;
       enemy.group.visible = false;
       enemy.group.scale.setScalar(1);
-      enemy.respawnTimer = 15;
+      enemy.respawnTimer = enemy.isCatacombGuardian ? 42 : 15;
       setEntityAnimation(enemy, 'Idle');
 
       nightDeathImpactPosition.copy(enemy.group.position);
       nightDeathImpactPosition.y += 1.0;
-      spawnImpact(nightDeathImpactPosition, 0xff3a1f, 0.36);
+      spawnImpact(nightDeathImpactPosition, enemy.isCatacombGuardian ? 0x62ccff : 0xff3a1f, 0.36);
       spawnVampireAshDissolution(enemy.group.position, 1.0);
 
-      playerState.gold += 8;
-      storyState.act3NightKills += 1;
-      if (storyState.act3NightKills >= 3) {
-        storyState.act3NightSurvived = true;
+      if (enemy.isCatacombGuardian) {
+        playerState.gold += 18;
+        storyState.catacombGuardiansKilled += 1;
+      } else {
+        playerState.gold += 8;
+        storyState.act3NightKills += 1;
+        if (enemy.group.position.x < -45 || storyState.currentLevel >= 6) {
+          storyState.bootHillVampires += 1;
+        }
+        if (storyState.act3NightKills >= 3) {
+          storyState.act3NightSurvived = true;
+        }
       }
       recordQuestKill('night');
       checkStoryProgression();
@@ -1029,9 +1141,34 @@ export function initWorldEntities(ctx) {
       }
     }
 
-    // Dynamitt AoE-eksplosjonsskade på alle fiender, dyr og øvingsflasker innenfor radius
+    function damageBarricade(barEntry, rawDmg = 1) {
+      if (!barEntry || barEntry.destroyed) return;
+      barEntry.hp -= rawDmg;
+      spawnSparkBurst(barEntry.worldPos, 8, 0xff9a38, 1.0);
+      if (barEntry.hp <= 0) {
+        barEntry.destroyed = true;
+        barEntry.group.visible = false;
+        if (barEntry.colliderRef) barEntry.colliderRef.disabled = true;
+        spawnImpact(barEntry.worldPos, 0xff6622, 1.6);
+        spawnSparkBurst(barEntry.worldPos, 20, 0xffcc44, 1.5);
+        if (playBarricadeBlastSound) playBarricadeBlastSound();
+        storyState.barricadesCleared += 1;
+        playerState.gold += 15;
+        checkStoryProgression();
+        updateStatusUI();
+      }
+    }
+
+    // Dynamitt AoE-eksplosjonsskade på alle fiender, barrikader, dyr og øvingsflasker innenfor radius
     const dynamitePushDir = new THREE.Vector3();
     const applyDynamiteBlast = (blastPos, radius) => {
+      for (const bar of mineBarricades) {
+        if (bar.destroyed) continue;
+        const d = blastPos.distanceTo(bar.worldPos);
+        if (d < radius + 1.4) {
+          damageBarricade(bar, 10);
+        }
+      }
       for (const bottle of practiceBottles) {
         if (bottle.userData.knocked) continue;
         bottle.getWorldPosition(bottleWorldPos);
@@ -1457,21 +1594,21 @@ export function initWorldEntities(ctx) {
           continue;
         }
 
-        if (!bandit.active || S.isNight) continue;
+        if (!bandit.active || (S.isNight && !bandit.isForemanSlade)) continue;
 
         bandit.attackAnimTimer = Math.max(0, bandit.attackAnimTimer - dt);
 
         const dx = playerRig.position.x - bandit.group.position.x;
         const dz = playerRig.position.z - bandit.group.position.z;
         const distance = Math.hypot(dx, dz);
-        const aggroDist = bandit.isCaptain ? 28 : 24;
+        const aggroDist = (bandit.isCaptain || bandit.isForemanSlade) ? 28 : 24;
 
         if (!S.playerHiddenStatus && distance < aggroDist) {
           faceToward(bandit.group, playerRig.position.x, playerRig.position.z);
           bandit.cooldown -= dt;
 
           if (bandit.cooldown <= 0) {
-            bandit.cooldown = bandit.isCaptain ? 1.55 : 2.15;
+            bandit.cooldown = (bandit.isCaptain || bandit.isForemanSlade) ? 1.45 : 2.10;
             bandit.attackAnimTimer = 0.45;
             fireBanditBullet(bandit);
           }
@@ -1481,7 +1618,9 @@ export function initWorldEntities(ctx) {
         }
 
         resolveWallCollisions(bandit.group.position, BANDIT_RADIUS, true);
-        bandit.group.position.y = getTerrainHeight(bandit.group.position.x, bandit.group.position.z);
+        bandit.group.position.y = bandit.customGroundY !== undefined
+          ? bandit.customGroundY
+          : getTerrainHeight(bandit.group.position.x, bandit.group.position.z);
         setEntityAnimation(bandit, bandit.attackAnimTimer > 0 ? 'Attack' : 'Idle');
       }
     }
@@ -1489,27 +1628,34 @@ export function initWorldEntities(ctx) {
     function updateNightEnemies(dt) {
       for (let index = 0; index < nightEnemies.length; index++) {
         const enemy = nightEnemies[index];
+        const isCatacomb = !!enemy.isCatacombGuardian;
         if (!enemy.group.visible) {
-          if (S.isNight && !enemy.alive && !enemy.burning && enemy.respawnTimer > 0) {
+          if ((S.isNight || isCatacomb) && !enemy.alive && !enemy.burning && enemy.respawnTimer > 0) {
             enemy.respawnTimer -= dt;
             if (enemy.respawnTimer <= 0) {
               const point = nightRespawnPosition.copy(nightSpawnPoints[index]);
               point.x += (Math.random() - 0.5) * 4;
               point.z += (Math.random() - 0.5) * 4;
-              const dx = point.x - playerRig.position.x;
-              const dz = point.z - playerRig.position.z;
-              const dist = Math.hypot(dx, dz);
-              if (dist < 16) {
-                const sc = 16 / Math.max(dist, 0.1);
-                point.x = playerRig.position.x + dx * sc;
-                point.z = playerRig.position.z + dz * sc;
+              if (!isCatacomb) {
+                const dx = point.x - playerRig.position.x;
+                const dz = point.z - playerRig.position.z;
+                const dist = Math.hypot(dx, dz);
+                if (dist < 16) {
+                  const sc = 16 / Math.max(dist, 0.1);
+                  point.x = playerRig.position.x + dx * sc;
+                  point.z = playerRig.position.z + dz * sc;
+                }
+                point.x = THREE.MathUtils.clamp(point.x, -205, 205);
+                point.z = THREE.MathUtils.clamp(point.z, -205, 205);
+                point.y = getTerrainHeight(point.x, point.z);
+              } else {
+                point.x = THREE.MathUtils.clamp(point.x, -170, -136);
+                point.z = THREE.MathUtils.clamp(point.z, -12, 9);
+                point.y = -6.5;
               }
-              point.x = THREE.MathUtils.clamp(point.x, -148, 148);
-              point.z = THREE.MathUtils.clamp(point.z, -148, 148);
-              point.y = getTerrainHeight(point.x, point.z);
 
               enemy.alive = true;
-              enemy.hp = 3;
+              enemy.hp = enemy.maxHp || 3;
               enemy.burning = false;
               enemy.burnTimer = 0;
               enemy.igniteTimer = 0;
@@ -1518,9 +1664,9 @@ export function initWorldEntities(ctx) {
               enemy.hidingTimer = 0;
               enemy.lostTrail = false;
               enemy.group.position.copy(point);
-              pushOutOfHidingZone(enemy.group, NIGHT_RADIUS);
+              if (!isCatacomb) pushOutOfHidingZone(enemy.group, NIGHT_RADIUS);
               resolveWallCollisions(enemy.group.position, NIGHT_RADIUS, true);
-              enemy.group.position.y = getTerrainHeight(enemy.group.position.x, enemy.group.position.z);
+              enemy.group.position.y = isCatacomb ? -6.5 : getTerrainHeight(enemy.group.position.x, enemy.group.position.z);
               enemy.group.rotation.set(0, 0, 0);
               enemy.group.scale.setScalar(1);
               enemy.group.visible = true;
@@ -1577,6 +1723,38 @@ export function initWorldEntities(ctx) {
         const dz = playerRig.position.z - enemy.group.position.z;
         const distance = Math.hypot(dx, dz);
         let movingSpeed = 0;
+
+        if (enemy.isCatacombGuardian) {
+          if (playerRig.position.y < -1.5 && distance < 32 && !S.playerHiddenStatus) {
+            if (distance > 1.8) {
+              moveEntityToward(enemy.group, playerRig.position.x, playerRig.position.z, 2.25, dt, 1.55, NIGHT_RADIUS, false);
+              movingSpeed = 2.25;
+              enemy.attackCooldown = Math.max(0, enemy.attackCooldown - dt);
+            } else {
+              faceToward(enemy.group, playerRig.position.x, playerRig.position.z);
+              enemy.attackCooldown -= dt;
+              if (enemy.attackCooldown <= 0) {
+                enemy.attackCooldown = 1.25;
+                enemy.attackAnimTimer = 0.45;
+                damagePlayer(20);
+                nightAttackImpactPosition.copy(playerChestPosition);
+                spawnImpact(nightAttackImpactPosition, 0x64c8ff, 0.20);
+              }
+            }
+          } else {
+            const hPt = nightSpawnPoints[index];
+            if (Math.hypot(hPt.x - enemy.group.position.x, hPt.z - enemy.group.position.z) > 1.2) {
+              moveEntityToward(enemy.group, hPt.x, hPt.z, 1.5, dt, 0.4, NIGHT_RADIUS, false);
+              movingSpeed = 1.5;
+            }
+          }
+          enemy.group.position.x = THREE.MathUtils.clamp(enemy.group.position.x, -170.5, -135.5);
+          enemy.group.position.z = THREE.MathUtils.clamp(enemy.group.position.z, -12.5, 9.5);
+          resolveWallCollisions(enemy.group.position, NIGHT_RADIUS, true);
+          enemy.group.position.y = -6.5 + 0.04 + Math.sin(S.worldTime * 3.1 + index) * 0.035;
+          setEntityAnimation(enemy, enemy.attackAnimTimer > 0 ? 'Attack' : (movingSpeed > 0 ? 'Walk' : 'Idle'));
+          continue;
+        }
 
         if (S.playerHiddenStatus) {
           if (!enemy.lostTrail) {
@@ -1654,8 +1832,8 @@ export function initWorldEntities(ctx) {
         }
 
         pushOutOfHidingZone(enemy.group, NIGHT_RADIUS);
-        enemy.group.position.x = THREE.MathUtils.clamp(enemy.group.position.x, -150, 150);
-        enemy.group.position.z = THREE.MathUtils.clamp(enemy.group.position.z, -150, 150);
+        enemy.group.position.x = THREE.MathUtils.clamp(enemy.group.position.x, -205, 205);
+        enemy.group.position.z = THREE.MathUtils.clamp(enemy.group.position.z, -205, 205);
         resolveWallCollisions(enemy.group.position, NIGHT_RADIUS, true);
         pushOutOfHidingZone(enemy.group, NIGHT_RADIUS);
 
@@ -1687,12 +1865,12 @@ export function initWorldEntities(ctx) {
     const bossWaveBaseDir = new THREE.Vector3();
 
     function updateBossEnemy(dt) {
-      // Automatisk oppvåkning om natten i Boot Hill eller i Akt 4
+      // Automatisk oppvåkning om natten i Boot Hill eller i Level 8
       if (
         !bossEnemy.alive &&
         !storyState.bossDefeated &&
         S.isNight &&
-        (storyState.currentAct >= 4 || playerRig.position.x < -60)
+        (storyState.currentLevel >= 8 || storyState.currentAct >= 4 || playerRig.position.x < -60)
       ) {
         awakenBossMalakor(false);
       }
@@ -1761,8 +1939,8 @@ export function initWorldEntities(ctx) {
       }
 
       pushOutOfHidingZone(bossEnemy.group, BOSS_RADIUS);
-      bossEnemy.group.position.x = THREE.MathUtils.clamp(bossEnemy.group.position.x, -152, 152);
-      bossEnemy.group.position.z = THREE.MathUtils.clamp(bossEnemy.group.position.z, -152, 152);
+      bossEnemy.group.position.x = THREE.MathUtils.clamp(bossEnemy.group.position.x, -205, 205);
+      bossEnemy.group.position.z = THREE.MathUtils.clamp(bossEnemy.group.position.z, -205, 205);
       resolveWallCollisions(bossEnemy.group.position, BOSS_RADIUS, true);
       pushOutOfHidingZone(bossEnemy.group, BOSS_RADIUS);
       bossEnemy.group.position.y =
@@ -1935,6 +2113,87 @@ export function initWorldEntities(ctx) {
     for (let i = 0; i < nightSpawnPoints.length; i++) createNightEnemyAt(i);
 
 
+    function collectSilverRelic(relicEntry) {
+      if (!relicEntry || relicEntry.collected) return false;
+      relicEntry.collected = true;
+      relicEntry.group.visible = false;
+      storyState.bootHillRelics += 1;
+      playerState.gold += 25;
+      if (playRelicPickupSound) playRelicPickupSound();
+      spawnSparkBurst(relicEntry.group.position, 14, 0x8ad8ff, 1.3);
+      checkStoryProgression();
+      updateStatusUI();
+      return true;
+    }
+
+    function updateHorseAndRelics(dt, worldTime, playerMovingSpeed = 0, moveDirX = 0, moveDirZ = 0) {
+      // Roter og sjekk automatisk oppsamling av Sølvrelikvier ved nærkontakt
+      for (let i = 0; i < silverRelics.length; i++) {
+        const rel = silverRelics[i];
+        if (rel.collected) continue;
+        rel.group.rotation.y += dt * 1.4;
+        if (
+          Math.hypot(playerRig.position.x - rel.group.position.x, playerRig.position.z - rel.group.position.z) < 2.25 &&
+          Math.abs(playerRig.position.y - rel.group.position.y) < 2.2
+        ) {
+          collectSilverRelic(rel);
+        }
+      }
+
+      // Ridbar Western Mustang
+      if (S.isRidingHorse) {
+        horseEntity.calling = false;
+        const groundY = getTerrainHeight(playerRig.position.x, playerRig.position.z, playerRig.position.y - 1.0);
+        horseEntity.group.position.set(playerRig.position.x, groundY, playerRig.position.z);
+        if (playerMovingSpeed > 0.25 && (Math.abs(moveDirX) + Math.abs(moveDirZ)) > 0.01) {
+          const targetYaw = Math.atan2(-moveDirX, -moveDirZ);
+          horseEntity.group.rotation.y = targetYaw;
+        } else {
+          horseEntity.group.rotation.y = playerRig.rotation.y;
+        }
+        const galloping = playerMovingSpeed > 0.35;
+        setEntityAnimation(horseEntity, galloping ? 'Gallop' : 'Idle');
+        if (!horseEntity.animationMixer) {
+          horseEntity.stride += dt * (galloping ? 13 : 0);
+          animateQuadrupedLegs(horseEntity.group, galloping ? horseEntity.stride : 0, galloping ? 0.52 : 0);
+        }
+        if (galloping) {
+          horseEntity.hoofTimer -= dt;
+          if (horseEntity.hoofTimer <= 0) {
+            horseEntity.hoofTimer = 0.28;
+            if (playHoofbeatSound) playHoofbeatSound(true);
+          }
+        }
+      } else if (horseEntity.calling) {
+        const dx = horseEntity.targetPos.x - horseEntity.group.position.x;
+        const dz = horseEntity.targetPos.z - horseEntity.group.position.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist > 1.2) {
+          moveEntityToward(horseEntity.group, horseEntity.targetPos.x, horseEntity.targetPos.z, 9.2, dt, 0.8, 0.72, false);
+          resolveWallCollisions(horseEntity.group.position, 0.72, true);
+          horseEntity.group.position.y = getTerrainHeight(horseEntity.group.position.x, horseEntity.group.position.z);
+          setEntityAnimation(horseEntity, 'Gallop');
+          if (!horseEntity.animationMixer) {
+            horseEntity.stride += dt * 13;
+            animateQuadrupedLegs(horseEntity.group, horseEntity.stride, 0.5);
+          }
+          horseEntity.hoofTimer -= dt;
+          if (horseEntity.hoofTimer <= 0) {
+            horseEntity.hoofTimer = 0.26;
+            if (playHoofbeatSound) playHoofbeatSound(true);
+          }
+        } else {
+          horseEntity.calling = false;
+          setEntityAnimation(horseEntity, 'Idle');
+          if (!horseEntity.animationMixer) animateQuadrupedLegs(horseEntity.group, 0, 0);
+        }
+      } else {
+        horseEntity.group.position.y = getTerrainHeight(horseEntity.group.position.x, horseEntity.group.position.z);
+        setEntityAnimation(horseEntity, 'Idle');
+        if (!horseEntity.animationMixer) animateQuadrupedLegs(horseEntity.group, 0, 0);
+      }
+    }
+
   return {
     deerList,
     wolfList,
@@ -1942,6 +2201,12 @@ export function initWorldEntities(ctx) {
     banditList,
     nightEnemies,
     bossEnemy,
+    horseEntity,
+    silverRelics,
+    silverRelicHitMeshes,
+    collectSilverRelic,
+    callHorseToPlayer,
+    damageBarricade,
     syncBossHealthBarUI,
     summonBossFromAltar,
     onNightStateChangedBoss,
@@ -1955,6 +2220,7 @@ export function initWorldEntities(ctx) {
     updateBandits,
     updateNightEnemies,
     updateBossEnemy,
+    updateHorseAndRelics,
     updateAnimationMixers,
     updateEnemyBullets,
     findCombatHit,
