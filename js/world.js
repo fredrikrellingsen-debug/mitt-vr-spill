@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { drawRoundedRect } from './i18n.js';
 import { createSeededRng } from './textures.js';
+import { instantiateBuildingGLB } from './glb-utils.js';
 
 export function applySkyShaderParams(skyObj, nightAmt, outSunDir) {
   const uniforms = skyObj.material.uniforms;
@@ -148,19 +149,15 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
 
   const windUniforms = { uWindTime: { value: 0 } };
 
-  // --- 3f. Atmosfærisk Sky-shader og forhåndsbakt PMREM PBR-miljølys ---
+  // --- 3f. Ekte HDRI-miljølys (.hdr + PMREMGenerator) med prosedyrisk Sky-fallback ---
   const sky = new SkyClass();
   sky.scale.setScalar(720);
   scene.add(sky);
 
   const skySunVec = new THREE.Vector3();
-
   applySkyShaderParams(sky, 0, skySunVec);
 
-  const pmremGenerator = new THREE.PMREMGenerator(renderer);
-  pmremGenerator.compileEquirectangularShader();
-
-  function bakeWesternEnvironment(nightAmt) {
+  function bakeFallbackSkyEnvironment(pmrem, nightAmt) {
     const envScene = new THREE.Scene();
     const envSky = new SkyClass();
     envSky.scale.setScalar(80);
@@ -171,13 +168,13 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     const bounceGround = new THREE.Mesh(
       new THREE.SphereGeometry(38, 16, 8, 0, Math.PI * 2, Math.PI * 0.5, Math.PI * 0.5),
       new THREE.MeshBasicMaterial({
-        color: nightAmt > 0.5 ? 0x1a1928 : 0xc98f55,
+        color: nightAmt > 0.5 ? 0x151828 : 0xc98b52,
         side: THREE.BackSide
       })
     );
     envScene.add(bounceGround);
 
-    const rt = pmremGenerator.fromScene(envScene, 0.035);
+    const rt = pmrem.fromScene(envScene, 0.035);
     envSky.geometry.dispose();
     envSky.material.dispose();
     bounceGround.geometry.dispose();
@@ -185,29 +182,81 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     return rt;
   }
 
-  const dayEnvRT = bakeWesternEnvironment(0);
-  const nightEnvRT = bakeWesternEnvironment(1);
-  pmremGenerator.dispose();
+  const initPmrem = new THREE.PMREMGenerator(renderer);
+  initPmrem.compileEquirectangularShader();
+  let dayEnvRT = bakeFallbackSkyEnvironment(initPmrem, 0);
+  let nightEnvRT = bakeFallbackSkyEnvironment(initPmrem, 1);
+  initPmrem.dispose();
 
-  scene.environment = dayEnvRT.texture;
-  scene.environmentIntensity = 0.85;
+  const HDRI_ROT_Y = 2.25;
+  const hdrState = {
+    hasRealHDRI: false,
+    dayBgTex: null,
+    nightBgTex: null,
+    dayEnvTex: dayEnvRT.texture,
+    nightEnvTex: nightEnvRT.texture,
+    // Eksakt målt sol- og måneretning i desert_sunset.hdr (12.8 deg Golden Hour) og moonlit_night.hdr (30.1 deg)
+    daySunDir: new THREE.Vector3(0.788, 0.222, 0.574).applyAxisAngle(new THREE.Vector3(0, 1, 0), -HDRI_ROT_Y).normalize(),
+    nightMoonDir: new THREE.Vector3(0.700, 0.501, 0.509).applyAxisAngle(new THREE.Vector3(0, 1, 0), -HDRI_ROT_Y).normalize()
+  };
 
-  const hemiLight = new THREE.HemisphereLight(0xffebd2, 0xc28a52, 0.92);
+  function mountHDRIEnvironments(dayHdrTex, nightHdrTex) {
+    if (!dayHdrTex && !nightHdrTex) return false;
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    pmrem.compileEquirectangularShader();
+
+    if (dayHdrTex) {
+      dayHdrTex.mapping = THREE.EquirectangularReflectionMapping;
+      const newDayRT = pmrem.fromEquirectangular(dayHdrTex);
+      if (dayEnvRT) dayEnvRT.dispose();
+      dayEnvRT = newDayRT;
+      hdrState.dayBgTex = dayHdrTex;
+      hdrState.dayEnvTex = newDayRT.texture;
+    }
+    if (nightHdrTex) {
+      nightHdrTex.mapping = THREE.EquirectangularReflectionMapping;
+      const newNightRT = pmrem.fromEquirectangular(nightHdrTex);
+      if (nightEnvRT) nightEnvRT.dispose();
+      nightEnvRT = newNightRT;
+      hdrState.nightBgTex = nightHdrTex;
+      hdrState.nightEnvTex = newNightRT.texture;
+    }
+    pmrem.dispose();
+
+    hdrState.hasRealHDRI = Boolean(dayHdrTex);
+    if (hdrState.hasRealHDRI) {
+      sky.visible = false;
+      sunMesh.visible = false;
+      if (scene.backgroundRotation) scene.backgroundRotation.set(0, HDRI_ROT_Y, 0);
+      if (scene.environmentRotation) scene.environmentRotation.set(0, HDRI_ROT_Y, 0);
+      scene.background = hdrState.dayBgTex;
+      scene.environment = hdrState.dayEnvTex;
+    }
+    return hdrState.hasRealHDRI;
+  }
+
+  scene.environment = hdrState.dayEnvTex;
+  scene.environmentIntensity = 1.05;
+
+  // Kinematisk «Golden Hour» lyssetting: varm ravfarget himmeltopp + dype kjølige blå-fiolette skygger
+  const hemiLight = new THREE.HemisphereLight(0xffd6a8, 0x4c4778, 0.78);
   scene.add(hemiLight);
 
-  const sunLight = new THREE.DirectionalLight(0xffd8a2, 1.85);
-  sunLight.position.set(34, 26, -42);
+  // Skarp 2048x2048 hovedsol med lav Golden Hour-vinkel og kalibrert shadow bias uten shadow acne
+  const sunLight = new THREE.DirectionalLight(0xffb86b, 2.35);
+  sunLight.position.copy(hdrState.daySunDir).multiplyScalar(88);
   sunLight.castShadow = true;
-  sunLight.shadow.mapSize.set(1024, 1024);
-  sunLight.shadow.camera.near = 6;
-  sunLight.shadow.camera.far = 175;
-  sunLight.shadow.camera.left = -52;
-  sunLight.shadow.camera.right = 52;
+  sunLight.shadow.mapSize.set(2048, 2048);
+  sunLight.shadow.camera.near = 4;
+  sunLight.shadow.camera.far = 210;
+  sunLight.shadow.camera.left = -54;
+  sunLight.shadow.camera.right = 54;
   sunLight.shadow.camera.top = 56;
-  sunLight.shadow.camera.bottom = -44;
-  sunLight.shadow.bias = -0.0006;
-  sunLight.shadow.normalBias = 0.035;
+  sunLight.shadow.camera.bottom = -52;
+  sunLight.shadow.bias = -0.00032;
+  sunLight.shadow.normalBias = 0.024;
   scene.add(sunLight);
+  scene.add(sunLight.target);
 
   const sunMesh = new THREE.Mesh(
     new THREE.SphereGeometry(5.8, 16, 16),
@@ -216,7 +265,7 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
   sunMesh.position.copy(skySunVec).multiplyScalar(295);
   scene.add(sunMesh);
 
-  // --- 3g. Utvidet ørkenlandskap (-220 til +220, flatt y = 0 i Dustwood [-24..24]) + 4-biome Terrain Splatting ---
+  // --- 3g. Utvidet ørkenlandskap (-220 til +220) med ekte fotografisk 4-biome PBR Terrain Splatting & Anti-Tiling ---
   const desertGroundGeo = new THREE.PlaneGeometry(520, 520, 180, 180);
   desertGroundGeo.rotateX(-Math.PI / 2);
   {
@@ -246,15 +295,21 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
   }
 
   const desertGroundMat = new THREE.MeshStandardMaterial({
-    color: 0xe2b47c,
+    color: 0xe4b888,
     map: sharedDesertSandTex,
     normalMap: sharedDesertSandNormalTex,
-    normalScale: new THREE.Vector2(0.68, 0.68),
+    normalScale: new THREE.Vector2(0.82, 0.82),
     roughnessMap: sharedDesertSandRoughTex,
     roughness: 0.92,
-    metalness: 0.02
+    metalness: 0.02,
+    envMapIntensity: 0.78
   });
+  desertGroundMat.customProgramCacheKey = () => 'western_photo_terrain_v2';
   desertGroundMat.onBeforeCompile = (shader) => {
+    shader.uniforms.uRoadPhotoMap = { value: sharedRoadSandTex };
+    shader.uniforms.uRockPhotoMap = { value: sharedSandstoneTex };
+    shader.uniforms.uForestPhotoMap = { value: sharedFoliageTex };
+
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
@@ -268,7 +323,11 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <common>',
-        '#include <common>\nvarying vec3 vTerrainWorldPos;'
+        `#include <common>
+        varying vec3 vTerrainWorldPos;
+        uniform sampler2D uRoadPhotoMap;
+        uniform sampler2D uRockPhotoMap;
+        uniform sampler2D uForestPhotoMap;`
       )
       .replace(
         '#include <map_fragment>',
@@ -277,37 +336,48 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
           float wx = vTerrainWorldPos.x;
           float wz = vTerrainWorldPos.z;
           float wy = vTerrainWorldPos.y;
-          float grainN = sin(wx * 0.42 + cos(wz * 0.37)) * cos(wz * 0.31 - sin(wx * 0.23)) * 0.5 + 0.5;
-          float crackN = abs(sin(wx * 0.85 + wz * 0.65) * cos(wx * 0.65 - wz * 0.85));
 
-          // Biome 2: Pakket grusvei med mørke hjulspor langs veier og jernbane
-          float dNorth = (wz < -14.0) ? smoothstep(2.4, 1.4, abs(wx)) : 0.0;
-          float dSouth = (wz > 12.0 && wz < 74.0) ? smoothstep(2.4, 1.4, abs(wx)) : 0.0;
-          float dEast  = (wx > 14.0 && wx < 126.0) ? smoothstep(2.4, 1.4, abs(wz + 1.5)) : 0.0;
-          float dWest  = (wx < -14.0 && wx > -122.0) ? smoothstep(2.4, 1.4, abs(wz + 1.5)) : 0.0;
-          float dRail  = (wx > -142.0 && wx < 50.0) ? smoothstep(3.0, 1.6, abs(wz - 75.0)) : 0.0;
+          // To-skala rotert UV-oppslag som eliminerer synlig flisegjentakelse på ørkensand og klipper
+          vec2 uvFine = vec2(wx, wz) * 0.145;
+          vec2 uvMacro = vec2(wx * 0.866 - wz * 0.5, wx * 0.5 + wz * 0.866) * 0.031;
+          vec3 sandMacro = texture2D(map, uvMacro).rgb;
+          float macroBlend = sin(wx * 0.073 + cos(wz * 0.061) * 1.6) * 0.5 + 0.5;
+          vec3 antiTiledSand = mix(diffuseColor.rgb, sandMacro * vec3(1.06, 0.96, 0.86), 0.36 * macroBlend);
+
+          // Mikro-korn / grus-støy på nært hold
+          float microPebble = sin(wx * 14.3 + wz * 11.7) * cos(wx * 9.1 - wz * 16.9) * 0.035;
+          antiTiledSand *= (1.0 + microPebble);
+
+          // Biome 2: Fotografisk pakket jord-/grusvei (dirt_floor) med hjulspor
+          float dNorth = (wz < -14.0) ? smoothstep(2.5, 1.35, abs(wx)) : 0.0;
+          float dSouth = (wz > 12.0 && wz < 74.0) ? smoothstep(2.5, 1.35, abs(wx)) : 0.0;
+          float dEast  = (wx > 14.0 && wx < 126.0) ? smoothstep(2.5, 1.35, abs(wz + 1.5)) : 0.0;
+          float dWest  = (wx < -14.0 && wx > -122.0) ? smoothstep(2.5, 1.35, abs(wz + 1.5)) : 0.0;
+          float dRail  = (wx > -142.0 && wx < 50.0) ? smoothstep(3.1, 1.55, abs(wz - 75.0)) : 0.0;
           float roadMask = clamp(max(max(dNorth, dSouth), max(max(dEast, dWest), dRail)), 0.0, 1.0);
-          float rutX = max(smoothstep(0.32, 0.08, abs(abs(wx) - 0.72)) * max(dNorth, dSouth),
-                           smoothstep(0.32, 0.08, abs(abs(wz + 1.5) - 0.72)) * max(dEast, dWest));
-          vec3 gravelCol = mix(vec3(0.56, 0.39, 0.24), vec3(0.34, 0.23, 0.14), clamp(rutX * 0.65 + (1.0 - grainN) * 0.25, 0.0, 1.0));
+          float rutX = max(smoothstep(0.34, 0.07, abs(abs(wx) - 0.72)) * max(dNorth, dSouth),
+                           smoothstep(0.34, 0.07, abs(abs(wz + 1.5) - 0.72)) * max(dEast, dWest));
+          vec3 roadTex = texture2D(uRoadPhotoMap, uvFine * 1.15).rgb;
+          vec3 gravelCol = roadTex * mix(vec3(0.96, 0.82, 0.68), vec3(0.58, 0.46, 0.36), rutX * 0.72);
 
-          // Biome 3: Mørk barnål-/mosejord i Whispering Woods (Nord)
-          float forestMask = smoothstep(-25.0, -39.0, wz) * (1.0 - roadMask * 0.75);
-          vec3 forestCol = mix(vec3(0.24, 0.26, 0.14), vec3(0.16, 0.21, 0.11), grainN);
+          // Biome 3: Fotografisk skogbunn (forest_leaves_02) i Whispering Woods (Nord)
+          float forestMask = smoothstep(-25.0, -40.0, wz) * (1.0 - roadMask * 0.78);
+          vec3 forestTex = texture2D(uForestPhotoMap, uvFine * 0.92).rgb;
+          vec3 forestCol = forestTex * vec3(0.76, 0.84, 0.62);
 
-          // Biome 4: Rød okker-stein i Crimson Canyon (Øst) + sprukket aske/skifer på Boot Hill (Vest)
-          float canyonMask = smoothstep(50.0, 74.0, wx) * (1.0 - roadMask * 0.70);
-          vec3 canyonCol = mix(vec3(0.66, 0.30, 0.18), vec3(0.42, 0.18, 0.11), smoothstep(0.15, 0.55, crackN));
+          // Biome 4: Fotografisk sprukket sandstein (sandstone_cracks) i Crimson Canyon & Boot Hill
+          vec3 rockTex = mix(texture2D(uRockPhotoMap, uvFine * 0.85).rgb, texture2D(uRockPhotoMap, uvMacro * 1.35).rgb, 0.4);
+          float canyonMask = smoothstep(48.0, 74.0, wx) * (1.0 - roadMask * 0.72);
+          vec3 canyonCol = rockTex * vec3(1.14, 0.56, 0.38);
 
-          float bootMask = smoothstep(-48.0, -72.0, wx) * (1.0 - roadMask * 0.65);
-          vec3 ashCol = mix(vec3(0.30, 0.29, 0.31), vec3(0.18, 0.17, 0.19), smoothstep(0.10, 0.45, crackN));
+          float bootMask = smoothstep(-48.0, -72.0, wx) * (1.0 - roadMask * 0.68);
+          vec3 ashCol = rockTex * vec3(0.52, 0.52, 0.58);
 
-          // Høydefarging i kløfter / sanddyner
-          vec3 baseSand = diffuseColor.rgb * mix(0.92, 1.08, clamp(wy * 0.18 + 0.45, 0.0, 1.0));
-          vec3 splatted = mix(baseSand, gravelCol * 1.12, roadMask * 0.68);
-          splatted = mix(splatted, forestCol * 1.25, forestMask * 0.65);
-          splatted = mix(splatted, canyonCol * 1.15, canyonMask * 0.58);
-          splatted = mix(splatted, ashCol * 1.25, bootMask * 0.62);
+          vec3 baseSand = antiTiledSand * mix(0.90, 1.08, clamp(wy * 0.18 + 0.45, 0.0, 1.0));
+          vec3 splatted = mix(baseSand, gravelCol, roadMask * 0.76);
+          splatted = mix(splatted, forestCol, forestMask * 0.74);
+          splatted = mix(splatted, canyonCol, canyonMask * 0.68);
+          splatted = mix(splatted, ashCol, bootMask * 0.70);
           diffuseColor.rgb = splatted;
         }`
       );
@@ -316,7 +386,7 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
   desertGround.receiveShadow = true;
   scene.add(desertGround);
 
-  // Grusveier gjennom Dustwood og ut til alle 4 ytterregionene (Nord, Øst, Vest, Sør Jernbane)
+  // Grusveier gjennom Dustwood og ut til alle 4 ytterregionene rendres sømløst i terreng-splatshaderen over (0 harde kanter!).
   const roadMat = new THREE.MeshStandardMaterial({
     color: 0xb8844f,
     map: sharedRoadSandTex,
@@ -327,60 +397,29 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     metalness: 0.01
   });
 
-  const mainRoad = new THREE.Mesh(new THREE.PlaneGeometry(7.4, 46), roadMat);
-  mainRoad.rotation.x = -Math.PI / 2;
-  mainRoad.position.set(0, 0.016, 1);
-  mainRoad.receiveShadow = true;
-  scene.add(mainRoad);
-
-  const crossRoad = new THREE.Mesh(new THREE.PlaneGeometry(44, 5.2), roadMat);
-  crossRoad.rotation.x = -Math.PI / 2;
-  crossRoad.position.set(0, 0.015, -3.2);
-  crossRoad.receiveShadow = true;
-  scene.add(crossRoad);
-
-  function buildTerrainTrail(cx, cz, width, length, alongX = false, segsLen = 72) {
-    const geo = new THREE.PlaneGeometry(alongX ? length : width, alongX ? width : length, alongX ? segsLen : 6, alongX ? 6 : segsLen);
-    geo.rotateX(-Math.PI / 2);
-    const pos = geo.attributes.position;
-    for (let i = 0; i < pos.count; i++) {
-      const wx = pos.getX(i) + cx;
-      const wz = pos.getZ(i) + cz;
-      pos.setY(i, getTerrainBaseHeight(wx, wz) + 0.028);
-    }
-    geo.computeVertexNormals();
-    const mesh = new THREE.Mesh(geo, roadMat);
-    mesh.position.set(cx, 0, cz);
-    mesh.receiveShadow = true;
-    scene.add(mesh);
-    return mesh;
-  }
-
-  // Nordvei til Whispering Woods, Østvei til Crimson Canyon & Gruven, Vestvei til Boot Hill, Sørvei til Jernbanen
-  buildTerrainTrail(0, -82, 3.8, 124, false, 84);
-  buildTerrainTrail(71, -1.5, 4.0, 102, true, 72);
-  buildTerrainTrail(-69, -1.5, 3.8, 98, true, 72);
-  buildTerrainTrail(0, 48, 3.8, 52, false, 48);
-
   // --- 3h. Monument Valley-inspirerte lagdelte sandsteinsplatåer i horisontringen utenfor [-160..160] ---
   const mesaMat = new THREE.MeshStandardMaterial({
-    color: 0xc9744a,
+    color: 0xa4684a,
+    map: sharedMesaTex,
+    normalMap: sharedMesaNormalTex,
+    normalScale: new THREE.Vector2(1.45, 1.45),
+    roughnessMap: sharedMesaRoughTex,
+    roughness: 0.92,
+    metalness: 0.02
+  });
+  const mesaCapMat = new THREE.MeshStandardMaterial({
+    color: 0x865038,
     map: sharedMesaTex,
     normalMap: sharedMesaNormalTex,
     normalScale: new THREE.Vector2(1.35, 1.35),
     roughnessMap: sharedMesaRoughTex,
-    roughness: 0.88,
-    metalness: 0.03
-  });
-  const mesaCapMat = new THREE.MeshStandardMaterial({
-    color: 0xa45434,
-    map: sharedSandstoneTex,
-    normalMap: sharedSandstoneNormalTex,
-    normalScale: new THREE.Vector2(1.15, 1.15),
-    roughnessMap: sharedSandstoneRoughTex,
-    roughness: 0.9,
+    roughness: 0.94,
     metalness: 0.02
   });
+  if (M.applyAntiTilingSurfaceShader) {
+    M.applyAntiTilingSurfaceShader(mesaMat, 0.22, 0.72);
+    M.applyAntiTilingSurfaceShader(mesaCapMat, 0.22, 0.72);
+  }
 
   function createFlutedCliffGeo(rTop, rBot, height, radialSegs, heightSegs, seed) {
     const rng = createSeededRng(seed);
@@ -455,11 +494,11 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     scene.add(g);
   }
 
-  // Plasser Monument Valley-platåer i en vid horisontring utenfor PLAY_AREA_LIMIT (215)
+  // Plasser Monument Valley-platåer i en vid horisontring utenfor PLAY_AREA_LIMIT (215) (åpen siktlinje langs x = 0 for HDRI-horisonten)
   [
-    { x: -165, z: -245, r: 32, h: 44, seed: 101, spire: true },
-    { x: 26, z: -255, r: 40, h: 50, seed: 202, spire: false },
-    { x: 185, z: -235, r: 34, h: 46, seed: 303, spire: true },
+    { x: -165, z: -245, r: 32, h: 42, seed: 101, spire: true },
+    { x: 104, z: -258, r: 36, h: 38, seed: 202, spire: false },
+    { x: 192, z: -235, r: 34, h: 44, seed: 303, spire: true },
     { x: -248, z: -85, r: 30, h: 38, seed: 404, spire: false },
     { x: 252, z: -68, r: 32, h: 40, seed: 505, spire: true },
     { x: -244, z: 88, r: 28, h: 36, seed: 606, spire: false },
@@ -1220,13 +1259,32 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
   forestPatch.receiveShadow = true;
   forestGroup.add(forestPatch);
 
-  // Delte geometrier og PBR-materialer for naturlige trær (72–90 FPS i Quest)
+  // Delte geometrier og PBR-materialer for naturlige trær med organiske greinkranser (72–90 FPS i Quest)
+  function createScallopedPineTierGeo(radius, height, radialSegs = 14, seed = 1) {
+    const geo = new THREE.ConeGeometry(radius, height, radialSegs, 3);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      let y = pos.getY(i);
+      const z = pos.getZ(i);
+      const r = Math.hypot(x, z);
+      if (r < 0.02) continue;
+      const ang = Math.atan2(z, x);
+      const hNorm = (y + height * 0.5) / height;
+      const boughWave = 1.0 + (1.0 - hNorm) * (0.16 * Math.sin(ang * 7 + seed) + 0.09 * Math.cos(ang * 5 - seed));
+      const droop = (1.0 - hNorm) * 0.14 * Math.cos(ang * 7 + seed);
+      pos.setXYZ(i, x * boughWave, y - droop, z * boughWave);
+    }
+    geo.computeVertexNormals();
+    return geo;
+  }
+
   const trunkGeo = new THREE.CylinderGeometry(0.16, 0.38, 2.7, 9);
   const rootFlareGeo = new THREE.ConeGeometry(0.52, 0.55, 8);
   const branchGeo = new THREE.CylinderGeometry(0.055, 0.11, 0.98, 6);
-  const tier1Geo = new THREE.ConeGeometry(1.82, 1.92, 9);
-  const tier2Geo = new THREE.ConeGeometry(1.46, 1.78, 9);
-  const tier3Geo = new THREE.ConeGeometry(1.08, 1.58, 9);
+  const tier1Geo = createScallopedPineTierGeo(1.86, 1.96, 14, 1.1);
+  const tier2Geo = createScallopedPineTierGeo(1.48, 1.82, 14, 2.7);
+  const tier3Geo = createScallopedPineTierGeo(1.10, 1.60, 12, 4.3);
   const boughClumpGeo = new THREE.DodecahedronGeometry(0.8, 1);
 
   const trunkMat = new THREE.MeshStandardMaterial({
@@ -1261,28 +1319,28 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
   }
 
   const foliageMatA = new THREE.MeshStandardMaterial({
-    color: 0x387836,
+    color: 0x607c4c,
     map: sharedFoliageTex,
     normalMap: sharedFoliageNormalTex,
-    normalScale: new THREE.Vector2(0.55, 0.55),
+    normalScale: new THREE.Vector2(0.92, 0.92),
+    roughnessMap: sharedFoliageRoughTex,
+    roughness: 0.9
+  });
+  const foliageMatB = new THREE.MeshStandardMaterial({
+    color: 0x708b55,
+    map: sharedFoliageTex,
+    normalMap: sharedFoliageNormalTex,
+    normalScale: new THREE.Vector2(0.92, 0.92),
     roughnessMap: sharedFoliageRoughTex,
     roughness: 0.88
   });
-  const foliageMatB = new THREE.MeshStandardMaterial({
-    color: 0x488a3f,
-    map: sharedFoliageTex,
-    normalMap: sharedFoliageNormalTex,
-    normalScale: new THREE.Vector2(0.55, 0.55),
-    roughnessMap: sharedFoliageRoughTex,
-    roughness: 0.86
-  });
   const foliageMatDark = new THREE.MeshStandardMaterial({
-    color: 0x295e2a,
+    color: 0x455e38,
     map: sharedFoliageTex,
     normalMap: sharedFoliageNormalTex,
-    normalScale: new THREE.Vector2(0.62, 0.62),
+    normalScale: new THREE.Vector2(0.98, 0.98),
     roughnessMap: sharedFoliageRoughTex,
-    roughness: 0.9
+    roughness: 0.92
   });
   applyWindSwayShader(foliageMatA, 0.085, 0.0);
   applyWindSwayShader(foliageMatB, 0.095, 0.0);
@@ -2407,17 +2465,11 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
   function mountTrainAsset(trainGLTF) {
     if (!trainGLTF || !trainGLTF.scene) return false;
     trainAnchor.remove(trainFallbackGroup);
-    const cloned = trainGLTF.scene.clone(true);
-    cloned.traverse((node) => {
-      if (!node.isMesh || !node.material) return;
-      node.castShadow = true;
-      node.receiveShadow = true;
-      if (node.geometry && node.geometry.attributes && node.geometry.attributes.color) {
-        node.material = node.material.clone();
-        node.material.vertexColors = true;
-      }
+    const normalizedTrain = instantiateBuildingGLB(trainGLTF.scene, M, {
+      targetHeight: 4.15,
+      centerXZ: false
     });
-    trainAnchor.add(cloned);
+    trainAnchor.add(normalizedTrain);
     return true;
   }
 
@@ -2562,6 +2614,7 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
 
   return {
     sky, skySunVec, dayEnvRT, nightEnvRT,
+    hdrState, mountHDRIEnvironments,
     hemiLight, sunLight, sunMesh,
     rockColliders,
     structureWallColliders,
