@@ -2,65 +2,151 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <link rel="icon" href="data:," />
   <title>Western Cowboy VR (WebXR)</title>
   <style>
-    body {
+    html, body {
       margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
       overflow: hidden;
       background: #8ec5e8;
       font-family: Georgia, 'Times New Roman', serif;
       user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      touch-action: none;
+      overscroll-behavior: none;
+    }
+    canvas {
+      display: block;
+      touch-action: none;
+    }
+    body.in-vr #top-left-ui,
+    body.in-vr #crosshair,
+    body.in-vr #touch-controls {
+      display: none !important;
     }
     #top-left-ui {
       position: fixed;
-      top: 16px;
-      left: 16px;
+      top: max(12px, env(safe-area-inset-top));
+      left: max(12px, env(safe-area-inset-left));
+      right: max(12px, env(safe-area-inset-right));
       display: flex;
       flex-direction: column;
       align-items: flex-start;
       gap: 8px;
       pointer-events: none;
-      z-index: 10;
+      z-index: 12;
     }
     #hud-row {
       display: flex;
+      flex-wrap: wrap;
       align-items: stretch;
       gap: 8px;
+      max-width: 100%;
     }
     #hud {
       color: #fff4dc;
       background: rgba(42, 24, 12, 0.9);
-      padding: 10px 18px;
+      padding: 10px 16px;
       border: 2px solid #d9a04e;
       border-radius: 8px;
       box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
       font-size: 15px;
-      line-height: 1.45;
-      letter-spacing: 0.3px;
+      line-height: 1.42;
+      letter-spacing: 0.25px;
       white-space: pre-line;
+      max-width: min(820px, calc(100vw - 28px));
+      box-sizing: border-box;
     }
-    #lang-btn {
+    .hud-top-btn {
       pointer-events: auto;
       cursor: pointer;
       color: #fff4dc;
       background: rgba(58, 33, 16, 0.94);
-      padding: 8px 14px;
+      padding: 8px 13px;
       border: 2px solid #e5b25d;
       border-radius: 8px;
       box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
       font-family: Georgia, 'Times New Roman', serif;
       font-size: 14px;
       font-weight: bold;
-      letter-spacing: 0.4px;
+      letter-spacing: 0.35px;
+      touch-action: manipulation;
       transition: background 0.15s ease, transform 0.1s ease;
     }
-    #lang-btn:hover {
+    .hud-top-btn:hover {
       background: rgba(86, 50, 24, 0.98);
     }
-    #lang-btn:active {
-      transform: scale(0.97);
+    .hud-top-btn:active {
+      transform: scale(0.96);
+    }
+    #sens-panel {
+      display: none;
+      pointer-events: auto;
+      touch-action: manipulation;
+      background: rgba(36, 20, 10, 0.96);
+      color: #fff4dc;
+      border: 2px solid #e5b25d;
+      border-radius: 10px;
+      padding: 12px 14px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+      min-width: 258px;
+      max-width: calc(100vw - 32px);
+      font-family: sans-serif;
+      font-size: 13px;
+      gap: 10px;
+      flex-direction: column;
+    }
+    #sens-panel.open {
+      display: flex;
+    }
+    .sens-header {
+      font-family: Georgia, 'Times New Roman', serif;
+      font-weight: bold;
+      color: #ffd875;
+      font-size: 13px;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid rgba(229, 178, 93, 0.35);
+      padding-bottom: 6px;
+    }
+    .sens-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .sens-slider-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+    }
+    #sens-range {
+      flex: 1;
+      accent-color: #e5b25d;
+      height: 24px;
+      cursor: pointer;
+    }
+    .sens-mini-btn {
+      pointer-events: auto;
+      cursor: pointer;
+      color: #fff4dc;
+      background: rgba(74, 43, 21, 0.95);
+      border: 1.5px solid #d9a04e;
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-weight: bold;
+      font-size: 13px;
+      touch-action: manipulation;
+    }
+    .sens-mini-btn.active {
+      background: #b57729;
+      border-color: #ffe294;
+      color: #fffbe8;
     }
     #pc-hint {
       color: #fff4dc;
@@ -70,7 +156,8 @@
       border-radius: 6px;
       font-family: sans-serif;
       font-size: 12px;
-      line-height: 1.5;
+      line-height: 1.45;
+      max-width: min(920px, calc(100vw - 28px));
     }
     #crosshair {
       position: fixed;
@@ -79,24 +166,205 @@
       width: 10px;
       height: 10px;
       margin: -5px 0 0 -5px;
-      border: 2px solid rgba(255, 238, 190, 0.85);
+      border: 2px solid rgba(255, 238, 190, 0.88);
       border-radius: 50%;
       box-shadow: 0 0 6px rgba(0, 0, 0, 0.45);
       pointer-events: none;
       z-index: 9;
     }
-    @media (max-width: 640px) {
+
+    /* Telefon & Pad berøringskontroller (skjult på ren mus/PC, aktivert automatisk ved touch / coarse pointer) */
+    #touch-controls {
+      display: none;
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 11;
+    }
+    body.touch-ui #touch-controls {
+      display: block;
+    }
+    body.touch-ui #pc-hint {
+      display: none;
+    }
+    #daynight-top-btn {
+      display: none;
+    }
+    body.touch-ui #daynight-top-btn {
+      display: inline-block;
+    }
+    /* Skjul ubrukelig "VR NOT SUPPORTED"-knapp på Telefon/Pad slik at den aldri dekker knappene nederst; løft ekte "ENTER VR"-knapp pent over spakene */
+    body.touch-ui #VRButton[data-xr-unsupported="1"],
+    body.touch-ui #VRButton:disabled,
+    #VRButton[disabled] {
+      display: none !important;
+    }
+    @media (max-width: 900px) {
+      #VRButton {
+        bottom: 132px !important;
+      }
+    }
+    #touch-joy-ring {
+      position: fixed;
+      left: max(20px, calc(env(safe-area-inset-left) + 16px));
+      bottom: max(22px, calc(env(safe-area-inset-bottom) + 18px));
+      width: 122px;
+      height: 122px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(42, 24, 12, 0.28) 0%, rgba(42, 24, 12, 0.62) 100%);
+      border: 2.5px solid rgba(229, 178, 93, 0.72);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+    }
+    #touch-joy-knob {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 32%, #ffe09a 0%, #c88736 68%, #7c4918 100%);
+      border: 2px solid rgba(255, 244, 214, 0.9);
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
+      transform: translate3d(0, 0, 0);
+      will-change: transform;
+    }
+    #touch-actions {
+      position: fixed;
+      right: max(16px, calc(env(safe-area-inset-right) + 14px));
+      bottom: max(18px, calc(env(safe-area-inset-bottom) + 14px));
+      display: grid;
+      grid-template-columns: repeat(3, auto);
+      grid-template-rows: repeat(2, auto);
+      gap: 9px;
+      align-items: end;
+      justify-items: center;
+      pointer-events: none;
+    }
+    .touch-act-btn {
+      pointer-events: auto;
+      touch-action: none;
+      cursor: pointer;
+      color: #fff4dc;
+      background: rgba(44, 25, 12, 0.84);
+      border: 2px solid rgba(229, 178, 93, 0.85);
+      border-radius: 26px;
+      min-width: 64px;
+      height: 46px;
+      padding: 0 11px;
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 11px;
+      font-weight: bold;
+      letter-spacing: 0.3px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      transition: transform 0.08s ease, background 0.12s ease;
+    }
+    .touch-act-btn:active,
+    .touch-act-btn.pressed {
+      transform: scale(0.93);
+      background: rgba(108, 62, 26, 0.95);
+    }
+    #btn-touch-fire {
+      grid-column: 3;
+      grid-row: 1 / span 2;
+      width: 82px;
+      height: 82px;
+      min-width: 82px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 36% 32%, rgba(214, 58, 36, 0.95) 0%, rgba(132, 24, 16, 0.94) 100%);
+      border: 3px solid #ffd275;
+      font-size: 14px;
+      letter-spacing: 0.6px;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.52);
+    }
+    #btn-touch-fire.pressed {
+      transform: scale(0.92);
+      background: radial-gradient(circle at 36% 32%, rgba(248, 92, 54, 0.98) 0%, rgba(168, 34, 20, 0.96) 100%);
+    }
+
+    /* Pad / Nettbrett (768px - 1366px med touch): romsligere spak og knapper for nettbrett-grep */
+    @media (min-width: 768px) and (max-width: 1366px) {
+      #touch-joy-ring {
+        width: 146px;
+        height: 146px;
+        left: max(28px, calc(env(safe-area-inset-left) + 24px));
+        bottom: max(28px, calc(env(safe-area-inset-bottom) + 24px));
+      }
+      #touch-joy-knob {
+        width: 60px;
+        height: 60px;
+      }
+      #touch-actions {
+        right: max(26px, calc(env(safe-area-inset-right) + 22px));
+        bottom: max(26px, calc(env(safe-area-inset-bottom) + 22px));
+        gap: 12px;
+      }
+      .touch-act-btn {
+        min-width: 78px;
+        height: 52px;
+        font-size: 12px;
+        padding: 0 14px;
+      }
+      #btn-touch-fire {
+        width: 98px;
+        height: 98px;
+        min-width: 98px;
+        font-size: 16px;
+      }
+    }
+
+    /* Telefon (portrett & lavt landskap): kompakt HUD så siktet alltid er fritt */
+    @media (max-width: 767px), (max-height: 500px) {
+      #top-left-ui {
+        top: max(8px, env(safe-area-inset-top));
+        left: max(8px, env(safe-area-inset-left));
+        right: max(8px, env(safe-area-inset-right));
+        gap: 5px;
+      }
       #hud {
         font-size: 11px;
-        line-height: 1.3;
-        padding: 6px 8px;
+        line-height: 1.28;
+        padding: 5px 9px;
+        max-width: calc(100vw - 16px);
       }
-      #lang-btn {
+      .hud-top-btn {
         font-size: 11px;
-        padding: 6px 8px;
+        padding: 5px 9px;
       }
       #pc-hint {
         display: none;
+      }
+      #touch-joy-ring {
+        width: 112px;
+        height: 112px;
+        left: max(14px, calc(env(safe-area-inset-left) + 10px));
+        bottom: max(14px, calc(env(safe-area-inset-bottom) + 10px));
+      }
+      #touch-joy-knob {
+        width: 46px;
+        height: 46px;
+      }
+      #touch-actions {
+        right: max(12px, calc(env(safe-area-inset-right) + 10px));
+        bottom: max(14px, calc(env(safe-area-inset-bottom) + 10px));
+        gap: 7px;
+      }
+      .touch-act-btn {
+        min-width: 58px;
+        height: 40px;
+        font-size: 10px;
+        padding: 0 8px;
+      }
+      #btn-touch-fire {
+        width: 74px;
+        height: 74px;
+        min-width: 74px;
+        font-size: 13px;
       }
     }
   </style>
@@ -113,11 +381,49 @@
   <div id="top-left-ui">
     <div id="hud-row">
       <div id="hud">Health: 100 | Food: 0 (E = eat) | Pelts: 0 | Outfit: Plain | Time: Day</div>
-      <button id="lang-btn" type="button" title="Switch language (EN / NO)">Language: EN / NO</button>
+      <button id="lang-btn" class="hud-top-btn" type="button" title="Switch language (EN / NO)">Language: EN / NO</button>
+      <button id="sens-btn" class="hud-top-btn" type="button" title="Controls & Sensitivity">⚙ Sens: 100%</button>
+      <button id="daynight-top-btn" class="hud-top-btn" type="button" title="Day / Night">☀ / 🌙</button>
+    </div>
+    <div id="sens-panel" role="dialog" aria-label="Controls and Sensitivity">
+      <div id="sens-title" class="sens-header">CONTROLS & SENSITIVITY</div>
+      <div class="sens-row">
+        <span id="sens-look-label">Look Sensitivity</span>
+        <strong id="sens-val-label">100%</strong>
+      </div>
+      <div class="sens-slider-wrap">
+        <button id="sens-minus-btn" class="sens-mini-btn" type="button">−</button>
+        <input id="sens-range" type="range" min="25" max="250" step="5" value="100" />
+        <button id="sens-plus-btn" class="sens-mini-btn" type="button">+</button>
+      </div>
+      <div class="sens-row">
+        <span id="sens-invert-label">Invert Y-Axis</span>
+        <button id="sens-invert-btn" class="sens-mini-btn" type="button">OFF</button>
+      </div>
+      <div class="sens-row">
+        <span id="sens-vr-label">VR Turn Mode</span>
+        <button id="sens-vr-btn" class="sens-mini-btn" type="button">Snap 30°</button>
+      </div>
+      <div class="sens-row">
+        <button id="sens-reset-btn" class="sens-mini-btn" type="button" style="width: 100%;">Reset 100%</button>
+      </div>
     </div>
     <div id="pc-hint"></div>
   </div>
   <div id="crosshair"></div>
+
+  <div id="touch-controls" aria-label="Touch Controls">
+    <div id="touch-joy-ring">
+      <div id="touch-joy-knob"></div>
+    </div>
+    <div id="touch-actions">
+      <button id="btn-touch-weapon" class="touch-act-btn" type="button">WEAPON</button>
+      <button id="btn-touch-horse" class="touch-act-btn" type="button">HORSE</button>
+      <button id="btn-touch-eat" class="touch-act-btn" type="button">EAT +35</button>
+      <button id="btn-touch-use" class="touch-act-btn" type="button">DOOR / USE</button>
+      <button id="btn-touch-fire" class="touch-act-btn" type="button">FIRE</button>
+    </div>
+  </div>
 
   <script type="module">
     import * as THREE from 'three';
@@ -145,15 +451,22 @@
     camera.position.set(0, 1.65, 0);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    const isSmallMobileScreen = Math.min(window.innerWidth, window.innerHeight) < 600;
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isSmallMobileScreen ? 1.65 : 2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.08;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.xr.enabled = true;
     document.body.appendChild(renderer.domElement);
-    document.body.appendChild(VRButton.createButton(renderer));
+    const vrBtnEl = VRButton.createButton(renderer);
+    document.body.appendChild(vrBtnEl);
+    setTimeout(() => {
+      if (vrBtnEl && (vrBtnEl.textContent || '').toUpperCase().includes('NOT SUPPORTED')) {
+        vrBtnEl.dataset.xrUnsupported = '1';
+      }
+    }, 600);
 
     // Spiller-rigg som samler kamera og begge VR-kontrollerne
     const playerRig = new THREE.Group();
@@ -258,6 +571,88 @@
     const hudEl = document.getElementById('hud');
     const pcHintEl = document.getElementById('pc-hint');
     const langBtnEl = document.getElementById('lang-btn');
+    const sensBtnEl = document.getElementById('sens-btn');
+    const dayNightTopBtnEl = document.getElementById('daynight-top-btn');
+    const sensPanelEl = document.getElementById('sens-panel');
+    const sensTitleEl = document.getElementById('sens-title');
+    const sensLookLabelEl = document.getElementById('sens-look-label');
+    const sensValLabelEl = document.getElementById('sens-val-label');
+    const sensRangeEl = document.getElementById('sens-range');
+    const sensMinusBtnEl = document.getElementById('sens-minus-btn');
+    const sensPlusBtnEl = document.getElementById('sens-plus-btn');
+    const sensInvertLabelEl = document.getElementById('sens-invert-label');
+    const sensInvertBtnEl = document.getElementById('sens-invert-btn');
+    const sensVrLabelEl = document.getElementById('sens-vr-label');
+    const sensVrBtnEl = document.getElementById('sens-vr-btn');
+    const sensResetBtnEl = document.getElementById('sens-reset-btn');
+
+    const touchJoyRingEl = document.getElementById('touch-joy-ring');
+    const touchJoyKnobEl = document.getElementById('touch-joy-knob');
+    const btnTouchWeaponEl = document.getElementById('btn-touch-weapon');
+    const btnTouchHorseEl = document.getElementById('btn-touch-horse');
+    const btnTouchEatEl = document.getElementById('btn-touch-eat');
+    const btnTouchUseEl = document.getElementById('btn-touch-use');
+    const btnTouchFireEl = document.getElementById('btn-touch-fire');
+
+    // Lagrede følsomhets- og kontrollinnstillinger for VR, Telefon, PC og Pad
+    const CONTROL_STORAGE_KEY = 'western_vr_controls_v1';
+    const controlSettings = {
+      sensPct: 100,
+      invertY: false,
+      vrSmoothTurn: false
+    };
+    try {
+      const savedRaw = localStorage.getItem(CONTROL_STORAGE_KEY);
+      if (savedRaw) {
+        const parsed = JSON.parse(savedRaw);
+        if (typeof parsed.sensPct === 'number') {
+          controlSettings.sensPct = Math.max(25, Math.min(250, Math.round(parsed.sensPct)));
+        }
+        if (typeof parsed.invertY === 'boolean') controlSettings.invertY = parsed.invertY;
+        if (typeof parsed.vrSmoothTurn === 'boolean') controlSettings.vrSmoothTurn = parsed.vrSmoothTurn;
+      }
+    } catch (_) {
+      // localStorage er valgfri
+    }
+
+    function saveControlSettings() {
+      try {
+        localStorage.setItem(CONTROL_STORAGE_KEY, JSON.stringify(controlSettings));
+      } catch (_) {
+        // localStorage er valgfri
+      }
+    }
+
+    let touchStickX = 0;
+    let touchStickY = 0;
+
+    function syncControlsLocalizationUI() {
+      const dict = L();
+      const pct = controlSettings.sensPct;
+      if (sensBtnEl) sensBtnEl.textContent = dict.sensBtn ? dict.sensBtn(pct) : `⚙ Sens: ${pct}%`;
+      if (sensTitleEl && dict.sensTitle) sensTitleEl.textContent = dict.sensTitle;
+      if (sensLookLabelEl && dict.sensLookLabel) sensLookLabelEl.textContent = dict.sensLookLabel;
+      if (sensValLabelEl) sensValLabelEl.textContent = `${pct}%`;
+      if (sensRangeEl) sensRangeEl.value = String(pct);
+      if (sensInvertLabelEl && dict.sensInvertLabel) sensInvertLabelEl.textContent = dict.sensInvertLabel;
+      if (sensInvertBtnEl) {
+        sensInvertBtnEl.textContent = controlSettings.invertY ? 'ON' : 'OFF';
+        sensInvertBtnEl.classList.toggle('active', controlSettings.invertY);
+      }
+      if (sensVrLabelEl && dict.sensVrTurnLabel) sensVrLabelEl.textContent = dict.sensVrTurnLabel;
+      if (sensVrBtnEl) {
+        sensVrBtnEl.textContent = controlSettings.vrSmoothTurn
+          ? (dict.sensVrSmooth || 'Smooth')
+          : (dict.sensVrSnap || 'Snap 30°');
+        sensVrBtnEl.classList.toggle('active', controlSettings.vrSmoothTurn);
+      }
+      if (sensResetBtnEl && dict.sensResetBtn) sensResetBtnEl.textContent = dict.sensResetBtn;
+      if (btnTouchFireEl && dict.touchFire) btnTouchFireEl.textContent = dict.touchFire;
+      if (btnTouchWeaponEl && dict.touchWeapon) btnTouchWeaponEl.textContent = dict.touchWeapon;
+      if (btnTouchHorseEl && dict.touchHorse) btnTouchHorseEl.textContent = dict.touchHorse;
+      if (btnTouchEatEl && dict.touchEat) btnTouchEatEl.textContent = dict.touchEat;
+      if (btnTouchUseEl && dict.touchUse) btnTouchUseEl.textContent = dict.touchUse;
+    }
 
     function getLocalizedWeaponName(wId) {
       const dict = L();
@@ -664,6 +1059,7 @@
       document.documentElement.lang = currentLang === 'no' ? 'no' : 'en';
       if (langBtnEl) langBtnEl.textContent = dict.langBtn;
       if (pcHintEl) pcHintEl.innerHTML = dict.pcHintHtml;
+      syncControlsLocalizationUI();
 
       const titleSuffix = playerState.title ? ` | ${dict.hudTitle}: ${playerState.title}` : '';
       const storyLine = getStoryStatusLine();
@@ -3156,13 +3552,20 @@
       const gamepad = getHandGamepad('left') || (vrHands.left && vrHands.left.userData.gamepad) || null;
       if (!gamepad || !gamepad.axes) return;
 
-      const axisX = gamepad.axes[2] || 0;
-      const axisY = gamepad.axes[3] || 0;
-      const strafe = Math.abs(axisX) > 0.15 ? axisX : 0;
-      const forwardAmount = Math.abs(axisY) > 0.15 ? -axisY : 0;
-      if (strafe === 0 && forwardAmount === 0) return;
+      const rawX = gamepad.axes[2] !== undefined ? gamepad.axes[2] : (gamepad.axes[0] || 0);
+      const rawY = gamepad.axes[3] !== undefined ? gamepad.axes[3] : (gamepad.axes[1] || 0);
+      const mag = Math.hypot(rawX, rawY);
+      const dz = 0.14;
+      if (mag <= dz) return;
 
-      moveInLookDirection(strafe, forwardAmount, VR_MOVE_SPEED, dt);
+      // Myk radial død-sone og respons-kurve for behagelig og presis VR-gange i Meta Quest
+      const norm = Math.min(1, (mag - dz) / (1 - dz));
+      const curved = norm * (0.65 + 0.35 * norm);
+      const invMag = 1 / mag;
+      const strafe = rawX * invMag * curved;
+      const forwardAmount = -rawY * invMag * curved;
+
+      moveInLookDirection(strafe, forwardAmount, VR_MOVE_SPEED * curved, dt);
     }
 
     const pcKeys = Object.create(null);
@@ -3175,31 +3578,43 @@
       const rightKey = (pcKeys.KeyD || pcKeys.ArrowRight) ? 1 : 0;
       const leftKey = (pcKeys.KeyA || pcKeys.ArrowLeft) ? 1 : 0;
 
-      const forwardAmount = forwardKey - backKey;
-      const strafe = rightKey - leftKey;
-      if (forwardAmount === 0 && strafe === 0) return;
+      const keyForward = forwardKey - backKey;
+      const keyStrafe = rightKey - leftKey;
 
-      moveInLookDirection(strafe, forwardAmount, PC_MOVE_SPEED, dt);
+      if (keyForward !== 0 || keyStrafe !== 0) {
+        moveInLookDirection(keyStrafe, keyForward, PC_MOVE_SPEED, dt);
+        return;
+      }
+
+      // Analog berøringsspak på Telefon & Pad (proporsjonal gang- til løpefart!)
+      const stickMag = Math.min(1, Math.hypot(touchStickX, touchStickY));
+      if (stickMag > 0.06) {
+        const speedScale = 0.32 + 0.68 * stickMag;
+        moveInLookDirection(touchStickX, -touchStickY, PC_MOVE_SPEED * speedScale, dt);
+      }
     }
 
     const rigCamWorld = new THREE.Vector3();
     const rigCamLocal = new THREE.Vector3();
-    // Pre-allokert: snap-turn skal ikke lage et nytt Vector3-objekt.
+    // Pre-allokert: rotasjon i VR skal aldri lage nye Vector3-objekter per frame
     const snapTurnRotated = new THREE.Vector3();
 
-    function snapTurn(direction) {
-      // Roter rundt kameraets posisjon slik at spilleren ikke forskyves i rommet
+    function rotateRigAroundCamera(angleDeltaRad) {
       playerRig.updateMatrixWorld(true);
       camera.getWorldPosition(rigCamWorld);
       rigCamLocal.copy(camera.position);
 
-      playerRig.rotation.y += direction * SNAP_TURN_ANGLE;
+      playerRig.rotation.y += angleDeltaRad;
 
       const rotated = snapTurnRotated.copy(rigCamLocal).applyAxisAngle(UP, playerRig.rotation.y);
       playerRig.position.x = rigCamWorld.x - rotated.x;
       playerRig.position.z = rigCamWorld.z - rotated.z;
       resolveCircleAgainstWalls(playerRig.position, PLAYER_RADIUS);
       clampPlayerRig();
+    }
+
+    function snapTurn(direction) {
+      rotateRigAroundCamera(direction * SNAP_TURN_ANGLE);
     }
 
     function updateSnapTurn(dt) {
@@ -3209,10 +3624,22 @@
         return;
       }
 
-      snapTurnCooldown = Math.max(0, snapTurnCooldown - dt);
       const gamepad = getHandGamepad('right') || (vrHands.right && vrHands.right.userData.gamepad) || null;
-      const axis = gamepad && gamepad.axes ? (gamepad.axes[2] || 0) : 0;
+      const axis = gamepad && gamepad.axes
+        ? (gamepad.axes[2] !== undefined ? gamepad.axes[2] : (gamepad.axes[0] || 0))
+        : 0;
 
+      if (controlSettings.vrSmoothTurn) {
+        if (Math.abs(axis) > 0.16) {
+          const norm = (Math.abs(axis) - 0.16) / 0.84;
+          const sensScale = controlSettings.sensPct / 100;
+          const turnRate = 2.15 * sensScale * norm * (axis > 0 ? -1 : 1);
+          rotateRigAroundCamera(turnRate * dt);
+        }
+        return;
+      }
+
+      snapTurnCooldown = Math.max(0, snapTurnCooldown - dt);
       if (Math.abs(axis) < 0.35) snapTurnReady = true;
 
       if (snapTurnReady && snapTurnCooldown <= 0 && Math.abs(axis) > 0.65) {
@@ -3262,7 +3689,7 @@
         if (toggleHorseMountHook) toggleHorseMountHook();
       }
       if ((e.code === 'KeyT' || keyLower === 't') && !e.repeat && !renderer.xr.isPresenting) resetTargets();
-      if ((e.code === 'KeyN' || keyLower === 'n') && !renderer.xr.isPresenting) toggleDayNight();
+      if ((e.code === 'KeyN' || keyLower === 'n') && !e.repeat && !renderer.xr.isPresenting) toggleDayNight();
     });
 
     window.addEventListener('wheel', (e) => {
@@ -4344,73 +4771,477 @@
     });
 
     // =========================================================================
-    // 9. PC-KAMERAKONTROLL (DRA MED MUS FOR Å SE SEG RUNDT) OG RESIZE
+    // 9. KRYSSPLATTFORM KONTROLLMOTOR FOR VR, TELEFON, PAD OG PC (FØLSOMHET + MULTI-TOUCH + POINTER LOCK)
     // =========================================================================
-    let isDragging = false;
-    let prevPointerX = 0;
-    let prevPointerY = 0;
     let pcPitch = 0;
+    const MAX_LOOK_PITCH = 1.18; // +-67.6 grader så man kan sikte høyt (gribber/balkonger) og lavt (ulver/kasser)
 
     function resetPCCameraPitch() {
       pcPitch = 0;
       camera.rotation.x = 0;
     }
 
-    let pointerDownX = 0;
-    let pointerDownY = 0;
-    let pointerMoved = false;
-    let pointerCanShoot = false;
+    function isPadViewport() {
+      const minEdge = Math.min(window.innerWidth, window.innerHeight);
+      return minEdge >= 600;
+    }
+
+    let touchUIEnabled = false;
+    function setTouchUIEnabled(enabled) {
+      touchUIEnabled = !!enabled;
+      document.body.classList.toggle('touch-ui', touchUIEnabled);
+    }
+
+    // Aktiver touch-kontroller automatisk på Telefon & Pad (coarse pointer / berøringsskjerm)
+    const coarseMediaQuery = window.matchMedia ? window.matchMedia('(pointer: coarse)') : null;
+    if (
+      (coarseMediaQuery && coarseMediaQuery.matches) ||
+      (navigator.maxTouchPoints > 0 && Math.min(window.innerWidth, window.innerHeight) <= 1024)
+    ) {
+      setTouchUIEnabled(true);
+    }
+    if (coarseMediaQuery && coarseMediaQuery.addEventListener) {
+      coarseMediaQuery.addEventListener('change', (ev) => {
+        if (ev.matches) setTouchUIEnabled(true);
+      });
+    }
+
+    // --- Følsomhets- og innstillingspanel (#sens-btn / #sens-panel) ---
+    function setLookSensitivityPct(newPct) {
+      controlSettings.sensPct = Math.max(25, Math.min(250, Math.round(newPct / 5) * 5));
+      saveControlSettings();
+      syncControlsLocalizationUI();
+    }
+
+    if (sensBtnEl && sensPanelEl) {
+      sensBtnEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const willOpen = !sensPanelEl.classList.contains('open');
+        sensPanelEl.classList.toggle('open', willOpen);
+        if (willOpen && document.pointerLockElement && document.exitPointerLock) {
+          document.exitPointerLock();
+        }
+      });
+    }
+    if (sensPanelEl) {
+      sensPanelEl.addEventListener('pointerdown', (e) => e.stopPropagation());
+    }
+    if (sensRangeEl) {
+      sensRangeEl.addEventListener('input', () => {
+        setLookSensitivityPct(Number(sensRangeEl.value) || 100);
+      });
+    }
+    if (sensMinusBtnEl) {
+      sensMinusBtnEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        setLookSensitivityPct(controlSettings.sensPct - 15);
+      });
+    }
+    if (sensPlusBtnEl) {
+      sensPlusBtnEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        setLookSensitivityPct(controlSettings.sensPct + 15);
+      });
+    }
+    if (sensInvertBtnEl) {
+      sensInvertBtnEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        controlSettings.invertY = !controlSettings.invertY;
+        saveControlSettings();
+        syncControlsLocalizationUI();
+      });
+    }
+    if (sensVrBtnEl) {
+      sensVrBtnEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        controlSettings.vrSmoothTurn = !controlSettings.vrSmoothTurn;
+        saveControlSettings();
+        syncControlsLocalizationUI();
+      });
+    }
+    if (sensResetBtnEl) {
+      sensResetBtnEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        controlSettings.sensPct = 100;
+        controlSettings.invertY = false;
+        controlSettings.vrSmoothTurn = false;
+        saveControlSettings();
+        syncControlsLocalizationUI();
+      });
+    }
+    if (dayNightTopBtnEl) {
+      dayNightTopBtnEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleDayNight();
+      });
+    }
+
+    // --- Kalibrert kamerarotasjon for Telefon, Pad og PC (med hastighetsakselerasjon på touch) ---
+    function applyTouchLookDelta(dx, dy, dtMs) {
+      const sensScale = controlSettings.sensPct / 100;
+      const invertSign = controlSettings.invertY ? -1 : 1;
+
+      // Kalibrert for reell tommelrekkevidde: ~105px sveip på Telefon og ~140px på Pad gir rask 180° vending, mens små bevegelser gir presis sikting
+      const refSpan = isPadViewport()
+        ? 310
+        : Math.max(260, Math.min(window.innerWidth, window.innerHeight) * 0.58);
+      const baseRadPerPx = (isPadViewport() ? 3.15 : 3.25) / refSpan;
+
+      // Myk akselerasjonskurve: rolige mikro-bevegelser (<0.18 px/ms) = stødig fin-sikting, rask tommel-sveip = 180° på ett drag
+      const speedPxPerMs = Math.hypot(dx, dy) / Math.max(4, dtMs);
+      const accel = 1.0 + Math.min(1.45, Math.max(0, speedPxPerMs - 0.18) * 0.78);
+
+      const yawDelta = dx * baseRadPerPx * accel * sensScale;
+      const pitchDelta = dy * baseRadPerPx * 0.74 * accel * sensScale * invertSign;
+
+      playerRig.rotation.y -= yawDelta;
+      pcPitch = Math.max(-MAX_LOOK_PITCH, Math.min(MAX_LOOK_PITCH, pcPitch - pitchDelta));
+      camera.rotation.x = pcPitch;
+    }
+
+    function applyMouseLookDelta(dx, dy, isPointerLocked) {
+      const sensScale = controlSettings.sensPct / 100;
+      const invertSign = controlSettings.invertY ? -1 : 1;
+      const baseYaw = isPointerLocked ? 0.0022 : 0.0038;
+      const basePitch = isPointerLocked ? 0.00185 : 0.0030;
+
+      playerRig.rotation.y -= dx * baseYaw * sensScale;
+      pcPitch = Math.max(-MAX_LOOK_PITCH, Math.min(MAX_LOOK_PITCH, pcPitch - dy * basePitch * sensScale * invertSign));
+      camera.rotation.x = pcPitch;
+    }
+
+    // --- Multi-Touch tilstand (isolert per pointerId slik at venstre spak + høyre sikte/skyt aldri forstyrrer hverandre!) ---
+    let joyPointerId = null;
+    let joyOriginX = 0;
+    let joyOriginY = 0;
+    let joyMaxRadius = 46;
+
+    let lookPointerId = null;
+    let lookStartX = 0;
+    let lookStartY = 0;
+    let lookPrevX = 0;
+    let lookPrevY = 0;
+    let lookPrevTime = 0;
+    let lookMoved = false;
+    let lookIsTouch = false;
+
+    let firePointerId = null;
+    let firePrevX = 0;
+    let firePrevY = 0;
+    let firePrevTime = 0;
+    let isHoldingFireButton = false;
+    let isHoldingMouseFire = false;
+
+    function resetTouchJoystick() {
+      joyPointerId = null;
+      touchStickX = 0;
+      touchStickY = 0;
+      if (touchJoyKnobEl) {
+        touchJoyKnobEl.style.transform = 'translate3d(0px, 0px, 0px)';
+      }
+      if (touchJoyRingEl) {
+        touchJoyRingEl.style.left = '';
+        touchJoyRingEl.style.bottom = '';
+        touchJoyRingEl.style.top = '';
+      }
+    }
+
+    function updateTouchJoystickFromPoint(clientX, clientY) {
+      const dx = clientX - joyOriginX;
+      const dy = clientY - joyOriginY;
+      const dist = Math.hypot(dx, dy);
+      const clamped = Math.min(joyMaxRadius, dist);
+      const angle = dist > 1e-4 ? Math.atan2(dy, dx) : 0;
+      const kx = Math.cos(angle) * clamped;
+      const ky = Math.sin(angle) * clamped;
+      touchStickX = kx / joyMaxRadius;
+      touchStickY = ky / joyMaxRadius;
+      if (touchJoyKnobEl) {
+        touchJoyKnobEl.style.transform = `translate3d(${kx.toFixed(1)}px, ${ky.toFixed(1)}px, 0px)`;
+      }
+    }
+
+    // --- Touch-handlingsknapper (Våpen, Hest, Spis, Dør/Velg og Sikt-mens-du-skyter SKYT-knapp!) ---
+    function bindTapActionButton(btnEl, handler) {
+      if (!btnEl) return;
+      btnEl.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        setTouchUIEnabled(true);
+        btnEl.classList.add('pressed');
+        handler();
+      });
+      const clearPress = (e) => {
+        if (e) e.stopPropagation();
+        btnEl.classList.remove('pressed');
+      };
+      btnEl.addEventListener('pointerup', clearPress);
+      btnEl.addEventListener('pointercancel', clearPress);
+      btnEl.addEventListener('pointerleave', clearPress);
+    }
+
+    bindTapActionButton(btnTouchWeaponEl, () => {
+      cycleUnlockedWeapon(1);
+    });
+    bindTapActionButton(btnTouchHorseEl, () => {
+      if (toggleHorseMountHook && toggleHorseMountHook()) return;
+      if (callHorseHook) callHorseHook();
+    });
+    bindTapActionButton(btnTouchEatEl, () => {
+      tryEatFood();
+    });
+    bindTapActionButton(btnTouchUseEl, () => {
+      if (!tryPCShopInteraction(window.innerWidth * 0.5, window.innerHeight * 0.5)) {
+        tryKeyFSafeHouseDoor();
+      }
+    });
+
+    if (btnTouchFireEl) {
+      btnTouchFireEl.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (renderer.xr.isPresenting) return;
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        setTouchUIEnabled(true);
+        btnTouchFireEl.classList.add('pressed');
+        firePointerId = e.pointerId;
+        firePrevX = e.clientX;
+        firePrevY = e.clientY;
+        firePrevTime = performance.now();
+        isHoldingFireButton = true;
+        if (btnTouchFireEl.setPointerCapture) {
+          try { btnTouchFireEl.setPointerCapture(e.pointerId); } catch (_) {}
+        }
+        if (!tryPCShopInteraction(window.innerWidth * 0.5, window.innerHeight * 0.5)) {
+          shoot();
+        }
+      });
+
+      btnTouchFireEl.addEventListener('pointermove', (e) => {
+        if (e.pointerId !== firePointerId || renderer.xr.isPresenting) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const now = performance.now();
+        const dx = e.clientX - firePrevX;
+        const dy = e.clientY - firePrevY;
+        const dtMs = now - firePrevTime;
+        firePrevX = e.clientX;
+        firePrevY = e.clientY;
+        firePrevTime = now;
+        // Sikt sømløst mens man holder inne SKYT-knappen!
+        applyTouchLookDelta(dx, dy, dtMs);
+      });
+
+      const releaseFireBtn = (e) => {
+        if (e && e.pointerId !== undefined && e.pointerId !== firePointerId) return;
+        if (e) e.stopPropagation();
+        firePointerId = null;
+        isHoldingFireButton = false;
+        btnTouchFireEl.classList.remove('pressed');
+      };
+      btnTouchFireEl.addEventListener('pointerup', releaseFireBtn);
+      btnTouchFireEl.addEventListener('pointercancel', releaseFireBtn);
+    }
+
+    function isInteractiveUIElement(target) {
+      if (!target || !target.closest) return false;
+      return !!(
+        target.closest('button') ||
+        target.closest('#sens-panel') ||
+        target.closest('#touch-actions')
+      );
+    }
+
+    // --- PC Pointer Lock + Multi-Touch Venstre Spak / Høyre Sveip-Sikte ---
+    document.addEventListener('mousemove', (e) => {
+      if (renderer.xr.isPresenting) return;
+      if (document.pointerLockElement === renderer.domElement) {
+        const mx = e.movementX || 0;
+        const my = e.movementY || 0;
+        // Ignorer sjeldne nettleser-hopp akkurat idet Pointer Lock aktiveres
+        if (Math.abs(mx) < 360 && Math.abs(my) < 360) {
+          applyMouseLookDelta(mx, my, true);
+        }
+      }
+    });
 
     window.addEventListener('pointerdown', (e) => {
       if (renderer.xr.isPresenting) return;
       if (audioCtx.state === 'suspended') audioCtx.resume();
 
-      // Ikke skyt når man trykker på VR-knappen eller andre knapper
-      const onButton = !!(e.target && e.target.closest && e.target.closest('button'));
-      pointerCanShoot = e.button === 0 && !onButton;
-      pointerMoved = false;
-      pointerDownX = e.clientX;
-      pointerDownY = e.clientY;
-      isDragging = true;
-      prevPointerX = e.clientX;
-      prevPointerY = e.clientY;
+      const isTouch = e.pointerType === 'touch' || e.pointerType === 'pen';
+      if (isTouch) {
+        setTouchUIEnabled(true);
+      }
+
+      if (isInteractiveUIElement(e.target)) return;
+
+      // Lukk innstillingspanelet når man trykker tilbake i spillverdenen
+      if (sensPanelEl && sensPanelEl.classList.contains('open')) {
+        sensPanelEl.classList.remove('open');
+      }
+
+      // 1. PC med mus: aktiver ekte 360° FPS Pointer Lock + klikk/hold for å skyte / samhandle med butikkskilt
+      if (!isTouch) {
+        if (e.button !== 0) return;
+        if (document.pointerLockElement === renderer.domElement) {
+          if (!tryPCShopInteraction(window.innerWidth * 0.5, window.innerHeight * 0.5)) {
+            shoot();
+            isHoldingMouseFire = true;
+          }
+          return;
+        }
+
+        // Hvis pekeren ikke er låst ennå: sjekk først om spilleren klikket på et 3D-butikkskilt i verdenen
+        if (tryPCShopInteraction(e.clientX, e.clientY)) {
+          return;
+        }
+
+        // Lås musepekeren for fri PC-sikting (og støtt dra-sikting som fallback hvis nettleser avviser Pointer Lock)
+        if (renderer.domElement && renderer.domElement.requestPointerLock) {
+          try {
+            const p = renderer.domElement.requestPointerLock();
+            if (p && typeof p.catch === 'function') p.catch(() => {});
+          } catch (_) {}
+        }
+
+        lookPointerId = e.pointerId;
+        lookIsTouch = false;
+        lookMoved = false;
+        lookStartX = e.clientX;
+        lookStartY = e.clientY;
+        lookPrevX = e.clientX;
+        lookPrevY = e.clientY;
+        lookPrevTime = performance.now();
+        isHoldingMouseFire = true;
+        shoot();
+        return;
+      }
+
+      // 2. Telefon & Pad: venstre skjermhalvdel (under topp-HUD) styrer flytende analog styrespak!
+      const inLeftStickZone =
+        joyPointerId === null &&
+        e.clientX < window.innerWidth * 0.44 &&
+        e.clientY > Math.min(125, window.innerHeight * 0.24);
+
+      if (inLeftStickZone) {
+        joyPointerId = e.pointerId;
+        const ringW = touchJoyRingEl ? touchJoyRingEl.offsetWidth || 116 : 116;
+        joyMaxRadius = Math.max(36, ringW * 0.40);
+        joyOriginX = Math.max(ringW * 0.5 + 8, Math.min(window.innerWidth * 0.42, e.clientX));
+        joyOriginY = Math.max(ringW * 0.5 + 90, Math.min(window.innerHeight - ringW * 0.5 - 8, e.clientY));
+        if (touchJoyRingEl) {
+          touchJoyRingEl.style.left = `${(joyOriginX - ringW * 0.5).toFixed(1)}px`;
+          touchJoyRingEl.style.top = `${(joyOriginY - ringW * 0.5).toFixed(1)}px`;
+          touchJoyRingEl.style.bottom = 'auto';
+        }
+        updateTouchJoystickFromPoint(e.clientX, e.clientY);
+        return;
+      }
+
+      // 3. Telefon & Pad: høyre skjermhalvdel (og ledige områder) styrer presis kamerasveip + trykk på 3D-butikktavler!
+      if (lookPointerId === null) {
+        lookPointerId = e.pointerId;
+        lookIsTouch = true;
+        lookMoved = false;
+        lookStartX = e.clientX;
+        lookStartY = e.clientY;
+        lookPrevX = e.clientX;
+        lookPrevY = e.clientY;
+        lookPrevTime = performance.now();
+      }
     });
 
     window.addEventListener('pointermove', (e) => {
-      if (!isDragging || renderer.xr.isPresenting) return;
-      const dx = e.clientX - prevPointerX;
-      const dy = e.clientY - prevPointerY;
-      prevPointerX = e.clientX;
-      prevPointerY = e.clientY;
+      if (renderer.xr.isPresenting) return;
 
-      // Bevegelse utover en liten terskel betyr at man drar kameraet, ikke klikker
-      if (Math.hypot(e.clientX - pointerDownX, e.clientY - pointerDownY) > 6) {
-        pointerMoved = true;
+      if (e.pointerId === joyPointerId) {
+        updateTouchJoystickFromPoint(e.clientX, e.clientY);
+        return;
       }
 
-      playerRig.rotation.y -= dx * 0.004;
-      pcPitch = Math.max(-0.6, Math.min(0.6, pcPitch - dy * 0.003));
-      camera.rotation.x = pcPitch;
-    });
+      if (e.pointerId === lookPointerId) {
+        const now = performance.now();
+        const dx = e.clientX - lookPrevX;
+        const dy = e.clientY - lookPrevY;
+        const dtMs = now - lookPrevTime;
+        lookPrevX = e.clientX;
+        lookPrevY = e.clientY;
+        lookPrevTime = now;
 
-    window.addEventListener('pointerup', (e) => {
-      if (!renderer.xr.isPresenting && pointerCanShoot && !pointerMoved) {
-        if (!tryPCShopInteraction(e.clientX, e.clientY)) {
-          shoot();
+        const moveThreshold = lookIsTouch ? 9 : 6;
+        if (Math.hypot(e.clientX - lookStartX, e.clientY - lookStartY) > moveThreshold) {
+          lookMoved = true;
+        }
+
+        if (lookIsTouch) {
+          applyTouchLookDelta(dx, dy, dtMs);
+        } else if (document.pointerLockElement !== renderer.domElement) {
+          applyMouseLookDelta(dx, dy, false);
         }
       }
-      pointerCanShoot = false;
-      isDragging = false;
     });
 
-    window.addEventListener('pointercancel', () => {
-      pointerCanShoot = false;
-      isDragging = false;
+    function handleGlobalPointerEnd(e) {
+      if (e.pointerId === joyPointerId) {
+        resetTouchJoystick();
+        return;
+      }
+
+      if (e.type === 'pointerup' && !e.isPrimary && e.pointerId !== lookPointerId) {
+        return;
+      }
+
+      if (e.pointerId === lookPointerId) {
+        if (e.type === 'pointerup' && !renderer.xr.isPresenting && lookIsTouch && !lookMoved) {
+          // Kort berøring i verdenen på Telefon/Pad: velg direkte på Saloon-/Skredder-/Våpensmed-tavle!
+          tryPCShopInteraction(e.clientX, e.clientY);
+        }
+        lookPointerId = null;
+        lookMoved = false;
+      }
+
+      if (!lookIsTouch) {
+        isHoldingMouseFire = false;
+      }
+    }
+
+    window.addEventListener('pointerup', handleGlobalPointerEnd);
+    window.addEventListener('pointercancel', (e) => {
+      if (e.pointerId === joyPointerId) resetTouchJoystick();
+      if (e.pointerId === lookPointerId) {
+        lookPointerId = null;
+        lookMoved = false;
+      }
+      if (e.pointerId === firePointerId) {
+        firePointerId = null;
+        isHoldingFireButton = false;
+        if (btnTouchFireEl) btnTouchFireEl.classList.remove('pressed');
+      }
+      isHoldingMouseFire = false;
     });
 
-    // Nullstill PC-pitch når man går inn i VR slik at headsettet styrer kameraet rent
+    function updateContinuousTrigger() {
+      if (renderer.xr.isPresenting) return;
+      if ((isHoldingFireButton || isHoldingMouseFire) && shotCooldownTimer <= 0) {
+        shoot();
+      }
+    }
+
+    // Nullstill PC/Mobil-pitch og skjul 2D-touch-UI når man går inn i WebXR VR
     renderer.xr.addEventListener('sessionstart', () => {
+      document.body.classList.add('in-vr');
+      resetTouchJoystick();
+      isHoldingFireButton = false;
+      isHoldingMouseFire = false;
+      if (document.pointerLockElement && document.exitPointerLock) {
+        document.exitPointerLock();
+      }
       camera.rotation.set(0, 0, 0);
+    });
+    renderer.xr.addEventListener('sessionend', () => {
+      document.body.classList.remove('in-vr');
     });
 
     window.addEventListener('resize', () => {
@@ -4535,11 +5366,12 @@
         safeHouseDoorPivot.rotation.y = safeHouseDoorAngle;
       }
 
-      // Bevegelse og våpenbytte: venstre spak + A/X i VR, WASD/piltaster + 1–6/musehjul på PC
+      // Bevegelse, sikte, kontinuerlig avtrekker og våpenbytte på tvers av VR, Telefon, Pad og PC
       updateVRWeaponSwitchButton();
       updateVRMovement(dt);
       updatePCMovement(dt);
       updateSnapTurn(dt);
+      updateContinuousTrigger();
 
       // Skapninger, Mustang-hest, Grizzlybjørn, Banditter, Katakombevoktere, Lord Malakor og solide veggkollisjoner
       updateDeer(dt);
@@ -4640,6 +5472,9 @@
       equipWeapon,
       unlockedWeapons,
       isPlayerInHidingZone,
+      controlSettings,
+      setTouchUIEnabled,
+      setLookSensitivityPct,
       setLookYawPitch(yaw, pitch = 0) {
         playerRig.rotation.y = yaw;
         pcPitch = pitch;
