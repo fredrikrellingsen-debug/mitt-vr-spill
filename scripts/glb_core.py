@@ -801,6 +801,111 @@ class GLBBuilder:
         """
         self.animations.append({"name": name, "tracks": tracks})
 
+    def _compute_mesh_ao_colors(self, parts):
+        """
+        Computes fast vertex-baked Ambient Occlusion (RGB floats in [0.40, 1.0])
+        across all parts in a mesh using a 3D spatial hash for concave crevices,
+        corners, joints, and downward-facing undersides.
+        """
+        all_pos = []
+        for p in parts:
+            all_pos.extend(p.positions)
+        if not all_pos:
+            return []
+
+        xs = [p[0] for p in all_pos]
+        ys = [p[1] for p in all_pos]
+        zs = [p[2] for p in all_pos]
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        min_z, max_z = min(zs), max(zs)
+        span_x = max_x - min_x
+        span_y = max_y - min_y
+        span_z = max_z - min_z
+        extent = max(span_x, span_y, span_z, 0.25)
+
+        radius = max(0.055, min(0.95, extent * 0.085))
+        inv_cell = 1.0 / radius
+        inv_r2 = 1.0 / (radius * radius)
+
+        grid = {}
+        for part in parts:
+            pos_list = part.positions
+            nrm_list = part.normals
+            for idx in range(len(pos_list)):
+                px, py, pz = pos_list[idx]
+                key = (
+                    int(math.floor(px * inv_cell)),
+                    int(math.floor(py * inv_cell)),
+                    int(math.floor(pz * inv_cell)),
+                )
+                bucket = grid.get(key)
+                if bucket is None:
+                    grid[key] = [(px, py, pz, nrm_list[idx])]
+                elif len(bucket) < 10:
+                    bucket.append((px, py, pz, nrm_list[idx]))
+
+        y_range = max(span_y, 0.08)
+        part_colors = []
+        for part in parts:
+            pos_list = part.positions
+            nrm_list = part.normals
+            colors = []
+            for idx in range(len(pos_list)):
+                px, py, pz = pos_list[idx]
+                nx, ny, nz = nrm_list[idx]
+
+                # Soft hemispherical sky-visibility term (undersides darker, upward brighter)
+                hemi = 0.80 + 0.20 * max(-0.85, min(1.0, ny))
+
+                # Mild base-contact darkening near bottom of object
+                rel_y = (py - min_y) / y_range
+                base_fac = 1.0
+                if rel_y < 0.14 and ny < 0.35:
+                    base_fac = 0.86 + 0.14 * (rel_y / 0.14)
+
+                # Spatial-hash concave crevice & joint proximity occlusion
+                cx = int(math.floor(px * inv_cell))
+                cy = int(math.floor(py * inv_cell))
+                cz = int(math.floor(pz * inv_cell))
+
+                occ = 0.0
+                for dx_c in (-1, 0, 1):
+                    for dy_c in (-1, 0, 1):
+                        for dz_c in (-1, 0, 1):
+                            bucket = grid.get((cx + dx_c, cy + dy_c, cz + dz_c))
+                            if not bucket:
+                                continue
+                            for qx, qy, qz, qn in bucket:
+                                vx = qx - px
+                                vy = qy - py
+                                vz = qz - pz
+                                d2 = vx * vx + vy * vy + vz * vz
+                                if d2 < 1e-8 or d2 >= radius * radius:
+                                    continue
+                                dist = math.sqrt(d2)
+                                proj = (vx * nx + vy * ny + vz * nz) / dist
+                                if proj > 0.10:
+                                    # Check normal opposition/bend so coplanar walls stay bright
+                                    ndot = nx * qn[0] + ny * qn[1] + nz * qn[2]
+                                    angle_weight = 1.0 - max(0.0, ndot) * 0.65
+                                    falloff = 1.0 - (dist * dist) * inv_r2
+                                    occ += proj * falloff * angle_weight * 0.14
+                                    if occ >= 0.44:
+                                        break
+                            if occ >= 0.44:
+                                break
+                        if occ >= 0.44:
+                            break
+                    if occ >= 0.44:
+                        break
+
+                crevice = 1.0 - min(0.42, occ)
+                ao = max(0.42, min(1.0, hemi * base_fac * crevice))
+                colors.append((ao, ao, ao))
+            part_colors.append(colors)
+        return part_colors
+
     def export_glb(self, filepath):
         bin_chunks = bytearray()
         buffer_views = []
@@ -828,7 +933,8 @@ class GLBBuilder:
 
         for m in self.meshes:
             primitives = []
-            for part in m["parts"]:
+            ao_colors_by_part = self._compute_mesh_ao_colors(m["parts"])
+            for p_idx, part in enumerate(m["parts"]):
                 v_cnt = len(part.positions)
                 i_cnt = len(part.indices)
                 total_verts += v_cnt
@@ -871,6 +977,18 @@ class GLBBuilder:
                     "type": "VEC2",
                 })
 
+                # Pack COLOR_0 (Vertex-Baked Ambient Occlusion)
+                col_list = ao_colors_by_part[p_idx] if p_idx < len(ao_colors_by_part) else [(1.0, 1.0, 1.0)] * v_cnt
+                col_bytes = b"".join(struct.pack("<fff", *c) for c in col_list)
+                col_bv = append_buffer_view(col_bytes, target=34962)
+                col_acc = len(accessors)
+                accessors.append({
+                    "bufferView": col_bv,
+                    "componentType": 5126,
+                    "count": v_cnt,
+                    "type": "VEC3",
+                })
+
                 # Pack INDICES
                 if v_cnt <= 65535:
                     idx_bytes = b"".join(struct.pack("<H", ix) for ix in part.indices)
@@ -892,6 +1010,7 @@ class GLBBuilder:
                         "POSITION": pos_acc,
                         "NORMAL": nrm_acc,
                         "TEXCOORD_0": uv_acc,
+                        "COLOR_0": col_acc,
                     },
                     "indices": idx_acc,
                     "material": part.material_idx,
