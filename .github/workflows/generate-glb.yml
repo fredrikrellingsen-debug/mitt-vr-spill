@@ -1,10 +1,10 @@
-name: Sync CC0 Assets & Missing GLB Fallbacks
+name: Sync CC0 Assets & Protected GLB Models
 
 on:
   push:
     branches: [main]
     paths:
-      - 'scripts/fetch_cc0_assets.py'
+      - 'scripts/*.py'
       - '.github/workflows/generate-glb.yml'
   workflow_dispatch:
 
@@ -16,23 +16,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Fetch missing CC0 HDRIs, PBR textures & protected CC0 GLBs
+      - name: Fetch missing CC0 HDRIs, PBR textures & missing-only GLB fallbacks
         run: |
           if [ -f scripts/fetch_cc0_assets.py ]; then
             python3 -B scripts/fetch_cc0_assets.py
           fi
-      - name: Generate ONLY missing .glb models (never overwrite existing ./assets/*.glb)
+      - name: Build missing or legacy procedural GLBs (external .glb files are never overwritten)
         run: |
           if [ -f scripts/generate_assets.py ]; then
-            python3 -B scripts/generate_assets.py --skip-existing
+            python3 -B scripts/generate_assets.py --upgrade-subdiv
           fi
-      - name: Commit and push new assets to main
+      - name: Commit and push updated assets to main
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add assets/env/*.hdr assets/textures/*.jpg assets/*.glb || true
+          git add assets/env/*.hdr assets/textures/*.jpg assets/*.glb assets/external-models.json || true
           if ! git diff --cached --quiet; then
-            git commit -m "Sync CC0 HDRIs, 1K PBR textures and protected .glb assets"
+            git commit -m "Build subdivided 2.0 procedural GLBs & preserve external assets"
             git pull --rebase origin main
             git push origin main
           fi

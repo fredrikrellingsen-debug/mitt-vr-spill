@@ -71,28 +71,12 @@ TEXTURE_JOBS = [
     ("leather_rough.jpg", "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/brown_leather/brown_leather_rough_1k.jpg"),
 ]
 
-# Genuine CC0 rigged & animated 3D models (Quaternius CC0 1.0 Public Domain)
-# Only replaces target .glb if missing or matching the exact legacy procedural SHA-256.
-CC0_GLB_UPGRADES = [
-    (
-        "deer.glb",
-        "https://raw.githubusercontent.com/trebeljahr/quaternius-showcase/main/public/glb/animals_pack/Stag.glb",
-        {"d7b4c0d82a8f11ee1756ef21c69352a524ca0817c5b6338c9d624e8e27e20f05"},
-    ),
-    (
-        "wolf.glb",
-        "https://raw.githubusercontent.com/trebeljahr/quaternius-showcase/main/public/glb/animals_pack/Wolf.glb",
-        {"0d01c81e81174e3427cc4cb909f1aa97f0081693f24afdbadc4b71af03da2416"},
-    ),
-    (
-        "horse.glb",
-        "https://raw.githubusercontent.com/trebeljahr/quaternius-showcase/main/public/glb/animals_pack/Horse.glb",
-        {"6e75c0d633f1a2b363159b2cdb5c0e20d9e0d0c4d03627d179ba23508ff4fd11"},
-    ),
+# Genuine CC0 high-poly PBR 3D models (ONLY fetched if the target .glb does not exist at all;
+# existing .glb files in ./assets/ are NEVER overwritten).
+CC0_GLB_FALLBACKS = [
     (
         "vampire.glb",
         "https://raw.githubusercontent.com/511action/descent-3d-assets/main/models/CreepCreature.glb",
-        {"b40996e9ae65227b3e2131c5478f200b33209128239c70f24e5d70f962f93ae5"},
     ),
 ]
 
@@ -159,19 +143,17 @@ def main():
             f.write(raw)
         print(f"  [OK]   {fname} ({len(raw) // 1024} KB)")
 
-    print("=== Upgrading Selected Procedural GLBs to Sculpted/Rigged CC0 GLBs ===")
-    for fname, url, legacy_hashes in CC0_GLB_UPGRADES:
+    print("=== Checking Missing-Only External CC0 GLBs ===")
+    for fname, url in CC0_GLB_FALLBACKS:
         dest = os.path.join(ASSETS_DIR, fname)
         if os.path.isfile(dest) and not force:
-            cur_hash = sha256_file(dest)
-            if cur_hash not in legacy_hashes:
-                print(f"  [PROTECTED] {fname} already external/custom ({os.path.getsize(dest) // 1024} KB) — skipping")
-                continue
+            print(f"  [PROTECTED] {fname} exists ({os.path.getsize(dest) // 1024} KB) — preserving")
+            continue
         raw = download_bytes(url)
         validate_payload(fname, raw)
         with open(dest, "wb") as f:
             f.write(raw)
-        print(f"  [UPGRADED]  {fname} -> CC0 model ({len(raw) // 1024} KB)")
+        print(f"  [FETCHED]   {fname} -> CC0 model ({len(raw) // 1024} KB)")
 
 
 if __name__ == "__main__":

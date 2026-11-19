@@ -697,6 +697,233 @@ class MeshPart:
         if cap_top:
             self.add_cap_ring(top_pts, self._transform_normal((0.0, 1.0, 0.0), q_rot, (1, 1, 1)), uv_scale)
 
+    def merge_vertices_and_smooth_normals(self, pos_quant=2000.0, uv_quant=1000.0):
+        """
+        Welds shared vertices (within 0.5mm position & 0.001 UV) and computes unified
+        area-weighted smooth normals across all vertices sharing the same 3D position
+        (even across UV seams), eliminating faceted shading and seam lines.
+        """
+        if not self.indices or not self.positions:
+            return
+
+        vert_map = {}
+        new_pos = []
+        new_uvs = []
+        pos_keys = []
+        remap = [0] * len(self.positions)
+
+        has_uv = len(self.uvs) == len(self.positions)
+        for i, p in enumerate(self.positions):
+            pk = (int(round(p[0] * pos_quant)), int(round(p[1] * pos_quant)), int(round(p[2] * pos_quant)))
+            uv = self.uvs[i] if has_uv else (0.0, 0.0)
+            uk = (int(round(uv[0] * uv_quant)), int(round(uv[1] * uv_quant)))
+            full_key = (pk, uk)
+            idx = vert_map.get(full_key)
+            if idx is None:
+                idx = len(new_pos)
+                vert_map[full_key] = idx
+                new_pos.append(p)
+                new_uvs.append(uv)
+                pos_keys.append(pk)
+            remap[i] = idx
+
+        new_indices = []
+        for t in range(0, len(self.indices) - 2, 3):
+            i0 = remap[self.indices[t]]
+            i1 = remap[self.indices[t + 1]]
+            i2 = remap[self.indices[t + 2]]
+            if i0 == i1 or i1 == i2 or i2 == i0:
+                continue
+            new_indices.extend([i0, i1, i2])
+
+        self.positions = new_pos
+        self.uvs = new_uvs
+        self.indices = new_indices
+        self.recompute_welded_smooth_normals(pos_quant=pos_quant, _precomputed_pks=pos_keys)
+
+    def recompute_welded_smooth_normals(self, pos_quant=2000.0, _precomputed_pks=None):
+        """Computes area-weighted smooth normals welded across identical 3D positions."""
+        v_cnt = len(self.positions)
+        if v_cnt == 0:
+            self.normals = []
+            return
+        pks = _precomputed_pks if _precomputed_pks is not None else [
+            (int(round(p[0] * pos_quant)), int(round(p[1] * pos_quant)), int(round(p[2] * pos_quant)))
+            for p in self.positions
+        ]
+        pk_norm = {}
+        for pk in pks:
+            if pk not in pk_norm:
+                pk_norm[pk] = [0.0, 0.0, 0.0]
+
+        pos = self.positions
+        idx = self.indices
+        for t in range(0, len(idx) - 2, 3):
+            i0, i1, i2 = idx[t], idx[t + 1], idx[t + 2]
+            p0, p1, p2 = pos[i0], pos[i1], pos[i2]
+            fn = v_cross(v_sub(p1, p0), v_sub(p2, p0))
+            for vi in (i0, i1, i2):
+                acc = pk_norm[pks[vi]]
+                acc[0] += fn[0]
+                acc[1] += fn[1]
+                acc[2] += fn[2]
+
+        norm_by_pk = {pk: v_norm(acc, (0.0, 1.0, 0.0)) for pk, acc in pk_norm.items()}
+        self.normals = [norm_by_pk[pks[i]] for i in range(v_cnt)]
+
+    def loop_subdivide(self, levels=1, pos_quant=2000.0):
+        """
+        True Loop triangle mesh subdivision (1-2 levels) on the welded 3D position manifold,
+        preserving UV seams cleanly while smoothing all organic silhouettes and eliminating facets.
+        """
+        if levels <= 0 or len(self.indices) < 3:
+            return
+
+        self.merge_vertices_and_smooth_normals(pos_quant=pos_quant)
+
+        for _ in range(levels):
+            if len(self.indices) < 3:
+                break
+            v_cnt = len(self.positions)
+            # Map each vertex to a welded 3D position ID
+            pk_to_pid = {}
+            pid_pos = []
+            v_to_pid = [0] * v_cnt
+            for vi, p in enumerate(self.positions):
+                pk = (int(round(p[0] * pos_quant)), int(round(p[1] * pos_quant)), int(round(p[2] * pos_quant)))
+                pid = pk_to_pid.get(pk)
+                if pid is None:
+                    pid = len(pid_pos)
+                    pk_to_pid[pk] = pid
+                    pid_pos.append(p)
+                v_to_pid[vi] = pid
+
+            p_cnt = len(pid_pos)
+            p_neighbors = [set() for _ in range(p_cnt)]
+            p_edge_opps = {}
+
+            tris_cnt = len(self.indices) // 3
+            for ti in range(tris_cnt):
+                v0 = self.indices[ti * 3]
+                v1 = self.indices[ti * 3 + 1]
+                v2 = self.indices[ti * 3 + 2]
+                p0, p1, p2 = v_to_pid[v0], v_to_pid[v1], v_to_pid[v2]
+                if p0 == p1 or p1 == p2 or p2 == p0:
+                    continue
+                p_neighbors[p0].update((p1, p2))
+                p_neighbors[p1].update((p0, p2))
+                p_neighbors[p2].update((p0, p1))
+                for a, b, opp in ((p0, p1, p2), (p1, p2, p0), (p2, p0, p1)):
+                    ek = (a, b) if a < b else (b, a)
+                    lst = p_edge_opps.get(ek)
+                    if lst is None:
+                        p_edge_opps[ek] = [opp]
+                    else:
+                        lst.append(opp)
+
+            # Identify boundary edges & boundary neighbors on the 3D position graph
+            boundary_nbrs = [set() for _ in range(p_cnt)]
+            p_edge_mid = {}
+            for ek, opps in p_edge_opps.items():
+                pa, pb = ek
+                pos_a, pos_b = pid_pos[pa], pid_pos[pb]
+                if len(opps) == 2:
+                    po0, po1 = pid_pos[opps[0]], pid_pos[opps[1]]
+                    p_edge_mid[ek] = (
+                        0.375 * (pos_a[0] + pos_b[0]) + 0.125 * (po0[0] + po1[0]),
+                        0.375 * (pos_a[1] + pos_b[1]) + 0.125 * (po0[1] + po1[1]),
+                        0.375 * (pos_a[2] + pos_b[2]) + 0.125 * (po0[2] + po1[2]),
+                    )
+                else:
+                    boundary_nbrs[pa].add(pb)
+                    boundary_nbrs[pb].add(pa)
+                    p_edge_mid[ek] = (
+                        0.5 * (pos_a[0] + pos_b[0]),
+                        0.5 * (pos_a[1] + pos_b[1]),
+                        0.5 * (pos_a[2] + pos_b[2]),
+                    )
+
+            # Update even (original) 3D positions using Loop weights
+            even_pid_pos = [None] * p_cnt
+            for pid in range(p_cnt):
+                cur = pid_pos[pid]
+                b_set = boundary_nbrs[pid]
+                if b_set:
+                    if len(b_set) == 2:
+                        b0, b1 = tuple(b_set)
+                        pb0, pb1 = pid_pos[b0], pid_pos[b1]
+                        even_pid_pos[pid] = (
+                            0.75 * cur[0] + 0.125 * (pb0[0] + pb1[0]),
+                            0.75 * cur[1] + 0.125 * (pb0[1] + pb1[1]),
+                            0.75 * cur[2] + 0.125 * (pb0[2] + pb1[2]),
+                        )
+                    else:
+                        even_pid_pos[pid] = cur
+                else:
+                    nbrs = p_neighbors[pid]
+                    n = len(nbrs)
+                    if n < 3:
+                        even_pid_pos[pid] = cur
+                    else:
+                        beta = (3.0 / 16.0) if n == 3 else (3.0 / (8.0 * n))
+                        w_self = 1.0 - n * beta
+                        sx = sum(pid_pos[nb][0] for nb in nbrs)
+                        sy = sum(pid_pos[nb][1] for nb in nbrs)
+                        sz = sum(pid_pos[nb][2] for nb in nbrs)
+                        even_pid_pos[pid] = (
+                            w_self * cur[0] + beta * sx,
+                            w_self * cur[1] + beta * sy,
+                            w_self * cur[2] + beta * sz,
+                        )
+
+            new_pos = [even_pid_pos[v_to_pid[vi]] for vi in range(v_cnt)]
+            new_uvs = list(self.uvs)
+            v_edge_cache = {}
+            new_indices = []
+
+            def get_odd_vert(va, vb):
+                vk = (va, vb) if va < vb else (vb, va)
+                cached = v_edge_cache.get(vk)
+                if cached is not None:
+                    return cached
+                pa, pb = v_to_pid[va], v_to_pid[vb]
+                if pa == pb:
+                    mid_p = even_pid_pos[pa]
+                else:
+                    ek = (pa, pb) if pa < pb else (pb, pa)
+                    mid_p = p_edge_mid.get(ek)
+                    if mid_p is None:
+                        mid_p = v_lerp(pid_pos[pa], pid_pos[pb], 0.5)
+                uva, uvb = new_uvs[va], new_uvs[vb]
+                mid_uv = ((uva[0] + uvb[0]) * 0.5, (uva[1] + uvb[1]) * 0.5)
+                idx_new = len(new_pos)
+                new_pos.append(mid_p)
+                new_uvs.append(mid_uv)
+                v_edge_cache[vk] = idx_new
+                return idx_new
+
+            for ti in range(tris_cnt):
+                v0 = self.indices[ti * 3]
+                v1 = self.indices[ti * 3 + 1]
+                v2 = self.indices[ti * 3 + 2]
+                if v_to_pid[v0] == v_to_pid[v1] or v_to_pid[v1] == v_to_pid[v2] or v_to_pid[v2] == v_to_pid[v0]:
+                    continue
+                e01 = get_odd_vert(v0, v1)
+                e12 = get_odd_vert(v1, v2)
+                e20 = get_odd_vert(v2, v0)
+                new_indices.extend([
+                    v0, e01, e20,
+                    v1, e12, e01,
+                    v2, e20, e12,
+                    e01, e12, e20,
+                ])
+
+            self.positions = new_pos
+            self.uvs = new_uvs
+            self.indices = new_indices
+
+        self.recompute_welded_smooth_normals(pos_quant=pos_quant)
+
 
 # ---------------------------------------------------------------------------
 # glTF 2.0 Binary (.glb) Scene Assembler & Exporter
@@ -906,7 +1133,271 @@ class GLBBuilder:
             part_colors.append(colors)
         return part_colors
 
+    def _calibrate_pbr_materials_and_classify_organic(self):
+        """
+        Enforces physically accurate non-plastic PBR roughness/metallic values across all materials
+        and returns a set of material indices representing organic/cloth/leather surfaces.
+        """
+        hard_keywords = (
+            "steel", "iron", "brass", "gold", "silver", "copper", "metal", "boiler",
+            "glass", "siding", "shingle", "foundation", "brick", "counter", "shutters",
+            "warmpine", "darktimber", "walnut", "dynamite", "ferrule", "buckle", "spur",
+            "shear", "pin", "eye", "pupil", "fang", "tooth", "teeth", "claw", "glow", "ember"
+        )
+        fur_skin_keywords = (
+            "fur", "coat", "skin", "face", "hair", "mane", "tail", "muzzle", "blaze",
+            "belly", "flank", "brisket", "ear", "snout", "brow", "beard", "flesh", "nose"
+        )
+        leather_keywords = ("leather", "boot", "holster", "belt", "bridle", "cinch", "apron")
+        cloth_keywords = (
+            "trousers", "vest", "shirt", "bandana", "cloak", "silk", "wool", "blanket",
+            "stetson", "hat", "cravat", "tape", "linen", "canvas", "robe", "hood", "collar"
+        )
+        wood_keywords = ("siding", "pine", "timber", "shutter", "plank", "shingle", "walnut", "wood")
+
+        organic_mat_indices = set()
+        for idx, mat in enumerate(self.materials):
+            m_low = (mat.get("name") or "").lower()
+            pbr = mat.get("pbrMetallicRoughness", {})
+            met = float(pbr.get("metallicFactor", 0.0))
+            rgh = float(pbr.get("roughnessFactor", 0.8))
+
+            is_hard = met >= 0.40 or any(k in m_low for k in hard_keywords)
+            if any(k in m_low for k in wood_keywords) and "counter" not in m_low:
+                pbr["metallicFactor"] = 0.0
+                pbr["roughnessFactor"] = round(min(0.92, max(0.84, rgh)), 4)
+            elif not is_hard:
+                if any(k in m_low for k in leather_keywords) and "saddle" not in m_low or "saddleleather" in m_low:
+                    pbr["metallicFactor"] = 0.05
+                    pbr["roughnessFactor"] = round(min(0.72, max(0.62, rgh)), 4)
+                    organic_mat_indices.add(idx)
+                elif any(k in m_low for k in cloth_keywords) and "duster" not in m_low:
+                    pbr["metallicFactor"] = 0.0
+                    pbr["roughnessFactor"] = round(min(0.95, max(0.88, rgh)), 4)
+                    organic_mat_indices.add(idx)
+                elif "duster" in m_low:
+                    pbr["metallicFactor"] = 0.0
+                    pbr["roughnessFactor"] = 0.90
+                    organic_mat_indices.add(idx)
+                elif any(k in m_low for k in fur_skin_keywords) or "hoof" in m_low or "antler" in m_low:
+                    pbr["metallicFactor"] = 0.0
+                    pbr["roughnessFactor"] = round(min(0.92, max(0.85, rgh)), 4)
+                    organic_mat_indices.add(idx)
+
+        return organic_mat_indices
+
+    def _joint_loop_subdivide_parts(self, organic_parts, pos_quant=2000.0, uv_quant=1000.0):
+        """
+        Merges shared vertices and runs 1-2 levels of joint Loop subdivision across all
+        organic parts in a mesh simultaneously so multi-material pelage/body seams stay
+        100% watertight with unified C2-smooth vertex normals.
+        """
+        if not organic_parts:
+            return
+
+        # Step 1: Weld duplicate (pos, uv) vertices inside each organic part
+        for part in organic_parts:
+            part.merge_vertices_and_smooth_normals(pos_quant=pos_quant, uv_quant=uv_quant)
+
+        total_tris = sum(len(p.indices) // 3 for p in organic_parts)
+        if total_tris == 0:
+            return
+
+        explicit_levels = [getattr(p, "subdivide_levels", None) for p in organic_parts]
+        explicit_levels = [lv for lv in explicit_levels if lv is not None]
+        if explicit_levels:
+            levels = max(explicit_levels)
+        elif total_tris < 420:
+            levels = 2
+        elif total_tris < 3800:
+            levels = 1
+        else:
+            levels = 0
+
+        for _ in range(levels):
+            pk_to_pid = {}
+            pid_pos = []
+            part_v_to_pid = []
+
+            for part in organic_parts:
+                v_map = [0] * len(part.positions)
+                for vi, p in enumerate(part.positions):
+                    pk = (int(round(p[0] * pos_quant)), int(round(p[1] * pos_quant)), int(round(p[2] * pos_quant)))
+                    pid = pk_to_pid.get(pk)
+                    if pid is None:
+                        pid = len(pid_pos)
+                        pk_to_pid[pk] = pid
+                        pid_pos.append(p)
+                    v_map[vi] = pid
+                part_v_to_pid.append(v_map)
+
+            p_cnt = len(pid_pos)
+            p_neighbors = [set() for _ in range(p_cnt)]
+            p_edge_opps = {}
+
+            for p_i, part in enumerate(organic_parts):
+                v_map = part_v_to_pid[p_i]
+                t_cnt = len(part.indices) // 3
+                for ti in range(t_cnt):
+                    v0 = part.indices[ti * 3]
+                    v1 = part.indices[ti * 3 + 1]
+                    v2 = part.indices[ti * 3 + 2]
+                    p0, p1, p2 = v_map[v0], v_map[v1], v_map[v2]
+                    if p0 == p1 or p1 == p2 or p2 == p0:
+                        continue
+                    p_neighbors[p0].update((p1, p2))
+                    p_neighbors[p1].update((p0, p2))
+                    p_neighbors[p2].update((p0, p1))
+                    for a, b, opp in ((p0, p1, p2), (p1, p2, p0), (p2, p0, p1)):
+                        ek = (a, b) if a < b else (b, a)
+                        lst = p_edge_opps.get(ek)
+                        if lst is None:
+                            p_edge_opps[ek] = [opp]
+                        else:
+                            lst.append(opp)
+
+            boundary_nbrs = [set() for _ in range(p_cnt)]
+            p_edge_mid = {}
+            for ek, opps in p_edge_opps.items():
+                pa, pb = ek
+                pos_a, pos_b = pid_pos[pa], pid_pos[pb]
+                if len(opps) == 2:
+                    po0, po1 = pid_pos[opps[0]], pid_pos[opps[1]]
+                    p_edge_mid[ek] = (
+                        0.375 * (pos_a[0] + pos_b[0]) + 0.125 * (po0[0] + po1[0]),
+                        0.375 * (pos_a[1] + pos_b[1]) + 0.125 * (po0[1] + po1[1]),
+                        0.375 * (pos_a[2] + pos_b[2]) + 0.125 * (po0[2] + po1[2]),
+                    )
+                else:
+                    boundary_nbrs[pa].add(pb)
+                    boundary_nbrs[pb].add(pa)
+                    p_edge_mid[ek] = (
+                        0.5 * (pos_a[0] + pos_b[0]),
+                        0.5 * (pos_a[1] + pos_b[1]),
+                        0.5 * (pos_a[2] + pos_b[2]),
+                    )
+
+            even_pid_pos = [None] * p_cnt
+            for pid in range(p_cnt):
+                cur = pid_pos[pid]
+                b_set = boundary_nbrs[pid]
+                if b_set:
+                    if len(b_set) == 2:
+                        b0, b1 = tuple(b_set)
+                        pb0, pb1 = pid_pos[b0], pid_pos[b1]
+                        even_pid_pos[pid] = (
+                            0.75 * cur[0] + 0.125 * (pb0[0] + pb1[0]),
+                            0.75 * cur[1] + 0.125 * (pb0[1] + pb1[1]),
+                            0.75 * cur[2] + 0.125 * (pb0[2] + pb1[2]),
+                        )
+                    else:
+                        even_pid_pos[pid] = cur
+                else:
+                    nbrs = p_neighbors[pid]
+                    n = len(nbrs)
+                    if n < 3:
+                        even_pid_pos[pid] = cur
+                    else:
+                        beta = (3.0 / 16.0) if n == 3 else (3.0 / (8.0 * n))
+                        w_self = 1.0 - n * beta
+                        sx = sum(pid_pos[nb][0] for nb in nbrs)
+                        sy = sum(pid_pos[nb][1] for nb in nbrs)
+                        sz = sum(pid_pos[nb][2] for nb in nbrs)
+                        even_pid_pos[pid] = (
+                            w_self * cur[0] + beta * sx,
+                            w_self * cur[1] + beta * sy,
+                            w_self * cur[2] + beta * sz,
+                        )
+
+            for p_i, part in enumerate(organic_parts):
+                v_map = part_v_to_pid[p_i]
+                new_pos = [even_pid_pos[v_map[vi]] for vi in range(len(part.positions))]
+                new_uvs = list(part.uvs)
+                v_edge_cache = {}
+                new_indices = []
+                t_cnt = len(part.indices) // 3
+
+                def get_odd_v(va, vb):
+                    vk = (va, vb) if va < vb else (vb, va)
+                    cached = v_edge_cache.get(vk)
+                    if cached is not None:
+                        return cached
+                    pa, pb = v_map[va], v_map[vb]
+                    if pa == pb:
+                        mid_p = even_pid_pos[pa]
+                    else:
+                        ek = (pa, pb) if pa < pb else (pb, pa)
+                        mid_p = p_edge_mid.get(ek) or v_lerp(pid_pos[pa], pid_pos[pb], 0.5)
+                    uva, uvb = new_uvs[va], new_uvs[vb]
+                    mid_uv = ((uva[0] + uvb[0]) * 0.5, (uva[1] + uvb[1]) * 0.5)
+                    idx_new = len(new_pos)
+                    new_pos.append(mid_p)
+                    new_uvs.append(mid_uv)
+                    v_edge_cache[vk] = idx_new
+                    return idx_new
+
+                for ti in range(t_cnt):
+                    v0 = part.indices[ti * 3]
+                    v1 = part.indices[ti * 3 + 1]
+                    v2 = part.indices[ti * 3 + 2]
+                    if v_map[v0] == v_map[v1] or v_map[v1] == v_map[v2] or v_map[v2] == v_map[v0]:
+                        continue
+                    e01 = get_odd_v(v0, v1)
+                    e12 = get_odd_v(v1, v2)
+                    e20 = get_odd_v(v2, v0)
+                    new_indices.extend([
+                        v0, e01, e20,
+                        v1, e12, e01,
+                        v2, e20, e12,
+                        e01, e12, e20,
+                    ])
+
+                part.positions = new_pos
+                part.uvs = new_uvs
+                part.indices = new_indices
+
+        # Step 3: Compute unified area-weighted smooth normals across all organic parts together
+        joint_norm = {}
+        part_pks = []
+        for part in organic_parts:
+            pks = [
+                (int(round(p[0] * pos_quant)), int(round(p[1] * pos_quant)), int(round(p[2] * pos_quant)))
+                for p in part.positions
+            ]
+            part_pks.append(pks)
+            for pk in pks:
+                if pk not in joint_norm:
+                    joint_norm[pk] = [0.0, 0.0, 0.0]
+
+        for p_i, part in enumerate(organic_parts):
+            pks = part_pks[p_i]
+            pos = part.positions
+            idx = part.indices
+            for t in range(0, len(idx) - 2, 3):
+                i0, i1, i2 = idx[t], idx[t + 1], idx[t + 2]
+                p0, p1, p2 = pos[i0], pos[i1], pos[i2]
+                fn = v_cross(v_sub(p1, p0), v_sub(p2, p0))
+                for vi in (i0, i1, i2):
+                    acc = joint_norm[pks[vi]]
+                    acc[0] += fn[0]
+                    acc[1] += fn[1]
+                    acc[2] += fn[2]
+
+        norm_lookup = {pk: v_norm(acc, (0.0, 1.0, 0.0)) for pk, acc in joint_norm.items()}
+        for p_i, part in enumerate(organic_parts):
+            pks = part_pks[p_i]
+            part.normals = [norm_lookup[pks[vi]] for vi in range(len(part.positions))]
+
     def export_glb(self, filepath):
+        organic_mats = self._calibrate_pbr_materials_and_classify_organic()
+        for m in self.meshes:
+            org_parts = [
+                p for p in m["parts"]
+                if p.material_idx in organic_mats or getattr(p, "subdivide_levels", 0) > 0
+            ]
+            if org_parts:
+                self._joint_loop_subdivide_parts(org_parts)
+
         bin_chunks = bytearray()
         buffer_views = []
         accessors = []
@@ -1075,7 +1566,7 @@ class GLBBuilder:
         pad4(bin_chunks, b"\x00")
 
         gltf_dict = {
-            "asset": {"version": "2.0", "generator": "WesternVR-GLBBuilder-1.0"},
+            "asset": {"version": "2.0", "generator": "WesternVR-GLBBuilder-2.0-Subdiv"},
             "scene": 0,
             "scenes": [{"name": "Scene", "nodes": self.root_nodes}],
             "nodes": self.nodes,
