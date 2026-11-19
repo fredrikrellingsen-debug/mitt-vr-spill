@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const PROCEDURAL_NEG_Z_MATS = new Set([
   'BanditDusterCoat',
@@ -549,9 +550,20 @@ export function instantiateCharacterGLB(gltf, M, options = {}) {
   const matCache = new Map();
   model.traverse((node) => {
     if (!node.isMesh) return;
-    if (node.isSkinnedMesh) {
-      // Forhindrer at SkinnedMesh med skalert bein-hierarki kuttes av frustum culling på kloss hold
-      node.frustumCulled = false;
+    if (node.isSkinnedMesh && node.geometry) {
+      // Gi SkinnedMesh en fast, romslig boundingSphere både på geometri og SkinnedMesh-instans
+      // slik at Three.js r170 slipper dyr CPU computeBoundingSphere() og kutter alt utenfor synsfeltet lynraskt!
+      if (!node.geometry.boundingSphere) {
+        node.geometry.computeBoundingSphere();
+      }
+      if (node.geometry.boundingSphere && !node.geometry.userData._expandedBounds) {
+        node.geometry.boundingSphere = node.geometry.boundingSphere.clone();
+        node.geometry.boundingSphere.radius = Math.max(node.geometry.boundingSphere.radius * 1.85, 3.5);
+        node.geometry.userData._expandedBounds = true;
+      }
+      const baseRadius = (node.geometry.boundingSphere && node.geometry.boundingSphere.radius) || 3.5;
+      node.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1.0, 0), Math.max(baseRadius, 3.5));
+      node.frustumCulled = true;
     }
     node.castShadow = castShadow;
     node.receiveShadow = receiveShadow;
@@ -573,6 +585,13 @@ export function instantiateCharacterGLB(gltf, M, options = {}) {
         matCache.set(node.material, up);
       }
       node.material = up;
+    }
+
+    // Deaktiver dyr alpha-discard skyggekasting på hår-/øyenbrynskort (selve kroppen/hodet kaster allerede skygge)
+    const primaryMat = Array.isArray(node.material) ? node.material[0] : node.material;
+    if (primaryMat && (primaryMat.alphaTest > 0 || primaryMat.transparent)) {
+      node.castShadow = false;
+      node.userData.neverCastShadow = true;
     }
   });
 
@@ -676,7 +695,218 @@ export function instantiateBuildingGLB(gltfScene, M, options = {}) {
     }
   }
 
+  // Slå sammen alle statiske bygningsdeler per materiale til få WebGL draw calls (uten å røre interaktive objekter)
+  batchStaticMeshesInGroup(holder);
+
   return holder;
+}
+
+function flipNonIndexedTriangleWinding(geo) {
+  const attrs = geo.attributes;
+  for (const name of Object.keys(attrs)) {
+    const attr = attrs[name];
+    if (!attr || !attr.array) continue;
+    const itemSize = attr.itemSize;
+    const arr = attr.array;
+    const triCount = Math.floor(attr.count / 3);
+    for (let t = 0; t < triCount; t++) {
+      const i1 = (t * 3 + 1) * itemSize;
+      const i2 = (t * 3 + 2) * itemSize;
+      for (let k = 0; k < itemSize; k++) {
+        const tmp = arr[i1 + k];
+        arr[i1 + k] = arr[i2 + k];
+        arr[i2 + k] = tmp;
+      }
+    }
+    attr.needsUpdate = true;
+  }
+}
+
+/**
+ * Slår sammen statiske, ugjennomsiktige Mesh-noder i en gruppe per (materiale, castShadow, receiveShadow, valgfri sektor)
+ * til ett enkelt Mesh per bøtte. Reduserer hundrevis av individuelle draw calls til en håndfull uten visuelt tap.
+ */
+export function batchStaticMeshesInGroup(rootGroup, options = {}) {
+  if (!rootGroup) return 0;
+  const { protectedObjects = null, sectorSize = 0 } = options;
+
+  rootGroup.updateMatrixWorld(true);
+  const invRootMat = new THREE.Matrix4().copy(rootGroup.matrixWorld).invert();
+  const buckets = new Map();
+
+  function walk(obj) {
+    if (!obj) return;
+    if (protectedObjects && protectedObjects.has(obj)) return;
+    const ud = obj.userData;
+    if (
+      ud &&
+      (ud.neverBatch ||
+        ud.updateSign ||
+        ud.refreshPoster ||
+        ud.hellfirePickup ||
+        ud.mineMapPickup ||
+        ud.barricadeEntry ||
+        ud.goldEntry)
+    ) {
+      return;
+    }
+
+    if (
+      obj.isMesh &&
+      !obj.isInstancedMesh &&
+      !obj.isSkinnedMesh &&
+      obj.visible &&
+      obj.geometry &&
+      obj.geometry.attributes &&
+      obj.geometry.attributes.position &&
+      obj.material &&
+      !Array.isArray(obj.material) &&
+      !obj.material.transparent
+    ) {
+      const mat = obj.material;
+      const cast = !!obj.castShadow;
+      const recv = !!obj.receiveShadow;
+      let sectorKey = '0,0';
+      if (sectorSize > 0) {
+        const e = obj.matrixWorld.elements;
+        const sx = Math.floor(e[12] / sectorSize);
+        const sz = Math.floor(e[14] / sectorSize);
+        sectorKey = `${sx},${sz}`;
+      }
+      const key = `${mat.uuid}|${cast ? 1 : 0}|${recv ? 1 : 0}|${sectorKey}`;
+      let bucket = buckets.get(key);
+      if (!bucket) {
+        bucket = { mat, cast, recv, items: [] };
+        buckets.set(key, bucket);
+      }
+      bucket.items.push(obj);
+    }
+
+    const children = obj.children;
+    if (children && children.length > 0) {
+      for (let i = 0; i < children.length; i++) {
+        walk(children[i]);
+      }
+    }
+  }
+
+  walk(rootGroup);
+
+  let mergedDrawsSaved = 0;
+  const relMat = new THREE.Matrix4();
+
+  for (const bucket of buckets.values()) {
+    if (bucket.items.length < 2) continue;
+    const wantVertexColor = !!bucket.mat.vertexColors;
+    const geos = [];
+    const validMeshes = [];
+
+    for (let i = 0; i < bucket.items.length; i++) {
+      const m = bucket.items[i];
+      let g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+      const posAttr = g.attributes.position;
+      if (!posAttr || posAttr.count === 0) {
+        g.dispose();
+        continue;
+      }
+      if (posAttr.itemSize !== 3) {
+        const fixedPos = new Float32Array(posAttr.count * 3);
+        for (let v = 0; v < posAttr.count; v++) {
+          fixedPos[v * 3] = posAttr.getX(v);
+          fixedPos[v * 3 + 1] = posAttr.getY(v);
+          fixedPos[v * 3 + 2] = posAttr.getZ(v);
+        }
+        g.setAttribute('position', new THREE.BufferAttribute(fixedPos, 3));
+      }
+
+      if (!g.attributes.normal) {
+        g.computeVertexNormals();
+      } else if (g.attributes.normal.itemSize !== 3) {
+        g.deleteAttribute('normal');
+        g.computeVertexNormals();
+      }
+
+      if (!g.attributes.uv) {
+        ensureGeometryUVs(g, 1.0);
+      } else if (g.attributes.uv.itemSize !== 2) {
+        const oldUv = g.attributes.uv;
+        const fixedUv = new Float32Array(posAttr.count * 2);
+        for (let v = 0; v < posAttr.count; v++) {
+          fixedUv[v * 2] = oldUv.getX(v);
+          fixedUv[v * 2 + 1] = oldUv.getY(v);
+        }
+        g.setAttribute('uv', new THREE.BufferAttribute(fixedUv, 2));
+      }
+
+      if (wantVertexColor) {
+        const colAttr = g.attributes.color;
+        const fixedCol = new Float32Array(posAttr.count * 3);
+        if (colAttr) {
+          for (let v = 0; v < posAttr.count; v++) {
+            fixedCol[v * 3] = colAttr.getX(v);
+            fixedCol[v * 3 + 1] = colAttr.getY(v);
+            fixedCol[v * 3 + 2] = colAttr.getZ(v);
+          }
+        } else {
+          fixedCol.fill(1.0);
+        }
+        g.setAttribute('color', new THREE.BufferAttribute(fixedCol, 3));
+      }
+
+      // Fjern alle øvrige attributter slik at mergeGeometries alltid har 100 % identisk attributtsett
+      for (const attrName of Object.keys(g.attributes)) {
+        if (
+          attrName !== 'position' &&
+          attrName !== 'normal' &&
+          attrName !== 'uv' &&
+          !(wantVertexColor && attrName === 'color')
+        ) {
+          g.deleteAttribute(attrName);
+        }
+      }
+      g.morphAttributes = {};
+      g.clearGroups();
+
+      relMat.multiplyMatrices(invRootMat, m.matrixWorld);
+      g.applyMatrix4(relMat);
+      if (relMat.determinant() < 0) {
+        flipNonIndexedTriangleWinding(g);
+      }
+
+      geos.push(g);
+      validMeshes.push(m);
+    }
+
+    if (geos.length < 2) {
+      for (let i = 0; i < geos.length; i++) geos[i].dispose();
+      continue;
+    }
+
+    let mergedGeo = null;
+    try {
+      mergedGeo = mergeGeometries(geos, false);
+    } catch (_err) {
+      mergedGeo = null;
+    }
+    for (let i = 0; i < geos.length; i++) geos[i].dispose();
+
+    if (!mergedGeo) continue;
+    mergedGeo.computeBoundingBox();
+    mergedGeo.computeBoundingSphere();
+
+    const mergedMesh = new THREE.Mesh(mergedGeo, bucket.mat);
+    mergedMesh.castShadow = bucket.cast;
+    mergedMesh.receiveShadow = bucket.recv;
+    rootGroup.add(mergedMesh);
+
+    for (let i = 0; i < validMeshes.length; i++) {
+      const vm = validMeshes[i];
+      if (vm.parent) vm.parent.remove(vm);
+    }
+    mergedDrawsSaved += validMeshes.length - 1;
+  }
+
+  return mergedDrawsSaved;
 }
 
 /**
