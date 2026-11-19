@@ -85,6 +85,20 @@
       pointer-events: none;
       z-index: 9;
     }
+    @media (max-width: 640px) {
+      #hud {
+        font-size: 11px;
+        line-height: 1.3;
+        padding: 6px 8px;
+      }
+      #lang-btn {
+        font-size: 11px;
+        padding: 6px 8px;
+      }
+      #pc-hint {
+        display: none;
+      }
+    }
   </style>
   <script type="importmap">
     {
@@ -178,15 +192,20 @@
     let currentOutfitTier = 0;
 
     let weaponDamage = 1;
-    const WEAPON_ORDER = ['revolver', 'shotgun', 'rifle', 'crossbow', 'dynamite'];
+    const WEAPON_ORDER = ['revolver', 'shotgun', 'rifle', 'crossbow', 'dynamite', 'hellfire'];
     const unlockedWeapons = {
       revolver: true,
       shotgun: false,
       rifle: false,
       crossbow: false,
-      dynamite: true
+      dynamite: true,
+      hellfire: false
     };
     let activeWeaponId = 'revolver';
+    let isRidingHorse = false;
+    let currentMoveSpeed = 0;
+    let currentMoveDirX = 0;
+    let currentMoveDirZ = 0;
 
     let activeQuest = null;
     let questProgress = 0;
@@ -198,15 +217,27 @@
     let isNightStateFlag = false;
     let playerHiddenStatus = false;
 
-    // 4-Akts Cowboy-historie
+    // 8-Level Campaign (Acts 1–8)
     const storyState = {
-      currentAct: 1, // 1..4 (5 = fullført)
+      currentLevel: 1, // 1..8 (9 = fullført)
+      currentAct: 1,
       talkedSheriff: false,
       act1Deer: 0,
       boughtGear: false,
+      level2Wolves: 0,
+      grizzlyDefeated: false,
       act2Bandits: 0,
       captainDefeated: false,
+      barricadesCleared: 0,
+      sladeDefeated: false,
+      mineMapCollected: false,
       mineGoldCollected: false,
+      trainSnipersKilled: 0,
+      trainGatlingCaptured: false,
+      bootHillVampires: 0,
+      bootHillRelics: 0,
+      catacombGuardiansKilled: 0,
+      hellfireCollected: false,
       hasVampireGear: false,
       act3NightKills: 0,
       act3SafeHouseTimer: 0,
@@ -221,6 +252,7 @@
     let refreshSheriffHook = null;
     let equipWeaponHook = null;
     let playStoryFanfareHook = null;
+    let forceNightForBloodMoonHook = null;
 
     const hudEl = document.getElementById('hud');
     const pcHintEl = document.getElementById('pc-hint');
@@ -244,25 +276,25 @@
 
     function getStoryStatusLine() {
       const dict = L();
-      storyState.hasVampireGear = currentOutfitTier >= 3 || unlockedWeapons.crossbow;
-      if (storyState.currentAct > 4 || storyState.bossDefeated) {
+      storyState.hasVampireGear = currentOutfitTier >= 3 || unlockedWeapons.crossbow || unlockedWeapons.hellfire;
+      if (storyState.currentLevel > 8 || storyState.bossDefeated) {
         return dict.storyComplete;
       }
-      const actDef = dict.acts[storyState.currentAct - 1];
-      return actDef ? actDef.formatProgress(storyState) : '';
+      const lvlDef = dict.acts[storyState.currentLevel - 1];
+      return lvlDef ? lvlDef.formatProgress(storyState) : '';
     }
 
     function checkStoryProgression() {
-      storyState.hasVampireGear = currentOutfitTier >= 3 || unlockedWeapons.crossbow;
+      storyState.hasVampireGear = currentOutfitTier >= 3 || unlockedWeapons.crossbow || unlockedWeapons.hellfire;
       let advanced = false;
 
       if (
-        storyState.currentAct === 1 &&
+        storyState.currentLevel === 1 &&
         storyState.talkedSheriff &&
         storyState.act1Deer >= 2 &&
         storyState.boughtGear
       ) {
-        storyState.currentAct = 2;
+        storyState.currentLevel = 2;
         playerState.gold += 20;
         hasSheriffStar = true;
         sheriffStarBadge.visible = true;
@@ -270,35 +302,78 @@
       }
 
       if (
-        storyState.currentAct === 2 &&
-        storyState.act2Bandits >= 4 &&
-        storyState.captainDefeated &&
-        storyState.mineGoldCollected
+        storyState.currentLevel === 2 &&
+        storyState.level2Wolves >= 3 &&
+        storyState.grizzlyDefeated
       ) {
-        storyState.currentAct = 3;
+        storyState.currentLevel = 3;
         playerState.gold += 35;
-        weaponDamage = 2;
         advanced = true;
       }
 
       if (
-        storyState.currentAct === 3 &&
-        storyState.hasVampireGear &&
-        storyState.act3NightSurvived
+        storyState.currentLevel === 3 &&
+        storyState.act2Bandits >= 4 &&
+        storyState.captainDefeated
       ) {
-        storyState.currentAct = 4;
+        storyState.currentLevel = 4;
         playerState.gold += 40;
+        weaponDamage = Math.max(weaponDamage, 2);
+        advanced = true;
+      }
+
+      if (
+        storyState.currentLevel === 4 &&
+        storyState.barricadesCleared >= 2 &&
+        storyState.sladeDefeated &&
+        storyState.mineMapCollected
+      ) {
+        storyState.currentLevel = 5;
+        playerState.gold += 45;
         playerState.dynamite += 3;
         advanced = true;
       }
 
-      if (storyState.currentAct === 4 && storyState.bossDefeated) {
-        storyState.currentAct = 5;
+      if (
+        storyState.currentLevel === 5 &&
+        storyState.trainSnipersKilled >= 4 &&
+        storyState.trainGatlingCaptured
+      ) {
+        storyState.currentLevel = 6;
+        playerState.gold += 55;
+        advanced = true;
+      }
+
+      if (
+        storyState.currentLevel === 6 &&
+        storyState.bootHillVampires >= 4 &&
+        storyState.bootHillRelics >= 2
+      ) {
+        storyState.currentLevel = 7;
+        playerState.gold += 60;
+        advanced = true;
+      }
+
+      if (
+        storyState.currentLevel === 7 &&
+        storyState.catacombGuardiansKilled >= 3 &&
+        storyState.hellfireCollected
+      ) {
+        storyState.currentLevel = 8;
+        playerState.gold += 75;
+        if (forceNightForBloodMoonHook) forceNightForBloodMoonHook();
+        advanced = true;
+      }
+
+      if (storyState.currentLevel === 8 && storyState.bossDefeated) {
+        storyState.currentLevel = 9;
         hasLegendTitle = true;
-        playerState.gold += 100;
+        playerState.gold += 150;
         playerState.health = 100;
         advanced = true;
       }
+
+      storyState.currentAct = Math.min(4, Math.ceil(storyState.currentLevel / 2));
 
       if (advanced) {
         if (playStoryFanfareHook) playStoryFanfareHook();
@@ -469,6 +544,29 @@
     weaponWristButton.position.set(0, -0.182, 0.002);
     wristBoard.add(weaponWristButton);
 
+    // Klikkbar 3D-hesteknapp («CALL HORSE / ROP PÅ HEST») rett under våpenknappen i VR
+    const horseWristCanvas = document.createElement('canvas');
+    horseWristCanvas.width = 576;
+    horseWristCanvas.height = 96;
+    const horseWristCtx = horseWristCanvas.getContext('2d');
+
+    const horseWristTexture = new THREE.CanvasTexture(horseWristCanvas);
+    horseWristTexture.colorSpace = THREE.SRGBColorSpace;
+    horseWristTexture.anisotropy = maxAnisotropy;
+
+    const horseWristButton = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.28, 0.048),
+      new THREE.MeshBasicMaterial({
+        map: horseWristTexture,
+        transparent: true,
+        side: THREE.DoubleSide,
+        fog: false,
+        toneMapped: false
+      })
+    );
+    horseWristButton.position.set(0, -0.236, 0.002);
+    wristBoard.add(horseWristButton);
+
     function updateEatWristButton() {
       const dict = L();
       const canEat = playerState.food > 0 && playerState.health < 100;
@@ -523,6 +621,22 @@
       weaponWristCtx.fillStyle = '#eef8ff';
       weaponWristCtx.fillText(wLabel, weaponWristCanvas.width / 2, 50);
       weaponWristTexture.needsUpdate = true;
+
+      // Oppdater 3D ROP PÅ HEST / GÅ AV HEST-knappen på håndleddet
+      horseWristCtx.clearRect(0, 0, horseWristCanvas.width, horseWristCanvas.height);
+      drawRoundedRect(horseWristCtx, 6, 6, horseWristCanvas.width - 12, 84, 18);
+      horseWristCtx.fillStyle = isRidingHorse ? 'rgba(84, 48, 18, 0.96)' : 'rgba(54, 34, 18, 0.96)';
+      horseWristCtx.fill();
+      horseWristCtx.lineWidth = 5;
+      horseWristCtx.strokeStyle = isRidingHorse ? '#ffd670' : '#d49d56';
+      horseWristCtx.stroke();
+
+      horseWristCtx.textAlign = 'center';
+      horseWristCtx.textBaseline = 'middle';
+      horseWristCtx.font = 'bold 26px sans-serif';
+      horseWristCtx.fillStyle = '#fff3dc';
+      horseWristCtx.fillText(isRidingHorse ? dict.horseMountBtn : dict.horseCallBtn, horseWristCanvas.width / 2, 50);
+      horseWristTexture.needsUpdate = true;
     }
 
     let refreshTailorWorkshopHook = null;
@@ -553,11 +667,12 @@
       const titleSuffix = playerState.title ? ` | ${dict.hudTitle}: ${playerState.title}` : '';
       const storyLine = getStoryStatusLine();
       const questLine = getActiveQuestStatusLine();
+      const horseHudSuffix = isRidingHorse ? `  |  ${dict.horseRidingHud}` : '';
       const summaryText =
         `${dict.hudHealth}: ${playerState.health} | ${dict.hudGold}: ${playerState.gold} | ` +
         `${dict.hudWeapon}: ${playerState.weapon} | ${dict.hudDynamite}: ${playerState.dynamite} | ` +
         `${dict.hudFood}: ${playerState.food} ${dict.hudEatHint} | ${dict.hudPelts}: ${playerState.pelt} | ` +
-        `${dict.hudOutfit}: ${playerState.outfit} | ${dict.hudTime}: ${playerState.timeOfDay}${titleSuffix}\n` +
+        `${dict.hudOutfit}: ${playerState.outfit} | ${dict.hudTime}: ${playerState.timeOfDay}${titleSuffix}${horseHudSuffix}\n` +
         `${storyLine}  •  ${questLine}`;
       hudEl.textContent = playerHiddenStatus ? `${summaryText}\n${dict.hiddenStatus}` : summaryText;
 
@@ -741,6 +856,15 @@
       structureWallColliders,
       goldPickups,
       goldHitMeshes,
+      mineBarricades,
+      barricadeHitMeshes,
+      mineMapPickup,
+      hellfirePickup,
+      mountTrainAsset,
+      trainGatlingHitMeshes,
+      gatlingHalo,
+      windUniforms,
+      updateGodRays,
       chapelAltarHitMeshes,
       bloodChaliceOrb,
       mineGroup,
@@ -749,7 +873,7 @@
       campfireFlameMeshes, campfireLight, campfireEmberMat
     } = W;
 
-    // Last inn alle 16 binære .glb-modeller parallelt (med sømløs prosedyrisk fallback per fil)
+    // Last inn alle 19 binære .glb-modeller parallelt (med sømløs prosedyrisk fallback per fil)
     const gltfLoader = new GLTFLoader();
     function loadOptionalGLB(url) {
       return gltfLoader.loadAsync(url).catch((err) => {
@@ -764,9 +888,11 @@
       rifleGLTF,
       crossbowGLTF,
       dynamiteGLTF,
+      hellfireGLTF,
       saloonGLTF,
       tailorGLTF,
       gunsmithGLTF,
+      trainGLTF,
       banditGLTF,
       tailorNpcGLTF,
       gunsmithNpcGLTF,
@@ -774,6 +900,7 @@
       deerGLTF,
       wolfGLTF,
       bearGLTF,
+      horseGLTF,
       bossVampireGLTF
     ] = await Promise.all([
       loadOptionalGLB('./assets/revolver.glb'),
@@ -781,9 +908,11 @@
       loadOptionalGLB('./assets/rifle.glb'),
       loadOptionalGLB('./assets/crossbow.glb'),
       loadOptionalGLB('./assets/dynamite.glb'),
+      loadOptionalGLB('./assets/hellfire.glb'),
       loadOptionalGLB('./assets/saloon.glb'),
       loadOptionalGLB('./assets/tailor.glb'),
       loadOptionalGLB('./assets/gunsmith.glb'),
+      loadOptionalGLB('./assets/train.glb'),
       loadOptionalGLB('./assets/bandit.glb'),
       loadOptionalGLB('./assets/tailor_npc.glb'),
       loadOptionalGLB('./assets/gunsmith_npc.glb'),
@@ -791,8 +920,13 @@
       loadOptionalGLB('./assets/deer.glb'),
       loadOptionalGLB('./assets/wolf.glb'),
       loadOptionalGLB('./assets/bear.glb'),
+      loadOptionalGLB('./assets/horse.glb'),
       loadOptionalGLB('./assets/boss_vampire.glb')
     ]);
+
+    if (mountTrainAsset && trainGLTF) {
+      mountTrainAsset(trainGLTF);
+    }
 
     const loadedAssets = {
       revolver: revolverGLTF,
@@ -800,9 +934,11 @@
       rifle: rifleGLTF,
       crossbow: crossbowGLTF,
       dynamite: dynamiteGLTF,
+      hellfire: hellfireGLTF,
       saloon: saloonGLTF,
       tailor: tailorGLTF,
       gunsmith: gunsmithGLTF,
+      train: trainGLTF,
       bandit: banditGLTF,
       tailorNpc: tailorNpcGLTF,
       gunsmithNpc: gunsmithNpcGLTF,
@@ -810,6 +946,7 @@
       deer: deerGLTF,
       wolf: wolfGLTF,
       bear: bearGLTF,
+      horse: horseGLTF,
       bossVampire: bossVampireGLTF
     };
 
@@ -1166,7 +1303,8 @@
       { id: 'shotgun', type: 'weapon', weaponId: 'shotgun', goldCost: 25, peltCost: 0 },
       { id: 'rifle', type: 'weapon', weaponId: 'rifle', goldCost: 40, peltCost: 0 },
       { id: 'crossbow', type: 'weapon', weaponId: 'crossbow', goldCost: 65, peltCost: 2 },
-      { id: 'dynamite_pack', type: 'ammo', amount: 3, goldCost: 15, peltCost: 0 }
+      { id: 'dynamite_pack', type: 'ammo', amount: 3, goldCost: 15, peltCost: 0 },
+      { id: 'hellfire', type: 'weapon', weaponId: 'hellfire', goldCost: 120, peltCost: 0, minLevel: 7 }
     ];
 
     let gunsmithCounterMesh = null;
@@ -1181,7 +1319,7 @@
 
     const gunsmithBoardCanvas = document.createElement('canvas');
     gunsmithBoardCanvas.width = 1024;
-    gunsmithBoardCanvas.height = 504;
+    gunsmithBoardCanvas.height = 576;
     const gunsmithBoardCtx = gunsmithBoardCanvas.getContext('2d');
     const gunsmithBoardTexture = new THREE.CanvasTexture(gunsmithBoardCanvas);
     gunsmithBoardTexture.colorSpace = THREE.SRGBColorSpace;
@@ -1197,7 +1335,7 @@
       texture.anisotropy = maxAnisotropy;
 
       const mesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(3.44, 0.255),
+        new THREE.PlaneGeometry(3.44, 0.228),
         new THREE.MeshBasicMaterial({ map: texture, transparent: true, fog: false, toneMapped: false })
       );
       mesh.userData.gunsmithItem = item;
@@ -1210,6 +1348,7 @@
       const dict = L();
       if (!gunsmithStatusKey) return '';
       if (gunsmithStatusKey === 'owned') return dict.gunsmithMsgOwned;
+      if (gunsmithStatusKey === 'locked_level') return dict.gunsmithMsgLockedLevel;
       if (gunsmithStatusKey === 'no_gold') return dict.gunsmithMsgNoGold;
       if (gunsmithStatusKey === 'no_pelts') return dict.gunsmithMsgNoPelts;
       if (gunsmithStatusKey === 'bought_weapon') {
@@ -1225,14 +1364,14 @@
       const dict = L();
       gunsmithBoardCtx.clearRect(0, 0, gunsmithBoardCanvas.width, gunsmithBoardCanvas.height);
 
-      drawRoundedRect(gunsmithBoardCtx, 8, 8, 1008, 488, 22);
+      drawRoundedRect(gunsmithBoardCtx, 8, 8, 1008, gunsmithBoardCanvas.height - 16, 22);
       gunsmithBoardCtx.fillStyle = 'rgba(32, 22, 16, 0.97)';
       gunsmithBoardCtx.fill();
       gunsmithBoardCtx.lineWidth = 8;
       gunsmithBoardCtx.strokeStyle = '#d9a04e';
       gunsmithBoardCtx.stroke();
 
-      drawRoundedRect(gunsmithBoardCtx, 22, 22, 980, 460, 14);
+      drawRoundedRect(gunsmithBoardCtx, 22, 22, 980, gunsmithBoardCanvas.height - 44, 14);
       gunsmithBoardCtx.lineWidth = 2;
       gunsmithBoardCtx.strokeStyle = 'rgba(245, 205, 130, 0.45)';
       gunsmithBoardCtx.stroke();
@@ -1502,7 +1641,7 @@
 
     refreshSheriffHook = () => {
       if (sheriffVanceGroup && sheriffVanceGroup.userData.updateSheriffDialogue) {
-        const quoteIdx = storyState.bossDefeated ? 4 : Math.max(0, storyState.currentAct - 1);
+        const quoteIdx = storyState.bossDefeated ? 8 : Math.max(0, Math.min(8, storyState.currentLevel - 1));
         sheriffVanceGroup.userData.updateSheriffDialogue(quoteIdx);
       }
     };
@@ -1536,7 +1675,7 @@
       });
     }
 
-    function addWorldWallCollider(minX, maxX, minZ, maxZ, maxY = 3.8) {
+    function addWorldWallCollider(minX, maxX, minZ, maxZ, maxY = 3.8, minY = -20, source = null) {
       wallColliders.push({
         group: null,
         ox: 0,
@@ -1547,8 +1686,10 @@
         maxX,
         minZ,
         maxZ,
+        minY,
         maxY,
-        isSafeHouseDoor: false
+        isSafeHouseDoor: false,
+        source
       });
     }
 
@@ -1614,7 +1755,15 @@
     if (structureWallColliders) {
       for (let i = 0; i < structureWallColliders.length; i++) {
         const sc = structureWallColliders[i];
-        addWorldWallCollider(sc.minX, sc.maxX, sc.minZ, sc.maxZ, sc.maxY || 4.4);
+        addWorldWallCollider(
+          sc.minX,
+          sc.maxX,
+          sc.minZ,
+          sc.maxZ,
+          sc.maxY !== undefined ? sc.maxY : 4.4,
+          sc.minY !== undefined ? sc.minY : -20,
+          sc
+        );
       }
     }
 
@@ -1626,7 +1775,10 @@
 
         for (let i = 0; i < wallColliders.length; i++) {
           const collider = wallColliders[i];
+          if (collider.disabled || (collider.source && collider.source.disabled)) continue;
           if (collider.isSafeHouseDoor && safeHouseDoorOpen && !blockOpenSafeDoor) continue;
+          if (collider.minY !== undefined && (position.y + 1.65) <= collider.minY) continue;
+          if (collider.maxY !== undefined && position.y >= collider.maxY) continue;
 
           let localX;
           let localZ;
@@ -1686,9 +1838,10 @@
     const resolveCircleAgainstWalls = resolveWallCollisions;
 
     function pointHitsSolidWall(wx, wy, wz) {
-      if (wy < 0) return false;
       for (let i = 0; i < wallColliders.length; i++) {
         const collider = wallColliders[i];
+        if (collider.disabled || (collider.source && collider.source.disabled)) continue;
+        if (collider.minY !== undefined && wy < collider.minY) continue;
         if (wy > collider.maxY) continue;
         if (collider.isSafeHouseDoor && safeHouseDoorOpen) continue;
 
@@ -1811,17 +1964,21 @@
       gunsmithLantern,
       safeHouseLantern,
       updateAmbientParticles,
+      ejectShellCasing,
+      updateShellCasings,
+      updateBloodMoonVisuals,
       flashDamageVignette,
       updateDamageVignette
     } = FX;
 
-    // --- 7a. 5 Spillbare Våpen på PC og i VR (Revolver, Shotgun, Winchester, Silver Crossbow, Dynamite) ---
+    // --- 7a. 6 Spillbare Våpen på PC og i VR (Revolver, Shotgun, Winchester, Silver Crossbow, Dynamite, Hellfire Repeater) ---
     const PC_WEAPON_TRANSFORMS = {
       revolver: { scale: 0.82, pos: [0.33, -0.245, -0.78], rot: [0.018, 0.07, 0.02] },
       shotgun:  { scale: 0.80, pos: [0.31, -0.235, -0.70], rot: [0.022, 0.08, 0.015] },
       rifle:    { scale: 0.78, pos: [0.29, -0.230, -0.66], rot: [0.015, 0.075, 0.01] },
       crossbow: { scale: 0.78, pos: [0.30, -0.235, -0.72], rot: [0.030, 0.07, 0.015] },
-      dynamite: { scale: 0.88, pos: [0.31, -0.220, -0.64], rot: [0.040, 0.12, -0.04] }
+      dynamite: { scale: 0.88, pos: [0.31, -0.220, -0.64], rot: [0.040, 0.12, -0.04] },
+      hellfire: { scale: 0.80, pos: [0.30, -0.235, -0.68], rot: [0.016, 0.075, 0.012] }
     };
 
     const VR_RAY_STYLES = {
@@ -1829,7 +1986,8 @@
       shotgun:  { color: 0xff9d5c, len: 5.5 },
       rifle:    { color: 0xfff4cc, len: 16.0 },
       crossbow: { color: 0x8fd8ff, len: 13.5 },
-      dynamite: { color: 0xff6242, len: 7.5 }
+      dynamite: { color: 0xff6242, len: 7.5 },
+      hellfire: { color: 0x74d4ff, len: 18.0 }
     };
 
     const pcWeapons = Object.create(null);
@@ -2141,6 +2299,9 @@
       if (data.weaponId === 'crossbow') {
         data.boltReloadTimer = 0.38;
       }
+      if (data.weaponId === 'hellfire') {
+        data.spinVel = 24.0;
+      }
       if (data.flash && flashIntensity > 0) {
         data.flashTimer = 0.08;
         data.flash.visible = true;
@@ -2168,6 +2329,14 @@
       }
       if (data.cylinder && data.cylinderTargetRot !== undefined) {
         data.cylinder.rotation.z += (data.cylinderTargetRot - data.cylinder.rotation.z) * Math.min(1, dt * 18);
+      }
+      if (data.barrelCluster) {
+        if (data.spinVel && data.spinVel > 0.02) {
+          data.barrelCluster.rotation.z += data.spinVel * dt;
+          data.spinVel *= Math.exp(-dt * 4.5);
+        } else {
+          data.spinVel = 0;
+        }
       }
       if (data.hammer) {
         data.hammer.rotation.x = -Math.max(0, data.recoilAngle) * 0.65;
@@ -2376,6 +2545,10 @@
             .normalize();
           spawnBullet(shotPos, pelletDir, { speed: 58, life: 0.68, dmgMult: 1, kind: 'pellet' });
         }
+        if (ejectShellCasing) {
+          casingOrigin.copy(shotPos).addScaledVector(shotDir, -0.22);
+          ejectShellCasing(casingOrigin, spreadRight, spreadUp, shotDir, 2, playCasingClinkSound);
+        }
         spawnGunsmoke(shotPos, 4, 1.35);
         notifyGunshot(shotPos);
         triggerWeaponKick(weaponObj, 13.5, 28);
@@ -2387,6 +2560,14 @@
       if (activeWeaponId === 'rifle') {
         shotCooldownTimer = 0.42;
         spawnBullet(shotPos, shotDir, { speed: 98, life: 3.2, dmgMult: 3, kind: 'rifle' });
+        if (ejectShellCasing) {
+          spreadRight.crossVectors(shotDir, UP);
+          if (spreadRight.lengthSq() < 1e-5) spreadRight.set(1, 0, 0);
+          spreadRight.normalize();
+          spreadUp.crossVectors(spreadRight, shotDir).normalize();
+          casingOrigin.copy(shotPos).addScaledVector(shotDir, -0.28);
+          ejectShellCasing(casingOrigin, spreadRight, spreadUp, shotDir, 1, playCasingClinkSound);
+        }
         spawnGunsmoke(shotPos, 2, 1.1);
         notifyGunshot(shotPos);
         triggerWeaponKick(weaponObj, 9.5, 25);
@@ -2405,9 +2586,36 @@
         return;
       }
 
+      if (activeWeaponId === 'hellfire') {
+        shotCooldownTimer = 0.095;
+        spawnBullet(shotPos, shotDir, { speed: 108, life: 3.0, dmgMult: 2, isSilverBolt: true, kind: 'silver' });
+        if (ejectShellCasing) {
+          spreadRight.crossVectors(shotDir, UP);
+          if (spreadRight.lengthSq() < 1e-5) spreadRight.set(1, 0, 0);
+          spreadRight.normalize();
+          spreadUp.crossVectors(spreadRight, shotDir).normalize();
+          casingOrigin.copy(shotPos).addScaledVector(shotDir, -0.26);
+          ejectShellCasing(casingOrigin, spreadRight, spreadUp, shotDir, 1, playCasingClinkSound);
+        }
+        spawnSparkBurst(shotPos, 3, 0x74d4ff, 0.5);
+        notifyGunshot(shotPos);
+        triggerWeaponKick(weaponObj, 4.2, 24);
+        playHellfireSound();
+        pulseRightHaptic();
+        return;
+      }
+
       // Standard / Gull Peacemaker Revolver
       shotCooldownTimer = 0.16;
       spawnBullet(shotPos, shotDir, { speed: 64, life: 2.6, dmgMult: 1, kind: 'revolver' });
+      if (ejectShellCasing) {
+        spreadRight.crossVectors(shotDir, UP);
+        if (spreadRight.lengthSq() < 1e-5) spreadRight.set(1, 0, 0);
+        spreadRight.normalize();
+        spreadUp.crossVectors(spreadRight, shotDir).normalize();
+        casingOrigin.copy(shotPos).addScaledVector(shotDir, -0.18);
+        ejectShellCasing(casingOrigin, spreadRight, spreadUp, shotDir, 1, playCasingClinkSound);
+      }
       spawnGunsmoke(shotPos, 2, 0.95);
       notifyGunshot(shotPos);
       triggerWeaponKick(weaponObj, 7.5, 22);
@@ -2415,8 +2623,10 @@
       pulseRightHaptic();
     }
 
-    // Prosjektiler fjernes ved treff, bakken, livstid eller maks rekkevidde (utvidet til +-175m).
-    const PROJECTILE_MAX_HORIZONTAL = 175;
+    const casingOrigin = new THREE.Vector3();
+
+    // Prosjektiler fjernes ved treff, bakken, livstid eller maks rekkevidde (utvidet til +-235m).
+    const PROJECTILE_MAX_HORIZONTAL = 235;
     const PROJECTILE_MAX_HEIGHT = 110;
     const bullets = [];
     const bulletGeo = new THREE.CylinderGeometry(0.018, 0.018, 0.42, 6);
@@ -2707,6 +2917,37 @@
           continue;
         }
 
+        // Sjekk treff på sprengbare dynamitt-barrikader inne i gullgruven
+        if (mineBarricades && mineBarricades.length > 0) {
+          let hitBar = null;
+          for (let bIdx = 0; bIdx < mineBarricades.length; bIdx++) {
+            const bar = mineBarricades[bIdx];
+            if (bar.destroyed) continue;
+            if (segmentPointDistance(bullet.prev, bullet.mesh.position, bar.worldPos) < 1.35) {
+              hitBar = bar;
+              break;
+            }
+          }
+          if (hitBar) {
+            spawnSparkBurst(bullet.mesh.position, 6, 0xff9438, 0.9);
+            if (damageBarricadeHook) damageBarricadeHook(hitBar, bullet.dmgMult || 1);
+            removeBullet(i);
+            continue;
+          }
+        }
+
+        // Sjekk om kula treffer Gammelt Gruvekart, Sølvrelikvie, Hellfire-piedestal eller Tog-Gatling
+        if (mineMapPickup && !mineMapPickup.collected && segmentPointDistance(bullet.prev, bullet.mesh.position, mineMapPickup.worldPos) < 0.85) {
+          collectMineMapPickup();
+          removeBullet(i);
+          continue;
+        }
+        if (hellfirePickup && !hellfirePickup.collected && segmentPointDistance(bullet.prev, bullet.mesh.position, hellfirePickup.worldPos) < 0.95) {
+          collectHellfirePickup();
+          removeBullet(i);
+          continue;
+        }
+
         const combatHit = findCombatHit(bullet.prev, bullet.mesh.position);
         if (combatHit) {
           spawnImpact(combatHit.point, bullet.isSilverBolt ? 0x8ad8ff : 0xffcf8a, 0.2);
@@ -2726,7 +2967,7 @@
           continue;
         }
 
-        const groundY = getTerrainHeight(bullet.mesh.position.x, bullet.mesh.position.z);
+        const groundY = getTerrainHeight(bullet.mesh.position.x, bullet.mesh.position.z, bullet.mesh.position.y);
         if (bullet.mesh.position.y < groundY + 0.05) {
           spawnImpact(bullet.mesh.position, 0xd9b07c, 0.16);
           spawnSandDust(bullet.mesh.position);
@@ -2752,11 +2993,17 @@
       playCrossbowSound,
       playDynamiteThrowSound,
       playExplosionSound,
+      playHellfireSound,
       playWeaponSwitchSound,
       playGoldPickupSound,
       playRockRicochetSound,
       playBearRoarSound,
       playBossVictoryFanfare,
+      playHoofbeatSound,
+      playHorseWhistleSound,
+      playCasingClinkSound,
+      playBarricadeBlastSound,
+      playRelicPickupSound,
       playBottleHit,
       playFleshHitSound,
       playPlayerHitSound,
@@ -2788,10 +3035,10 @@
       }
     }
 
-    // --- 7e. Bevegelse: venstre spak i VR, WASD/piltaster på PC (Kartgrenser -158..+158) ---
+    // --- 7e. Bevegelse: venstre spak i VR, WASD/piltaster på PC (Kartgrenser -215..+215, 2x fart til hest) ---
     const VR_MOVE_SPEED = 3.1;
     const PC_MOVE_SPEED = 7.4;
-    const PLAY_AREA_LIMIT = 158;
+    const PLAY_AREA_LIMIT = 215;
     const SNAP_TURN_ANGLE = Math.PI / 6;
     const SNAP_TURN_COOLDOWN = 0.35;
 
@@ -2822,7 +3069,13 @@
     function clampPlayerRig() {
       playerRig.position.x = THREE.MathUtils.clamp(playerRig.position.x, -PLAY_AREA_LIMIT, PLAY_AREA_LIMIT);
       playerRig.position.z = THREE.MathUtils.clamp(playerRig.position.z, -PLAY_AREA_LIMIT, PLAY_AREA_LIMIT);
-      playerRig.position.y = getTerrainHeight(playerRig.position.x, playerRig.position.z);
+      const refY = isRidingHorse ? (playerRig.position.y - 1.15) : playerRig.position.y;
+      const gY = getTerrainHeight(playerRig.position.x, playerRig.position.z, refY);
+      if (isRidingHorse && gY < -1.1) {
+        isRidingHorse = false;
+        updateStatusUI();
+      }
+      playerRig.position.y = gY + (isRidingHorse ? 1.15 : 0);
     }
 
     function moveInLookDirection(strafe, forwardAmount, speed, dt) {
@@ -2838,7 +3091,12 @@
       if (moveVector.lengthSq() > 1) moveVector.normalize();
       if (moveVector.lengthSq() === 0) return;
 
-      const totalStep = speed * dt;
+      const actualSpeed = isRidingHorse ? speed * 2.0 : speed;
+      currentMoveSpeed = actualSpeed;
+      currentMoveDirX = moveVector.x;
+      currentMoveDirZ = moveVector.z;
+
+      const totalStep = actualSpeed * dt;
       const subSteps = totalStep > 0.22 ? 2 : 1;
       const stepDelta = totalStep / subSteps;
       for (let s = 0; s < subSteps; s++) {
@@ -2925,8 +3183,13 @@
       Digit2: 'shotgun',
       Digit3: 'rifle',
       Digit4: 'crossbow',
-      Digit5: 'dynamite'
+      Digit5: 'dynamite',
+      Digit6: 'hellfire'
     };
+
+    let callHorseHook = null;
+    let toggleHorseMountHook = null;
+    let damageBarricadeHook = null;
 
     window.addEventListener('keydown', (e) => {
       pcKeys[e.code] = true;
@@ -2947,7 +3210,13 @@
       if ((e.code === 'KeyF' || keyLower === 'f') && !e.repeat && !renderer.xr.isPresenting) {
         tryKeyFSafeHouseDoor();
       }
-      if ((e.code === 'KeyR' || keyLower === 'r') && !renderer.xr.isPresenting) resetTargets();
+      if ((e.code === 'KeyC' || keyLower === 'c') && !e.repeat && !renderer.xr.isPresenting) {
+        if (callHorseHook) callHorseHook();
+      }
+      if ((e.code === 'KeyR' || keyLower === 'r') && !e.repeat && !renderer.xr.isPresenting) {
+        if (toggleHorseMountHook) toggleHorseMountHook();
+      }
+      if ((e.code === 'KeyT' || keyLower === 't') && !e.repeat && !renderer.xr.isPresenting) resetTargets();
       if ((e.code === 'KeyN' || keyLower === 'n') && !renderer.xr.isPresenting) toggleDayNight();
     });
 
@@ -3024,10 +3293,17 @@
     let baseSafeLanternIntensity = 1.6;
     let baseCampfireIntensity = 2.4;
 
+    const bloodSkyColor = new THREE.Color(0x28080e);
+    const bloodFogColor = new THREE.Color(0x3a0c14);
+    let currentBloodMoonBlend = 0;
+    let bossEnemyRef = null;
+
     function applyDayNightLighting(amount) {
       const night = THREE.MathUtils.clamp(amount, 0, 1);
+      const isBloodMoonStage = storyState.currentLevel === 8 || (bossEnemyRef && bossEnemyRef.alive);
+      currentBloodMoonBlend = isBloodMoonStage ? night : 0;
 
-      // Oppdater Sky-shaderen og solposisjonen for varm solnedgang om dagen og dyp natt
+      // Oppdater Sky-shaderen og solposisjonen for varm solnedgang om dagen og dyp natt / Blodmåne
       applySkyShaderParams(sky, night, skySunVec);
       sky.material.opacity = 1;
 
@@ -3038,14 +3314,24 @@
 
       scene.background.copy(daySkyColor).lerp(nightSkyColor, night);
       scene.fog.color.copy(dayFogColor).lerp(nightFogColor, night);
+      if (currentBloodMoonBlend > 0.01) {
+        scene.background.lerp(bloodSkyColor, currentBloodMoonBlend * 0.72);
+        scene.fog.color.lerp(bloodFogColor, currentBloodMoonBlend * 0.78);
+      }
       scene.fog.near = THREE.MathUtils.lerp(56, 28, night);
       scene.fog.far = THREE.MathUtils.lerp(335, 195, night);
 
       hemiLight.color.copy(dayHemiSkyColor).lerp(nightHemiSkyColor, night);
       hemiLight.groundColor.copy(dayHemiGroundColor).lerp(nightHemiGroundColor, night);
+      if (currentBloodMoonBlend > 0.01) {
+        hemiLight.color.lerp(bloodFogColor, currentBloodMoonBlend * 0.55);
+      }
       hemiLight.intensity = THREE.MathUtils.lerp(0.92, 0.46, night);
 
       sunLight.color.copy(daySunColor).lerp(nightSunColor, night);
+      if (currentBloodMoonBlend > 0.01) {
+        sunLight.color.lerp(new THREE.Color(0xff5258), currentBloodMoonBlend * 0.65);
+      }
       sunLight.intensity = THREE.MathUtils.lerp(1.9, 0.55, night);
       if (night < 0.85) {
         sunLight.position.set(
@@ -3064,6 +3350,8 @@
       moonMesh.material.opacity = night;
       moonHaloMat.opacity = night * 0.52;
       moonGroup.visible = night > 0.02;
+      if (updateBloodMoonVisuals) updateBloodMoonVisuals(currentBloodMoonBlend);
+      if (updateGodRays) updateGodRays(night, currentBloodMoonBlend);
 
       starMat.opacity = Math.max(0, (night - 0.18) / 0.82) * 0.95;
       stars.visible = night > 0.18;
@@ -3147,6 +3435,15 @@
         setTimeOfDay(true, true);
       }
     }
+
+    forceNightForBloodMoonHook = () => {
+      if (!isNight) {
+        cycleTime = DAY_DURATION;
+        setTimeOfDay(true, true);
+      } else {
+        applyDayNightLighting(nightAmount);
+      }
+    };
 
     function updateDayNight(dt) {
       cycleTime += dt;
@@ -3430,6 +3727,11 @@
           setGunsmithFeedback('owned', true, 3.0, item.weaponId);
           return;
         }
+        if (item.minLevel && storyState.currentLevel < item.minLevel) {
+          setGunsmithFeedback('locked_level', false, 3.4);
+          playShopDenySound();
+          return;
+        }
         if (playerState.gold < item.goldCost) {
           setGunsmithFeedback('no_gold', false, 3.2);
           playShopDenySound();
@@ -3446,6 +3748,13 @@
         storyState.boughtGear = true;
         if (item.weaponId === 'crossbow') {
           storyState.hasVampireGear = true;
+        }
+        if (item.weaponId === 'hellfire') {
+          storyState.hellfireCollected = true;
+          if (hellfirePickup) {
+            hellfirePickup.collected = true;
+            hellfirePickup.group.visible = false;
+          }
         }
         equipWeapon(item.weaponId, true);
         setGunsmithFeedback('bought_weapon', true, 3.5, item.weaponId);
@@ -3476,6 +3785,92 @@
       checkStoryProgression();
       updateStatusUI();
     }
+
+    function collectMineMapPickup() {
+      if (!mineMapPickup || mineMapPickup.collected) return false;
+      mineMapPickup.collected = true;
+      mineMapPickup.group.visible = false;
+      storyState.mineMapCollected = true;
+      storyState.mineGoldCollected = true;
+      playerState.gold += 30;
+      if (playRelicPickupSound) playRelicPickupSound();
+      else playGoldPickupSound();
+      spawnSparkBurst(mineMapPickup.worldPos, 16, 0xffe066, 1.35);
+      checkStoryProgression();
+      updateStatusUI();
+      return true;
+    }
+
+    function collectHellfirePickup() {
+      if (!hellfirePickup || hellfirePickup.collected) return false;
+      hellfirePickup.collected = true;
+      if (hellfirePickup.orb) hellfirePickup.orb.visible = false;
+      if (hellfirePickup.halo) hellfirePickup.halo.visible = false;
+      unlockedWeapons.hellfire = true;
+      storyState.hellfireCollected = true;
+      storyState.hasVampireGear = true;
+      playerState.gold += 50;
+      equipWeapon('hellfire', true);
+      if (playRelicPickupSound) playRelicPickupSound();
+      else playUpgradeSound();
+      spawnSparkBurst(hellfirePickup.worldPos, 22, 0x74d4ff, 1.55);
+      checkStoryProgression();
+      updateStatusUI();
+      return true;
+    }
+
+    function tryCaptureTrainGatling() {
+      if (storyState.trainGatlingCaptured) return false;
+      storyState.trainGatlingCaptured = true;
+      playerState.gold += 45;
+      if (gatlingHalo && gatlingHalo.material) {
+        gatlingHalo.material.color.setHex(0x68f088);
+      }
+      if (playRelicPickupSound) playRelicPickupSound();
+      else playUpgradeSound();
+      checkStoryProgression();
+      updateStatusUI();
+      return true;
+    }
+
+    let horseEntityRef = null;
+    let silverRelicHitMeshesRef = null;
+    let collectSilverRelicHook = null;
+
+    function isNearRideableHorse() {
+      if (!horseEntityRef) return false;
+      const hx = horseEntityRef.group.position.x;
+      const hz = horseEntityRef.group.position.z;
+      return Math.hypot(playerRig.position.x - hx, playerRig.position.z - hz) <= 4.0 &&
+        Math.abs(playerRig.position.y - horseEntityRef.group.position.y) <= 2.5;
+    }
+
+    function toggleHorseMount() {
+      if (isRidingHorse) {
+        isRidingHorse = false;
+        const gY = getTerrainHeight(playerRig.position.x, playerRig.position.z, playerRig.position.y - 1.15);
+        playerRig.position.y = gY;
+        if (horseEntityRef) {
+          const yaw = playerRig.rotation.y;
+          const hx = playerRig.position.x + Math.cos(yaw) * 1.25;
+          const hz = playerRig.position.z - Math.sin(yaw) * 1.25;
+          horseEntityRef.group.position.set(hx, getTerrainHeight(hx, hz, gY), hz);
+          resolveWallCollisions(horseEntityRef.group.position, 0.72, true);
+        }
+        playQuestSelectSound();
+        updateStatusUI();
+        return true;
+      }
+      if (isNearRideableHorse()) {
+        isRidingHorse = true;
+        clampPlayerRig();
+        if (playHorseWhistleSound) playHorseWhistleSound();
+        updateStatusUI();
+        return true;
+      }
+      return false;
+    }
+    toggleHorseMountHook = toggleHorseMount;
 
     function setRayFromVRController(controller) {
       controller.updateMatrixWorld(true);
@@ -3573,13 +3968,46 @@
         }
       }
 
+      // 9. Klikk på Gammelt Gruvekart, Sølvrelikvier, Hellfire Repeater eller Tog-Gatling på nært hold
+      if (mineMapPickup && !mineMapPickup.collected && mineMapPickup.hitMesh) {
+        const mHits = uiRaycaster.intersectObject(mineMapPickup.hitMesh, false);
+        if (mHits.length > 0 && mHits[0].distance <= 6.0) {
+          collectMineMapPickup();
+          return true;
+        }
+      }
+      if (hellfirePickup && !hellfirePickup.collected && hellfirePickup.hitMesh) {
+        const hHits = uiRaycaster.intersectObject(hellfirePickup.hitMesh, false);
+        if (hHits.length > 0 && hHits[0].distance <= 6.0) {
+          collectHellfirePickup();
+          return true;
+        }
+      }
+      if (trainGatlingHitMeshes && trainGatlingHitMeshes.length > 0 && !storyState.trainGatlingCaptured) {
+        const tgHits = uiRaycaster.intersectObjects(trainGatlingHitMeshes, false);
+        if (tgHits.length > 0 && tgHits[0].distance <= 6.5) {
+          tryCaptureTrainGatling();
+          return true;
+        }
+      }
+      if (silverRelicHitMeshesRef && silverRelicHitMeshesRef.length > 0 && collectSilverRelicHook) {
+        const relHits = uiRaycaster.intersectObjects(silverRelicHitMeshesRef, false);
+        if (relHits.length > 0 && relHits[0].distance <= 6.0) {
+          const entry = relHits[0].object.userData.relicEntry;
+          if (entry && !entry.collected) {
+            collectSilverRelicHook(entry);
+            return true;
+          }
+        }
+      }
+
       return false;
     }
 
     function tryVRRightTriggerUI(controller) {
       setRayFromVRController(controller);
 
-      // 1. Sjekk klikk på spiseknapp, språkknapp eller våpenknapp på venstre håndledd
+      // 1. Sjekk klikk på spiseknapp, språkknapp, våpenknapp eller hesteknapp på venstre håndledd
       leftWristRig.updateMatrixWorld(true);
       if (uiRaycaster.intersectObject(langWristButton, false).length > 0) {
         toggleLanguage();
@@ -3592,6 +4020,11 @@
       }
       if (uiRaycaster.intersectObject(weaponWristButton, false).length > 0) {
         cycleUnlockedWeapon(1);
+        return true;
+      }
+      if (uiRaycaster.intersectObject(horseWristButton, false).length > 0) {
+        if (isRidingHorse) toggleHorseMount();
+        else if (callHorseHook) callHorseHook();
         return true;
       }
 
@@ -3681,6 +4114,7 @@
         get isNight() { return isNight; },
         get worldTime() { return worldTime; },
         get gunshotAlertTimer() { return gunshotAlertTimer; },
+        get isRidingHorse() { return isRidingHorse; },
         grantLegendTitle() { hasLegendTitle = true; },
         forceNightNow() {
           if (!isNight) {
@@ -3697,7 +4131,11 @@
         playGoldPickupSound,
         playBearRoarSound,
         playBossVictoryFanfare,
-        playBanditShotSound
+        playBanditShotSound,
+        playHorseWhistleSound,
+        playHoofbeatSound,
+        playBarricadeBlastSound,
+        playRelicPickupSound
       },
       practiceBottles,
       safeHouseCenterWorld,
@@ -3734,7 +4172,8 @@
       damagePlayer,
       tailorNPCGroup,
       gunsmithNPCGroup,
-      sheriffVanceGroup
+      sheriffVanceGroup,
+      mineBarricades
     });
 
     const {
@@ -3744,6 +4183,11 @@
       banditList,
       nightEnemies,
       bossEnemy,
+      horseEntity,
+      silverRelicHitMeshes,
+      collectSilverRelic,
+      callHorseToPlayer,
+      damageBarricade,
       resetBanditsForDay,
       spawnNightEnemies,
       startNightEnemiesBurning,
@@ -3753,16 +4197,25 @@
       updateBandits,
       updateNightEnemies,
       updateBossEnemy,
+      updateHorseAndRelics,
       updateAnimationMixers,
       updateEnemyBullets,
       findCombatHit,
       damageCombatTarget
     } = E;
+    bossEnemyRef = bossEnemy;
+    horseEntityRef = horseEntity;
+    silverRelicHitMeshesRef = silverRelicHitMeshes;
+    collectSilverRelicHook = collectSilverRelic;
+    callHorseHook = () => {
+      if (callHorseToPlayer) callHorseToPlayer();
+    };
+    damageBarricadeHook = damageBarricade;
     refreshBossBarHook = E.syncBossHealthBarUI;
     summonBossFromAltarHook = E.summonBossFromAltar;
     onNightStateChangedBossHook = E.onNightStateChangedBoss;
     applyDynamiteBlastHook = E.applyDynamiteBlast;
-    // --- 8o. VR-kontrollerknapper: høyre grip = spis mat, venstre grip/trigger = dag/natt (eller butikk) ---
+    // --- 8o. VR-kontrollerknapper: høyre grip = spis mat, venstre grip = sitt opp/av hest nær hest (ellers dag/natt) ---
     function tryVRDayNightToggle(controller, data) {
       if (!renderer.xr.isPresenting) return;
 
@@ -3784,6 +4237,9 @@
         const isRight = handedness === 'right' || (!handedness && vrHands.right === controller);
         if (isRight) {
           tryEatFood();
+          return;
+        }
+        if (toggleHorseMount()) {
           return;
         }
         tryVRDayNightToggle(controller, data);
@@ -3933,7 +4389,9 @@
     renderer.setAnimationLoop(() => {
       const dt = Math.min(clock.getDelta(), 0.05);
       worldTime += dt;
+      if (windUniforms) windUniforms.uWindTime.value = worldTime;
       if (shotCooldownTimer > 0) shotCooldownTimer = Math.max(0, shotCooldownTimer - dt);
+      currentMoveSpeed = 0;
 
       // Dag/natt-syklus, flakkende lykter/leirbål, svevende støvkorn/glør/tumbleweeds, helse og skadetimere
       updateDayNight(dt);
@@ -3973,7 +4431,7 @@
       }
       if (sheriffVanceGroup) {
         sheriffVanceGroup.rotation.y = 0.28 + Math.sin(worldTime * 1.1) * 0.06;
-        // Snakk automatisk med Sheriff Vance i Akt 1 når spilleren går bort til ham (< 4.2m)
+        // Snakk automatisk med Sheriff Vance i Level 1 når spilleren går bort til ham (< 4.2m)
         if (!storyState.talkedSheriff) {
           const sdx = playerRig.position.x - sheriffVanceGroup.position.x;
           const sdz = playerRig.position.z - sheriffVanceGroup.position.z;
@@ -3988,24 +4446,48 @@
         safeHouseDoorPivot.rotation.y = safeHouseDoorAngle;
       }
 
-      // Bevegelse og våpenbytte: venstre spak + A/X i VR, WASD/piltaster + 1–5/musehjul på PC
+      // Bevegelse og våpenbytte: venstre spak + A/X i VR, WASD/piltaster + 1–6/musehjul på PC
       updateVRWeaponSwitchButton();
       updateVRMovement(dt);
       updatePCMovement(dt);
       updateSnapTurn(dt);
 
-      // Skapninger, Grizzlybjørn, Banditter, Nattmonstre, Lord Malakor og solide veggkollisjoner
+      // Skapninger, Mustang-hest, Grizzlybjørn, Banditter, Katakombevoktere, Lord Malakor og solide veggkollisjoner
       updateDeer(dt);
       updateWolves(dt);
       updateBears(dt);
       updateBandits(dt);
       updateNightEnemies(dt);
       updateBossEnemy(dt);
+      if (updateHorseAndRelics) {
+        updateHorseAndRelics(dt, worldTime, currentMoveSpeed, currentMoveDirX, currentMoveDirZ);
+      }
       enforceAllActorWallCollisions();
       updatePlayerBodyPoints();
       updatePlayerHiddenStatus();
 
-      // Akt 3 nattforsvar via Safe House: overlev 4 sekunder i skjul om natten
+      // Nærhets-oppsamling for Level 4 Gruvekart, Level 5 Gatling-vogn & Level 7 Hellfire Repeater
+      if (mineMapPickup && !mineMapPickup.collected) {
+        mineMapPickup.hitMesh.rotation.y += dt * 1.4;
+        if (Math.hypot(playerRig.position.x - mineMapPickup.worldPos.x, playerRig.position.z - mineMapPickup.worldPos.z) < 2.3) {
+          collectMineMapPickup();
+        }
+      }
+      if (hellfirePickup && !hellfirePickup.collected) {
+        if (hellfirePickup.orb) hellfirePickup.orb.rotation.y += dt * 1.6;
+        if (
+          playerRig.position.y < -4.0 &&
+          Math.hypot(playerRig.position.x - hellfirePickup.worldPos.x, playerRig.position.z - hellfirePickup.worldPos.z) < 2.35
+        ) {
+          collectHellfirePickup();
+        }
+      }
+      if (!storyState.trainGatlingCaptured && storyState.trainSnipersKilled >= 4) {
+        if (Math.hypot(playerRig.position.x - 16.4, playerRig.position.z - 75.0) < 3.5) {
+          tryCaptureTrainGatling();
+        }
+      }
+
       if (isNight && playerHiddenStatus && !storyState.act3NightSurvived) {
         storyState.act3SafeHouseTimer += dt;
         if (storyState.act3SafeHouseTimer >= 4.0) {
@@ -4019,9 +4501,10 @@
       updateEnemyBullets(dt);
       updateGoldPickups(dt);
 
-      // Skyting, kastet dynamitt, treff, kruttrøyk/gnister/aske, blinkfysikk og rullende tumbleweeds
+      // Skyting, kastet dynamitt, tomhylser i messing, treff, kruttrøyk/gnister/aske, blinkfysikk og tumbleweeds
       updateBullets(dt);
       updateThrownDynamites(dt);
+      if (updateShellCasings) updateShellCasings(dt, getTerrainHeight);
       updateBottles(dt);
       updateImpacts(dt);
       updateFXParticles(dt);
