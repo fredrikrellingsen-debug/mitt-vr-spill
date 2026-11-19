@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """
 Downloads genuine CC0 1.0 Public Domain HDRIs, 1K photographic PBR texture sets
-(Poly Haven), and rigged/textured CC0 3D .glb models (Quaternius) into ./assets/.
+(Poly Haven), and rigged/textured open-licensed 3D .glb models into ./assets/.
 
 Safety & Plug-and-Play protection:
 - Existing files in ./assets/env/ and ./assets/textures/ are never re-downloaded
   unless missing (or --force is passed).
 - Existing .glb files in ./assets/ are ONLY replaced if the file does not exist
-  OR its SHA-256 matches the legacy procedural Python generator hash. Custom
-  external .glb models (e.g. from Tripo3D / Meshy) are NEVER overwritten.
+  OR its glTF generator string starts with "WesternVR-GLBBuilder-" (procedural
+  placeholder). Custom external .glb models are NEVER overwritten.
 """
 
 import hashlib
+import io
 import json
 import os
 import struct
@@ -72,12 +73,16 @@ TEXTURE_JOBS = [
     ("leather_rough.jpg", "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/brown_leather/brown_leather_rough_1k.jpg"),
 ]
 
-# Genuine CC0 high-poly PBR 3D models (ONLY fetched if the target .glb does not exist at all;
-# existing .glb files in ./assets/ are NEVER overwritten).
+# Sculpted & rigged external PBR 3D models (see CREDITS.md for licenses).
+# Existing external .glb files in ./assets/ are NEVER overwritten.
 CC0_GLB_FALLBACKS = [
     (
         "vampire.glb",
         "https://raw.githubusercontent.com/511action/descent-3d-assets/main/models/CreepCreature.glb",
+    ),
+    (
+        "horse.glb",
+        "https://raw.githubusercontent.com/miskibin/warbell/main/assets/animals/horse.glb",
     ),
 ]
 
@@ -95,7 +100,7 @@ def sha256_file(path):
 
 def download_bytes(url):
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=45) as resp:
+    with urllib.request.urlopen(req, timeout=60) as resp:
         return resp.read()
 
 
@@ -112,6 +117,94 @@ def validate_payload(filename, data):
         magic, version, total_len = struct.unpack("<III", data[:12])
         if magic != 0x46546C67 or version != 2 or total_len != len(data):
             raise ValueError(f"Invalid GLB header for {filename}")
+
+
+def optimize_horse_glb_bytes(raw_glb):
+    """Downscales embedded 2K PNG textures to 1K JPEG/PNG for WebXR VRAM & calibrates PBR roughness."""
+    try:
+        from PIL import Image
+    except ImportError:
+        return raw_glb
+
+    magic, ver, total, clen, ctype = struct.unpack("<IIIII", raw_glb[:20])
+    if magic != 0x46546C67 or ver != 2 or ctype != 0x4E4F534A:
+        return raw_glb
+
+    doc = json.loads(raw_glb[20 : 20 + clen].decode("utf-8"))
+    b_off = 20 + clen
+    b_len, b_type = struct.unpack("<II", raw_glb[b_off : b_off + 8])
+    bin_data = raw_glb[b_off + 8 : b_off + 8 + b_len]
+
+    alpha_img_indices = set()
+    for mat in doc.get("materials", []):
+        mname = (mat.get("name") or "").lower()
+        pbr = mat.setdefault("pbrMetallicRoughness", {})
+        if mat.get("alphaMode") in ("MASK", "BLEND"):
+            tex = pbr.get("baseColorTexture")
+            if tex is not None:
+                t_idx = tex["index"]
+                src_idx = doc["textures"][t_idx]["source"]
+                alpha_img_indices.add(src_idx)
+        if "horse" in mname and "shoe" not in mname:
+            pbr["metallicFactor"] = 0.0
+            pbr["roughnessFactor"] = 0.86
+        elif "hair" in mname:
+            pbr["metallicFactor"] = 0.0
+            pbr["roughnessFactor"] = 0.88
+        elif "saddle" in mname:
+            pbr["metallicFactor"] = 0.04
+            pbr["roughnessFactor"] = 0.66
+        elif "shoe" in mname:
+            pbr["metallicFactor"] = 0.85
+            pbr["roughnessFactor"] = 0.34
+        elif "cornea" in mname:
+            pbr["baseColorFactor"] = [0.03, 0.022, 0.018, 1.0]
+            pbr["metallicFactor"] = 0.02
+            pbr["roughnessFactor"] = 0.14
+
+    img_bvs = {im["bufferView"]: idx for idx, im in enumerate(doc.get("images", []))}
+    new_bin = bytearray()
+    for bv_idx, bv in enumerate(doc["bufferViews"]):
+        old_off = bv.get("byteOffset", 0)
+        old_len = bv["byteLength"]
+        chunk = bin_data[old_off : old_off + old_len]
+        if bv_idx in img_bvs:
+            im_idx = img_bvs[bv_idx]
+            im_meta = doc["images"][im_idx]
+            with Image.open(io.BytesIO(chunk)) as pil_im:
+                if max(pil_im.size) > 1024:
+                    pil_im = pil_im.resize((1024, 1024), Image.Resampling.LANCZOS)
+                out_io = io.BytesIO()
+                if im_idx in alpha_img_indices:
+                    pil_im.convert("RGBA").save(out_io, format="PNG", optimize=True)
+                    im_meta["mimeType"] = "image/png"
+                else:
+                    pil_im.convert("RGB").save(out_io, format="JPEG", quality=90, optimize=True)
+                    im_meta["mimeType"] = "image/jpeg"
+                chunk = out_io.getvalue()
+        while len(new_bin) % 4 != 0:
+            new_bin.append(0)
+        bv["byteOffset"] = len(new_bin)
+        bv["byteLength"] = len(chunk)
+        new_bin.extend(chunk)
+
+    while len(new_bin) % 4 != 0:
+        new_bin.append(0)
+    doc["buffers"][0]["byteLength"] = len(new_bin)
+    doc.setdefault("asset", {})["generator"] = "Khronos glTF Blender I/O (External-CC-BY-4.0-HenryS)"
+
+    json_bytes = json.dumps(doc, separators=(",", ":")).encode("utf-8")
+    while len(json_bytes) % 4 != 0:
+        json_bytes += b" "
+
+    total_len = 12 + 8 + len(json_bytes) + 8 + len(new_bin)
+    out = bytearray()
+    out.extend(struct.pack("<III", 0x46546C67, 2, total_len))
+    out.extend(struct.pack("<II", len(json_bytes), 0x4E4F534A))
+    out.extend(json_bytes)
+    out.extend(struct.pack("<II", len(new_bin), 0x004E4942))
+    out.extend(new_bin)
+    return bytes(out)
 
 
 def main():
@@ -144,7 +237,7 @@ def main():
             f.write(raw)
         print(f"  [OK]   {fname} ({len(raw) // 1024} KB)")
 
-    print("=== Checking Missing-Only External CC0 GLBs ===")
+    print("=== Checking External Sculpted PBR GLBs ===")
     for fname, url in CC0_GLB_FALLBACKS:
         dest = os.path.join(ASSETS_DIR, fname)
         if os.path.isfile(dest) and not force:
@@ -159,15 +252,18 @@ def main():
                             gen = str(doc.get("asset", {}).get("generator", ""))
             except Exception:
                 gen = ""
-            if gen != "WesternVR-GLBBuilder-1.0":
+            if not gen.startswith("WesternVR-GLBBuilder-"):
                 print(f"  [PROTECTED] {fname} exists ({os.path.getsize(dest) // 1024} KB, generator={gen!r}) — preserving")
                 continue
-            print(f"  [UPGRADING LEGACY 1.0] {fname} -> external CC0 model")
+            print(f"  [UPGRADING PROCEDURAL] {fname} ({gen!r}) -> sculpted external PBR model")
         raw = download_bytes(url)
         validate_payload(fname, raw)
+        if fname == "horse.glb":
+            raw = optimize_horse_glb_bytes(raw)
+            validate_payload(fname, raw)
         with open(dest, "wb") as f:
             f.write(raw)
-        print(f"  [FETCHED]   {fname} -> CC0 model ({len(raw) // 1024} KB)")
+        print(f"  [FETCHED]   {fname} -> sculpted PBR model ({len(raw) // 1024} KB)")
 
 
 if __name__ == "__main__":

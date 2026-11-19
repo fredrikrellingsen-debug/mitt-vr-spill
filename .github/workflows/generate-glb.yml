@@ -16,7 +16,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Fetch missing CC0 HDRIs, PBR textures & missing-only GLB fallbacks
+      - name: Install Pillow for 1K WebXR GLB texture optimization
+        run: python3 -m pip install --quiet Pillow
+      - name: Fetch missing CC0 HDRIs, PBR textures & external sculpted GLB models
         run: |
           if [ -f scripts/fetch_cc0_assets.py ]; then
             python3 -B scripts/fetch_cc0_assets.py
@@ -32,7 +34,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add assets/env/*.hdr assets/textures/*.jpg assets/*.glb assets/external-models.json || true
           if ! git diff --cached --quiet; then
-            git commit -m "Build subdivided 2.0 procedural GLBs & preserve external assets"
+            git commit -m "Sync sculpted horse.glb & preserve external assets"
             git pull --rebase origin main
             git push origin main
           fi

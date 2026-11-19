@@ -1609,14 +1609,30 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
   function createHorseModel() {
     const horseGLTF = loadedAssets && loadedAssets.horse;
     if (horseGLTF && horseGLTF.scene) {
-      const { group, model } = instantiateGLTFCreature(horseGLTF, 'horse', 1.82, -1);
-      if (createContactShadow) group.add(createContactShadow(0.76, 1.32, 0.028));
-      addQuadrupedFootShadows(group, [[-0.185, -0.54], [0.185, -0.54], [-0.19, 0.58], [0.19, 0.58]], 0.18);
+      const { group, model } = instantiateGLTFCreature(horseGLTF, 'horse', 1.94, -1);
+      if (createContactShadow) group.add(createContactShadow(0.74, 1.28, 0.028));
+      addQuadrupedFootShadows(group, [[-0.14, -0.32], [0.14, -0.32], [-0.15, 0.44], [0.15, 0.44]], 0.17);
+      let hasBuiltInSaddle = false;
+      model.traverse((n) => {
+        if (!n.isMesh) return;
+        const nm = (n.name || '').toLowerCase();
+        const mats = Array.isArray(n.material) ? n.material : [n.material];
+        if (nm.includes('saddle') || mats.some((m) => m && (m.name || '').toLowerCase().includes('saddle'))) {
+          hasBuiltInSaddle = true;
+        }
+      });
       let seat = model.getObjectByName('SaddleSeat');
       if (!seat) {
-        seat = buildWesternSaddleGroup();
-        seat.position.set(0, 1.14, 0.05);
-        group.add(seat);
+        if (hasBuiltInSaddle) {
+          seat = new THREE.Object3D();
+          seat.name = 'SaddleSeat';
+          seat.position.set(0, 1.34, 0.06);
+          group.add(seat);
+        } else {
+          seat = buildWesternSaddleGroup();
+          seat.position.set(0, 1.14, 0.05);
+          group.add(seat);
+        }
       }
       group.userData.saddleSeat = seat;
       group.userData.legs = [0, 1, 2, 3]

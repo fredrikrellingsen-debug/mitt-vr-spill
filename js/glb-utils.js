@@ -180,8 +180,17 @@ export function enhanceOrPreserveGLBMaterial(origMat, node, M, opts = {}) {
     }
     if (isCharacter) {
       mat.flatShading = false;
-      const embeddedMetal = (origMat.metalness !== undefined && origMat.metalness >= 0.45);
-      if (!embeddedMetal) {
+      const embeddedMetal = (origMat.metalness !== undefined && origMat.metalness >= 0.45) || mName.includes('horseshoe');
+      const isEmbeddedLeather = mName.includes('saddle') || mName.includes('bridle') || mName.includes('leather');
+      if (embeddedMetal) {
+        mat.metalness = Math.max(origMat.metalness ?? 0.85, 0.80);
+        mat.roughness = THREE.MathUtils.clamp(mat.roughness ?? 0.34, 0.25, 0.40);
+        mat.envMapIntensity = 1.15;
+      } else if (isEmbeddedLeather) {
+        mat.metalness = 0.04;
+        mat.roughness = THREE.MathUtils.clamp(mat.roughness ?? 0.66, 0.62, 0.72);
+        mat.envMapIntensity = 0.44;
+      } else {
         mat.metalness = 0.0;
         mat.roughness = THREE.MathUtils.clamp(mat.roughness ?? 0.88, 0.84, 0.92);
         mat.envMapIntensity = 0.35;
@@ -189,9 +198,6 @@ export function enhanceOrPreserveGLBMaterial(origMat, node, M, opts = {}) {
           mat.bumpMap = M.gltfOrganicNoiseBumpTex;
           mat.bumpScale = 0.016;
         }
-      } else {
-        mat.roughness = THREE.MathUtils.clamp(mat.roughness ?? 0.32, 0.25, 0.38);
-        mat.envMapIntensity = 1.25;
       }
       mat.needsUpdate = true;
       if (M && M.applyCharacterRimLighting) {
@@ -220,7 +226,7 @@ export function enhanceOrPreserveGLBMaterial(origMat, node, M, opts = {}) {
     return mat;
   }
 
-  const isEye = mName.includes('eye') || mName.includes('pupil') || mName.includes('sclera') || mName.includes('iris');
+  const isEye = mName.includes('eye') || mName.includes('pupil') || mName.includes('sclera') || mName.includes('iris') || mName.includes('cornea');
   if (isEye) {
     mat.flatShading = false;
     mat.metalness = 0.02;
