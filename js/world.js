@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { drawRoundedRect } from './i18n.js';
 import { createSeededRng } from './textures.js';
-import { instantiateBuildingGLB } from './glb-utils.js';
+import { instantiateBuildingGLB, ensureGeometryUVs, smoothSplitVertexNormals } from './glb-utils.js';
 
 export function applySkyShaderParams(skyObj, nightAmt, outSunDir) {
   const uniforms = skyObj.material.uniforms;
@@ -295,16 +295,16 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
   }
 
   const desertGroundMat = new THREE.MeshStandardMaterial({
-    color: 0xe4b888,
+    color: 0xdcb488,
     map: sharedDesertSandTex,
     normalMap: sharedDesertSandNormalTex,
-    normalScale: new THREE.Vector2(0.82, 0.82),
+    normalScale: new THREE.Vector2(0.84, 0.84),
     roughnessMap: sharedDesertSandRoughTex,
-    roughness: 0.92,
-    metalness: 0.02,
-    envMapIntensity: 0.78
+    roughness: 0.94,
+    metalness: 0.0,
+    envMapIntensity: 0.36
   });
-  desertGroundMat.customProgramCacheKey = () => 'western_photo_terrain_v2';
+  desertGroundMat.customProgramCacheKey = () => 'western_photo_terrain_v3_fbm';
   desertGroundMat.onBeforeCompile = (shader) => {
     shader.uniforms.uRoadPhotoMap = { value: sharedRoadSandTex };
     shader.uniforms.uRockPhotoMap = { value: sharedSandstoneTex };
@@ -327,7 +327,34 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
         varying vec3 vTerrainWorldPos;
         uniform sampler2D uRoadPhotoMap;
         uniform sampler2D uRockPhotoMap;
-        uniform sampler2D uForestPhotoMap;`
+        uniform sampler2D uForestPhotoMap;
+
+        float wHash21(vec2 p) {
+          p = fract(p * vec2(127.1, 311.7));
+          p += dot(p, p + 34.23);
+          return fract(p.x * p.y);
+        }
+        float wNoise2(vec2 p) {
+          vec2 i = floor(p);
+          vec2 f = fract(p);
+          vec2 u = f * f * (3.0 - 2.0 * f);
+          float a = wHash21(i);
+          float b = wHash21(i + vec2(1.0, 0.0));
+          float c = wHash21(i + vec2(0.0, 1.0));
+          float d = wHash21(i + vec2(1.0, 1.0));
+          return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+        }
+        float wFbm(vec2 p) {
+          float v = 0.0;
+          float amp = 0.5;
+          mat2 rot = mat2(0.80, -0.60, 0.60, 0.80);
+          for (int i = 0; i < 4; i++) {
+            v += amp * wNoise2(p);
+            p = rot * p * 2.07 + vec2(13.7, 9.2);
+            amp *= 0.5;
+          }
+          return v;
+        }`
       )
       .replace(
         '#include <map_fragment>',
@@ -336,48 +363,72 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
           float wx = vTerrainWorldPos.x;
           float wz = vTerrainWorldPos.z;
           float wy = vTerrainWorldPos.y;
+          vec2 wp = vec2(wx, wz);
 
-          // To-skala rotert UV-oppslag som eliminerer synlig flisegjentakelse på ørkensand og klipper
-          vec2 uvFine = vec2(wx, wz) * 0.145;
+          // To-skala rotert UV-oppslag + fBm-støy som fjerner all synlig flisegjentakelse
+          vec2 uvFine = wp * 0.145;
           vec2 uvMacro = vec2(wx * 0.866 - wz * 0.5, wx * 0.5 + wz * 0.866) * 0.031;
           vec3 sandMacro = texture2D(map, uvMacro).rgb;
-          float macroBlend = sin(wx * 0.073 + cos(wz * 0.061) * 1.6) * 0.5 + 0.5;
-          vec3 antiTiledSand = mix(diffuseColor.rgb, sandMacro * vec3(1.06, 0.96, 0.86), 0.36 * macroBlend);
+          float macroN = wFbm(wp * 0.045);
+          vec3 antiTiledSand = mix(diffuseColor.rgb, sandMacro * vec3(1.04, 0.96, 0.88), 0.42 * macroN);
 
-          // Mikro-korn / grus-støy på nært hold
-          float microPebble = sin(wx * 14.3 + wz * 11.7) * cos(wx * 9.1 - wz * 16.9) * 0.035;
-          antiTiledSand *= (1.0 + microPebble);
+          float detailGrain = (wNoise2(wp * 3.8) - 0.5) * 0.07;
+          antiTiledSand *= (1.0 + detailGrain);
 
-          // Biome 2: Fotografisk pakket jord-/grusvei (dirt_floor) med hjulspor
-          float dNorth = (wz < -14.0) ? smoothstep(2.5, 1.35, abs(wx)) : 0.0;
-          float dSouth = (wz > 12.0 && wz < 74.0) ? smoothstep(2.5, 1.35, abs(wx)) : 0.0;
-          float dEast  = (wx > 14.0 && wx < 126.0) ? smoothstep(2.5, 1.35, abs(wz + 1.5)) : 0.0;
-          float dWest  = (wx < -14.0 && wx > -122.0) ? smoothstep(2.5, 1.35, abs(wz + 1.5)) : 0.0;
-          float dRail  = (wx > -142.0 && wx < 50.0) ? smoothstep(3.1, 1.55, abs(wz - 75.0)) : 0.0;
-          float roadMask = clamp(max(max(dNorth, dSouth), max(max(dEast, dWest), dRail)), 0.0, 1.0);
-          float rutX = max(smoothstep(0.34, 0.07, abs(abs(wx) - 0.72)) * max(dNorth, dSouth),
-                           smoothstep(0.34, 0.07, abs(abs(wz + 1.5) - 0.72)) * max(dEast, dWest));
-          vec3 roadTex = texture2D(uRoadPhotoMap, uvFine * 1.15).rgb;
-          vec3 gravelCol = roadTex * mix(vec3(0.96, 0.82, 0.68), vec3(0.58, 0.46, 0.36), rutX * 0.72);
+          // Ekte støybasert veikant-blending (ingen rette linjer eller brå stopp; sand blåser ujevnt over veien!)
+          float sandDrift = (wFbm(wp * 0.24) - 0.46) * 1.65 + (wNoise2(wp * 0.95) - 0.5) * 0.55;
+          float swayNS = (wNoise2(vec2(wz * 0.055, 3.1)) - 0.5) * 0.85;
+          float swayEW = (wNoise2(vec2(wx * 0.055, 8.7)) - 0.5) * 0.85;
 
-          // Biome 3: Fotografisk skogbunn (forest_leaves_02) i Whispering Woods (Nord)
-          float forestMask = smoothstep(-25.0, -40.0, wz) * (1.0 - roadMask * 0.78);
-          vec3 forestTex = texture2D(uForestPhotoMap, uvFine * 0.92).rgb;
-          vec3 forestCol = forestTex * vec3(0.76, 0.84, 0.62);
+          float spanNS = smoothstep(-154.0, -136.0, wz) * smoothstep(82.0, 68.0, wz);
+          float halfW_NS = mix(2.15, 3.35, exp(-pow(wz / 18.0, 2.0))) + sandDrift;
+          float dNS = smoothstep(halfW_NS + 1.35, max(0.35, halfW_NS - 1.25), abs(wx - swayNS)) * spanNS;
 
-          // Biome 4: Fotografisk sprukket sandstein (sandstone_cracks) i Crimson Canyon & Boot Hill
+          float spanEW = smoothstep(-132.0, -114.0, wx) * smoothstep(134.0, 116.0, wx);
+          float halfW_EW = mix(2.05, 2.85, exp(-pow(wx / 18.0, 2.0))) + sandDrift;
+          float dEW = smoothstep(halfW_EW + 1.35, max(0.35, halfW_EW - 1.20), abs((wz + 1.5) - swayEW)) * spanEW;
+
+          float spanRail = smoothstep(-146.0, -132.0, wx) * smoothstep(54.0, 44.0, wx);
+          float dRail = smoothstep(3.4 + sandDrift * 0.6, 1.35, abs(wz - 75.0)) * spanRail;
+
+          // Myk opptråkket plass midt på hovedgata i Dustwood
+          float townCourt = exp(-(wx * wx) / 38.0 - ((wz - 1.5) * (wz - 1.5)) / 185.0) * (0.65 + 0.35 * wFbm(wp * 0.32));
+          float roadMask = clamp(max(max(dNS, dEW), max(dRail, townCourt)), 0.0, 1.0);
+
+          // Ekte doble vognhjulspor som brytes opp naturlig av overblåst sand
+          float rutBreak = smoothstep(0.28, 0.78, wFbm(wp * 0.38 + vec2(4.2, -7.1)));
+          float rutNS = smoothstep(0.42, 0.06, abs(abs(wx - swayNS) - 0.82)) * dNS;
+          float rutEW = smoothstep(0.42, 0.06, abs(abs((wz + 1.5) - swayEW) - 0.82)) * dEW;
+          float rutMask = max(rutNS, rutEW) * (0.45 + 0.55 * rutBreak);
+
+          vec3 roadTex = mix(texture2D(uRoadPhotoMap, uvFine * 1.15).rgb, texture2D(uRoadPhotoMap, uvMacro * 2.1).rgb, 0.32);
+          vec3 gravelBase = roadTex * vec3(0.95, 0.84, 0.72);
+          vec3 rutCol = roadTex * vec3(0.64, 0.52, 0.41);
+          vec3 gravelCol = mix(gravelBase, rutCol, rutMask * 0.68);
+
+          // Biome 3: Skogbunn (Whispering Woods) med myk fBm-overgang
+          float edgeN = (wFbm(wp * 0.085) - 0.5) * 14.0;
+          float forestMask = smoothstep(-22.0, -44.0, wz + edgeN) * (1.0 - roadMask * 0.68);
+          vec3 forestTex = mix(texture2D(uForestPhotoMap, uvFine * 0.92).rgb, texture2D(uForestPhotoMap, uvMacro * 1.8).rgb, 0.35);
+          vec3 forestCol = forestTex * vec3(0.74, 0.82, 0.60);
+
+          // Biome 4: Dempet jordnær sandsteinsgrunn i Crimson Canyon & Boot Hill (aldri knalloransje)
           vec3 rockTex = mix(texture2D(uRockPhotoMap, uvFine * 0.85).rgb, texture2D(uRockPhotoMap, uvMacro * 1.35).rgb, 0.4);
-          float canyonMask = smoothstep(48.0, 74.0, wx) * (1.0 - roadMask * 0.72);
-          vec3 canyonCol = rockTex * vec3(1.14, 0.56, 0.38);
+          float canyonMask = smoothstep(42.0, 76.0, wx + edgeN) * (1.0 - roadMask * 0.65);
+          vec3 canyonCol = rockTex * vec3(0.86, 0.68, 0.55);
 
-          float bootMask = smoothstep(-48.0, -72.0, wx) * (1.0 - roadMask * 0.68);
-          vec3 ashCol = rockTex * vec3(0.52, 0.52, 0.58);
+          float bootMask = smoothstep(-42.0, -74.0, wx - edgeN) * (1.0 - roadMask * 0.65);
+          vec3 ashCol = rockTex * vec3(0.56, 0.55, 0.58);
 
-          vec3 baseSand = antiTiledSand * mix(0.90, 1.08, clamp(wy * 0.18 + 0.45, 0.0, 1.0));
-          vec3 splatted = mix(baseSand, gravelCol, roadMask * 0.76);
-          splatted = mix(splatted, forestCol, forestMask * 0.74);
-          splatted = mix(splatted, canyonCol, canyonMask * 0.68);
-          splatted = mix(splatted, ashCol, bootMask * 0.70);
+          vec3 baseSand = antiTiledSand * mix(0.91, 1.06, clamp(wy * 0.18 + 0.45, 0.0, 1.0));
+          // Vindblåst sand bryter også opp grusveien på tvers slik at veikanten er 100 % organisk
+          float sandOverRoad = smoothstep(0.56, 0.86, wFbm(wp * 0.42 + vec2(11.3, 5.7))) * 0.35;
+          float finalRoadBlend = roadMask * (0.64 - sandOverRoad);
+
+          vec3 splatted = mix(baseSand, gravelCol, clamp(finalRoadBlend, 0.0, 0.72));
+          splatted = mix(splatted, forestCol, forestMask * 0.76);
+          splatted = mix(splatted, canyonCol, canyonMask * 0.66);
+          splatted = mix(splatted, ashCol, bootMask * 0.68);
           diffuseColor.rgb = splatted;
         }`
       );
@@ -397,51 +448,59 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     metalness: 0.01
   });
 
-  // --- 3h. Monument Valley-inspirerte lagdelte sandsteinsplatåer i horisontringen utenfor [-160..160] ---
+  // --- 3h. Forrevne, skarpt lagdelte sandsteinsklipper i dempede jordfarger som matcher HDRI-fjellene ---
   const mesaMat = new THREE.MeshStandardMaterial({
-    color: 0xa4684a,
+    color: 0x8b7b69,
+    map: sharedMesaTex,
+    normalMap: sharedMesaNormalTex,
+    normalScale: new THREE.Vector2(1.55, 1.55),
+    roughnessMap: sharedMesaRoughTex,
+    roughness: 0.93,
+    metalness: 0.0,
+    envMapIntensity: 0.32
+  });
+  const mesaCapMat = new THREE.MeshStandardMaterial({
+    color: 0x726455,
     map: sharedMesaTex,
     normalMap: sharedMesaNormalTex,
     normalScale: new THREE.Vector2(1.45, 1.45),
     roughnessMap: sharedMesaRoughTex,
-    roughness: 0.92,
-    metalness: 0.02
-  });
-  const mesaCapMat = new THREE.MeshStandardMaterial({
-    color: 0x865038,
-    map: sharedMesaTex,
-    normalMap: sharedMesaNormalTex,
-    normalScale: new THREE.Vector2(1.35, 1.35),
-    roughnessMap: sharedMesaRoughTex,
     roughness: 0.94,
-    metalness: 0.02
+    metalness: 0.0,
+    envMapIntensity: 0.30
   });
   if (M.applyAntiTilingSurfaceShader) {
-    M.applyAntiTilingSurfaceShader(mesaMat, 0.22, 0.72);
-    M.applyAntiTilingSurfaceShader(mesaCapMat, 0.22, 0.72);
+    M.applyAntiTilingSurfaceShader(mesaMat, 0.24, 0.85);
+    M.applyAntiTilingSurfaceShader(mesaCapMat, 0.24, 0.85);
   }
 
   function createFlutedCliffGeo(rTop, rBot, height, radialSegs, heightSegs, seed) {
     const rng = createSeededRng(seed);
-    const geo = new THREE.CylinderGeometry(rTop, rBot, height, radialSegs, heightSegs);
+    const geo = new THREE.CylinderGeometry(rTop, rBot, height, radialSegs, heightSegs + 4);
     const pos = geo.attributes.position;
-    // Perturber vinkler konsistent rundt søylen slik at sømmen er lukket, men veggene får kløfter og hyller
     const angleNoise = new Float32Array(radialSegs);
     for (let a = 0; a < radialSegs; a++) {
-      angleNoise[a] = 0.82 + rng() * 0.34;
+      // Skarpe, forrevne klippefremspring og sprekker rundt omkretsen
+      angleNoise[a] = 0.68 + Math.pow(rng(), 0.75) * 0.56;
     }
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i);
-      const y = pos.getY(i);
+      let y = pos.getY(i);
       const z = pos.getZ(i);
       const r = Math.hypot(x, z);
       if (r < 0.001) continue;
       const ang = Math.atan2(z, x);
       const idx = ((Math.round(((ang + Math.PI) / (Math.PI * 2)) * radialSegs) % radialSegs) + radialSegs) % radialSegs;
-      const strataStep = 1.0 + Math.sin((y / height) * Math.PI * 6) * 0.06;
-      const scale = angleNoise[idx] * strataStep;
-      pos.setX(i, x * scale);
-      pos.setZ(i, z * scale);
+      const hFrac = (y + height * 0.5) / height;
+      // Tydelige horisontale sedimentære klippehyller (trappetrinns-lagdeling)
+      const terrace = Math.floor(hFrac * 5.0) / 5.0;
+      const ledgeStep = 1.0 + (hFrac - terrace) * 0.42 + Math.sin(hFrac * Math.PI * 10.0) * 0.07;
+      const crag = angleNoise[idx] * ledgeStep;
+      // Ujevn taggete overkant i stedet for flat sylinderkant
+      if (hFrac > 0.92) {
+        y += (angleNoise[idx] - 0.95) * height * 0.14;
+      }
+      pos.setXYZ(i, x * crag, y, z * crag);
     }
     geo.computeVertexNormals();
     return geo;
@@ -507,31 +566,101 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     { x: 110, z: 252, r: 36, h: 44, seed: 909, spire: false }
   ].forEach((m) => spawnMonumentMesa(m.x, m.z, m.r, m.h, m.seed, m.spire));
 
-  // Klipper og røde sandsteinsformasjoner (målt nøyaktig med THREE.Box3)
+  // Forrevne, skarpt lagdelte sandsteinsklipper (erstatter glatte kuler/bobler med ekte kløvede klippeblokker + boks-UV!)
   const rockColliders = [];
   const rockMeasureBox = new THREE.Box3();
-  const cragBoulderGeo = new THREE.DodecahedronGeometry(1.0, 1);
+
+  function createJaggedSandstoneOutcropGeo(seed) {
+    const rng = createSeededRng(seed);
+    const radialSegs = 18;
+    const heightSegs = 10;
+    const baseGeo = new THREE.CylinderGeometry(0.56, 1.06, 1.85, radialSegs, heightSegs);
+    const pos = baseGeo.attributes.position;
+
+    const sectorRadius = new Float32Array(radialSegs);
+    const sectorCrest = new Float32Array(radialSegs);
+    for (let s = 0; s < radialSegs; s++) {
+      sectorRadius[s] = 0.68 + rng() * 0.48;
+      sectorCrest[s] = (rng() - 0.45) * 0.34;
+    }
+
+    for (let i = 0; i < pos.count; i++) {
+      let x = pos.getX(i);
+      let y = pos.getY(i);
+      let z = pos.getZ(i);
+      const r = Math.hypot(x, z);
+      const hNorm = (y + 0.925) / 1.85;
+      if (r > 0.001) {
+        const ang = Math.atan2(z, x);
+        const sExact = (((ang + Math.PI) / (Math.PI * 2)) * radialSegs + radialSegs) % radialSegs;
+        const s0 = Math.floor(sExact) % radialSegs;
+        const s1 = (s0 + 1) % radialSegs;
+        const sf = sExact - Math.floor(sExact);
+        const smoothRad = THREE.MathUtils.lerp(sectorRadius[s0], sectorRadius[s1], sf);
+        // Naturlig sedimentær lagdeling med kløfter og ujevne fjellhyller (ingen store flate trapeser)
+        const strata = Math.sin(hNorm * Math.PI * 7.5 + ang * 1.4) * 0.085 + Math.cos(hNorm * Math.PI * 15.0 - ang * 2.3) * 0.038;
+        const band = Math.floor(hNorm * 4.5) / 4.5;
+        const shelfLedge = 1.0 + (hNorm - band) * 0.36 + strata;
+        const crevice = 1.0 - Math.pow(Math.max(0, Math.sin(ang * 3.0 + seed * 0.17)), 6.0) * 0.24;
+        const microCrag = 1.0 + (rng() - 0.5) * 0.09;
+        const shearX = (hNorm - 0.5) * (seed % 2 === 0 ? 0.22 : -0.20);
+        const totalScale = smoothRad * shelfLedge * crevice * microCrag;
+        x = x * totalScale + shearX;
+        z = z * totalScale * (0.92 + 0.16 * Math.sin(ang * 2.0 + seed));
+        if (hNorm > 0.82) {
+          y += THREE.MathUtils.lerp(sectorCrest[s0], sectorCrest[s1], sf) * ((hNorm - 0.82) / 0.18);
+        }
+      } else if (y > 0) {
+        y += 0.10;
+      }
+      pos.setXYZ(i, x, y, z);
+    }
+
+    // Beholder skarpe fjellhyller (>44 grader) men glatter ut kunstige trekantfasetter (<44 grader) + boks-UV
+    const sharpGeo = baseGeo.toNonIndexed();
+    baseGeo.dispose();
+    sharpGeo.computeVertexNormals();
+    smoothSplitVertexNormals(sharpGeo, 0.72);
+    sharpGeo.deleteAttribute('uv');
+    ensureGeometryUVs(sharpGeo, 2.4);
+    return sharpGeo;
+  }
+
+  const cragVariants = [
+    createJaggedSandstoneOutcropGeo(7101),
+    createJaggedSandstoneOutcropGeo(7202),
+    createJaggedSandstoneOutcropGeo(7303),
+    createJaggedSandstoneOutcropGeo(7404)
+  ];
+
   function spawnBanditRockCluster(cx, cz, scale, seed, useCrimson = false) {
     const rng = createSeededRng(seed);
     const cluster = new THREE.Group();
     const baseGround = getTerrainBaseHeight(cx, cz);
     const primaryMat = useCrimson && crimsonRockMat ? crimsonRockMat : mesaMat;
     const specs = [
-      { ox: 0, oz: 0, sx: 2.8, sy: 2.5, sz: 2.4, mat: primaryMat },
-      { ox: -1.9, oz: 1.1, sx: 1.9, sy: 1.5, sz: 1.7, mat: mesaCapMat },
-      { ox: 1.8, oz: -0.9, sx: 2.1, sy: 1.8, sz: 1.8, mat: primaryMat },
-      { ox: 0.4, oz: 1.7, sx: 1.5, sy: 1.0, sz: 1.4, mat: mesaCapMat }
+      { ox: 0, oz: 0, sx: 2.6, sy: 2.1, sz: 2.2, mat: primaryMat, v: 0 },
+      { ox: -2.0, oz: 1.0, sx: 1.9, sy: 1.35, sz: 1.7, mat: mesaCapMat, v: 1 },
+      { ox: 1.9, oz: -0.9, sx: 2.1, sy: 1.65, sz: 1.8, mat: primaryMat, v: 2 },
+      { ox: 0.35, oz: 1.65, sx: 1.55, sy: 0.92, sz: 1.35, mat: stonePlinthMat, v: 3 }
     ];
     const boulders = [];
-    specs.forEach((sp) => {
-      const b = new THREE.Mesh(cragBoulderGeo, sp.mat);
+    specs.forEach((sp, idx) => {
+      const geo = cragVariants[(sp.v + seed) & 3];
+      const b = new THREE.Mesh(geo, sp.mat);
       b.scale.set(sp.sx * scale, sp.sy * scale, sp.sz * scale);
-      b.position.set(sp.ox * scale, sp.sy * scale * 0.52 - 0.25, sp.oz * scale);
-      b.rotation.set((rng() - 0.5) * 0.5, rng() * Math.PI * 2, (rng() - 0.5) * 0.4);
+      b.position.set(sp.ox * scale, sp.sy * scale * 0.72 - 0.22, sp.oz * scale);
+      b.rotation.set((rng() - 0.5) * 0.14, rng() * Math.PI * 2, (rng() - 0.5) * 0.14);
       b.castShadow = true;
       b.receiveShadow = true;
       cluster.add(b);
       boulders.push(b);
+      if (createContactShadow && idx < 3) {
+        const sh = createContactShadow(sp.sx * scale * 0.85, sp.sz * scale * 0.85, 0.025);
+        sh.position.x = sp.ox * scale;
+        sh.position.z = sp.oz * scale;
+        cluster.add(sh);
+      }
     });
     cluster.position.set(cx, baseGround, cz);
     scene.add(cluster);
@@ -539,8 +668,8 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
 
     for (let i = 0; i < boulders.length; i++) {
       rockMeasureBox.setFromObject(boulders[i]);
-      const shrinkX = (rockMeasureBox.max.x - rockMeasureBox.min.x) * 0.10;
-      const shrinkZ = (rockMeasureBox.max.z - rockMeasureBox.min.z) * 0.10;
+      const shrinkX = (rockMeasureBox.max.x - rockMeasureBox.min.x) * 0.12;
+      const shrinkZ = (rockMeasureBox.max.z - rockMeasureBox.min.z) * 0.12;
       rockColliders.push({
         minX: rockMeasureBox.min.x + shrinkX,
         maxX: rockMeasureBox.max.x - shrinkX,
@@ -665,6 +794,10 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
       hoop.position.y = hy;
       g.add(hoop);
     });
+    if (createContactShadow) {
+      const sh = createContactShadow(0.36, 0.36, -0.395);
+      g.add(sh);
+    }
     return g;
   }
 
@@ -798,7 +931,7 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     }
   }
 
-  const fencePostGeo = new THREE.CylinderGeometry(0.058, 0.072, 1.12, 7);
+  const fencePostGeo = new THREE.CylinderGeometry(0.058, 0.072, 1.12, 8);
   function createWoodenFence(length = 3.4, postCount = 3) {
     const fence = new THREE.Group();
     for (let i = 0; i < postCount; i++) {
@@ -808,6 +941,11 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
       post.rotation.z = ((i % 2) * 2 - 1) * 0.035;
       post.castShadow = true;
       fence.add(post);
+      if (createContactShadow) {
+        const sh = createContactShadow(0.24, 0.24, 0.022);
+        sh.position.x = px;
+        fence.add(sh);
+      }
     }
     [0.38, 0.78].forEach((ry, rIdx) => {
       const rail = new THREE.Mesh(new THREE.BoxGeometry(length + 0.22, 0.082, 0.045), lightWoodMat);
@@ -877,19 +1015,25 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     return wing;
   }
 
-  // Gjerder, hestebom, reflekterende vanntrau og flakkende cowboy-leirbål langs gata
+  // Gjerder, hestebom, reflekterende vanntrau med enkeltplanker/jernbånd og flakkende cowboy-leirbål
   const hitchPost = new THREE.Group();
   [-1.1, 1.1].forEach((hx) => {
-    const p = new THREE.Mesh(new THREE.CylinderGeometry(0.068, 0.082, 1.1, 9), darkWoodMat);
+    const p = new THREE.Mesh(new THREE.CylinderGeometry(0.068, 0.082, 1.1, 10), darkWoodMat);
     p.position.set(hx, 0.55, 0);
     p.castShadow = true;
     hitchPost.add(p);
+
+    if (createContactShadow) {
+      const sh = createContactShadow(0.26, 0.26, 0.022);
+      sh.position.x = hx;
+      hitchPost.add(sh);
+    }
 
     const ring = new THREE.Mesh(new THREE.TorusGeometry(0.055, 0.011, 6, 12), wroughtIronMat);
     ring.position.set(hx * 0.65, 0.92, 0.055);
     hitchPost.add(ring);
   });
-  const hitchBar = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.052, 2.55, 9), lightWoodMat);
+  const hitchBar = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.052, 2.55, 10), lightWoodMat);
   hitchBar.rotation.z = Math.PI / 2;
   hitchBar.position.set(0, 1.0, 0);
   hitchBar.castShadow = true;
@@ -898,80 +1042,146 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
   hitchPost.rotation.y = 0.45;
   scene.add(hitchPost);
 
-  // Håndlaget vanntrau med smijernsbånd, vannpumpe og blank vannflate som speiler himmelen (PMREM)
+  // Håndlaget western-vanntrau med synlige enkeltplanker, smijernsbånd m/ nagler og reflekterende vannflate med krusninger
   function createWaterTrough() {
     const trough = new THREE.Group();
-    const len = 1.95;
-    const wid = 0.72;
+    const len = 2.02;
+    const wid = 0.76;
     const h = 0.54;
 
-    const bottom = new THREE.Mesh(new THREE.BoxGeometry(len - 0.08, 0.06, wid - 0.08), darkWoodMat);
-    bottom.position.y = 0.12;
-    bottom.castShadow = true;
-    trough.add(bottom);
+    if (createContactShadow) {
+      trough.add(createContactShadow(1.08, 0.48, 0.024));
+    }
 
-    [-0.68, 0.68].forEach((lx) => {
-      const skid = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.1, wid + 0.08), darkWoodMat);
-      skid.position.set(lx, 0.05, 0);
+    // Tunge tømmersviller nederst i sanden
+    [-0.72, 0, 0.72].forEach((lx) => {
+      const skid = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.09, wid + 0.12), darkWoodMat);
+      skid.position.set(lx, 0.045, 0);
+      skid.castShadow = true;
+      skid.receiveShadow = true;
       trough.add(skid);
     });
 
-    [-wid * 0.5 + 0.03, wid * 0.5 - 0.03].forEach((sz) => {
-      const sideWall = new THREE.Mesh(new THREE.BoxGeometry(len, h, 0.06), weatheredPlankMatA);
-      sideWall.position.set(0, 0.1 + h * 0.5, sz);
-      sideWall.castShadow = true;
-      sideWall.receiveShadow = true;
-      trough.add(sideWall);
+    // Mørk bunn og innside slik at sprekker mellom plankene gir ekte dybdeskygge
+    const innerLiner = new THREE.Mesh(new THREE.BoxGeometry(len - 0.09, h - 0.04, wid - 0.09), M.darkInteriorMat || darkWoodMat);
+    innerLiner.position.y = 0.09 + (h - 0.04) * 0.5;
+    trough.add(innerLiner);
+
+    const bottomFloor = new THREE.Mesh(new THREE.BoxGeometry(len - 0.06, 0.05, wid - 0.06), darkWoodMat);
+    bottomFloor.position.y = 0.11;
+    trough.add(bottomFloor);
+
+    // 3 tydelig adskilte horisontale planker på langsidene (med glipe og lett variasjon)
+    const plankRows = 3;
+    const plankH = (h - 0.04) / plankRows - 0.014;
+    for (let r = 0; r < plankRows; r++) {
+      const py = 0.115 + plankH * 0.5 + r * (plankH + 0.014);
+      const pMat = r % 2 === 0 ? weatheredPlankMatA : weatheredPlankMatB;
+      [-1, 1].forEach((side) => {
+        const sz = side * (wid * 0.5 - 0.026);
+        const plank = new THREE.Mesh(new THREE.BoxGeometry(len + 0.02, plankH, 0.052), pMat);
+        plank.position.set(0, py, sz);
+        plank.rotation.z = (r === 1 ? -0.005 : 0.004) * side;
+        plank.castShadow = true;
+        plank.receiveShadow = true;
+        trough.add(plank);
+      });
+
+      // 3 horisontale kortende-planker i hver gavl
+      [-1, 1].forEach((endSgn) => {
+        const ex = endSgn * (len * 0.5 - 0.028);
+        const endPlank = new THREE.Mesh(new THREE.BoxGeometry(0.054, plankH, wid - 0.06), r % 2 === 1 ? weatheredPlankMatA : weatheredPlankMatB);
+        endPlank.position.set(ex, py, 0);
+        endPlank.castShadow = true;
+        endPlank.receiveShadow = true;
+        trough.add(endPlank);
+      });
+    }
+
+    // Slitte overkantbord (coping rim) langs alle fire sider av vanntrauet
+    [-1, 1].forEach((side) => {
+      const topRimLong = new THREE.Mesh(new THREE.BoxGeometry(len + 0.06, 0.042, 0.095), lightWoodMat);
+      topRimLong.position.set(0, 0.10 + h, side * (wid * 0.5 - 0.022));
+      topRimLong.castShadow = true;
+      topRimLong.receiveShadow = true;
+      trough.add(topRimLong);
+    });
+    [-1, 1].forEach((endSgn) => {
+      const topRimEnd = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.044, wid + 0.04), darkWoodMat);
+      topRimEnd.position.set(endSgn * (len * 0.5 - 0.02), 0.102 + h, 0);
+      topRimEnd.castShadow = true;
+      trough.add(topRimEnd);
     });
 
-    [-len * 0.5 + 0.03, len * 0.5 - 0.03].forEach((ex) => {
-      const endWall = new THREE.Mesh(new THREE.BoxGeometry(0.06, h, wid - 0.08), weatheredPlankMatB);
-      endWall.position.set(ex, 0.1 + h * 0.5, 0);
-      endWall.castShadow = true;
-      trough.add(endWall);
+    // 3 kraftige smijernsbånd + hjørnebeslag med nagler rundt plankene
+    const boltGeo = new THREE.SphereGeometry(0.014, 6, 5);
+    [-0.74, 0.0, 0.74].forEach((bx) => {
+      [-1, 1].forEach((side) => {
+        const vStrap = new THREE.Mesh(new THREE.BoxGeometry(0.052, h + 0.03, 0.018), wroughtIronMat);
+        vStrap.position.set(bx, 0.10 + h * 0.5, side * (wid * 0.5 + 0.006));
+        vStrap.castShadow = true;
+        trough.add(vStrap);
+
+        [0.19, 0.36, 0.53].forEach((by) => {
+          const rivet = new THREE.Mesh(boltGeo, wroughtIronMat);
+          rivet.position.set(bx, by, side * (wid * 0.5 + 0.016));
+          trough.add(rivet);
+        });
+      });
+      const botStrap = new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.018, wid + 0.03), wroughtIronMat);
+      botStrap.position.set(bx, 0.092, 0);
+      trough.add(botStrap);
     });
 
-    // Smijerns-stag rundt trauet
-    [-0.62, 0.62].forEach((bx) => {
-      const strap = new THREE.Mesh(new THREE.BoxGeometry(0.045, h + 0.04, wid + 0.05), wroughtIronMat);
-      strap.position.set(bx, 0.1 + h * 0.5, 0);
-      trough.add(strap);
+    // Hjørnevinkler i smijern
+    [-1, 1].forEach((ex) => {
+      [-1, 1].forEach((sz) => {
+        const cornerIron = new THREE.Mesh(new THREE.BoxGeometry(0.075, h + 0.02, 0.075), wroughtIronMat);
+        cornerIron.position.set(ex * (len * 0.5 - 0.012), 0.10 + h * 0.5, sz * (wid * 0.5 - 0.012));
+        trough.add(cornerIron);
+      });
     });
 
-    // Blank PBR-vannflate som speiler solnedgangshimmel og bygninger via scene.environment
+    // Reflekterende vannoverflate med svake krusninger inni trauet (speiler HDRI-himmel og Saloon)
     const waterSurface = new THREE.Mesh(
-      new THREE.PlaneGeometry(len - 0.13, wid - 0.13),
+      new THREE.PlaneGeometry(len - 0.14, wid - 0.14, 12, 6),
       new THREE.MeshStandardMaterial({
-        color: 0x264858,
-        roughness: 0.04,
-        metalness: 0.16,
-        normalMap: sharedDesertSandNormalTex,
-        normalScale: new THREE.Vector2(0.08, 0.08),
-        envMapIntensity: 1.55
+        color: 0x203a46,
+        roughness: 0.06,
+        metalness: 0.12,
+        normalMap: M.sharedWaterRippleNormalTex || sharedDesertSandNormalTex,
+        normalScale: new THREE.Vector2(0.22, 0.22),
+        envMapIntensity: 1.45
       })
     );
     waterSurface.rotation.x = -Math.PI / 2;
-    waterSurface.position.y = 0.53;
+    waterSurface.position.y = 0.54;
     trough.add(waterSurface);
 
     // Klassisk støpejernspumpe ved enden av trauet
-    const pumpCol = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.085, 1.05, 10), wroughtIronMat);
+    const pumpCol = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.085, 1.05, 12), wroughtIronMat);
     pumpCol.position.set(-len * 0.5 - 0.16, 0.52, 0);
     pumpCol.castShadow = true;
     trough.add(pumpCol);
 
-    const pumpCap = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 8), wroughtIronMat);
+    if (createContactShadow) {
+      const pSh = createContactShadow(0.24, 0.24, 0.022);
+      pSh.position.x = -len * 0.5 - 0.16;
+      trough.add(pSh);
+    }
+
+    const pumpCap = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 8), wroughtIronMat);
     pumpCap.position.set(-len * 0.5 - 0.16, 1.06, 0);
     trough.add(pumpCap);
 
     const spoutCurve = new THREE.CatmullRomCurve3([
       new THREE.Vector3(-len * 0.5 - 0.14, 0.78, 0),
       new THREE.Vector3(-len * 0.5 + 0.04, 0.76, 0),
-      new THREE.Vector3(-len * 0.5 + 0.12, 0.67, 0)
+      new THREE.Vector3(-len * 0.5 + 0.13, 0.67, 0)
     ]);
-    trough.add(new THREE.Mesh(new THREE.TubeGeometry(spoutCurve, 8, 0.024, 7, false), wroughtIronMat));
+    trough.add(new THREE.Mesh(new THREE.TubeGeometry(spoutCurve, 10, 0.024, 8, false), wroughtIronMat));
 
-    const pumpHandle = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.018, 0.52, 7), wroughtIronMat);
+    const pumpHandle = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.018, 0.52, 8), wroughtIronMat);
     pumpHandle.position.set(-len * 0.5 - 0.32, 0.88, 0);
     pumpHandle.rotation.z = 0.85;
     trough.add(pumpHandle);
@@ -1212,52 +1422,6 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
   // =========================================================================
   const forestGroup = new THREE.Group();
   scene.add(forestGroup);
-
-  // Subdividert skogbunn med myk radial uttoning slik at den følger alle sanddyner uten kutt/søm
-  const forestAlphaCanvas = document.createElement('canvas');
-  forestAlphaCanvas.width = 128;
-  forestAlphaCanvas.height = 128;
-  {
-    const aCtx = forestAlphaCanvas.getContext('2d');
-    aCtx.fillStyle = '#000000';
-    aCtx.fillRect(0, 0, 128, 128);
-    const grad = aCtx.createRadialGradient(64, 64, 18, 64, 64, 62);
-    grad.addColorStop(0, '#ffffff');
-    grad.addColorStop(0.68, '#d8d8d8');
-    grad.addColorStop(1, '#000000');
-    aCtx.fillStyle = grad;
-    aCtx.fillRect(0, 0, 128, 128);
-  }
-  const forestAlphaTex = new THREE.CanvasTexture(forestAlphaCanvas);
-
-  const forestPatchGeo = new THREE.PlaneGeometry(64, 64, 32, 32);
-  forestPatchGeo.rotateX(-Math.PI / 2);
-  {
-    const pos = forestPatchGeo.attributes.position;
-    for (let i = 0; i < pos.count; i++) {
-      const wx = pos.getX(i);
-      const wz = pos.getZ(i) - 46;
-      pos.setY(i, getTerrainHeight(wx, wz) + 0.025);
-    }
-    forestPatchGeo.computeVertexNormals();
-  }
-  const forestPatch = new THREE.Mesh(
-    forestPatchGeo,
-    new THREE.MeshStandardMaterial({
-      color: 0x768c46,
-      map: sharedFoliageTex,
-      normalMap: sharedFoliageNormalTex,
-      normalScale: new THREE.Vector2(0.52, 0.52),
-      roughnessMap: sharedFoliageRoughTex,
-      alphaMap: forestAlphaTex,
-      transparent: true,
-      depthWrite: false,
-      roughness: 0.94
-    })
-  );
-  forestPatch.position.set(0, 0, -46);
-  forestPatch.receiveShadow = true;
-  forestGroup.add(forestPatch);
 
   // Delte geometrier og PBR-materialer for naturlige trær med organiske greinkranser (72–90 FPS i Quest)
   function createScallopedPineTierGeo(radius, height, radialSegs = 14, seed = 1) {
@@ -1500,23 +1664,26 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
   ];
   treeCoords.forEach(([x, z, s], idx) => addTree(x, z, s, idx));
 
-  // Steiner med ru sandsteinstekstur, normalMap og roughnessMap
-  const rockGeo = new THREE.DodecahedronGeometry(0.88, 1);
+  // Forrevne natursteiner med ru sandsteinstekstur, normalMap og roughnessMap (aldri glatte kuler/bobler)
   const rockMatA = new THREE.MeshStandardMaterial({
-    color: 0xa8927c,
+    color: 0x7c7164,
     map: sharedSandstoneTex,
     normalMap: sharedSandstoneNormalTex,
-    normalScale: new THREE.Vector2(1.05, 1.05),
+    normalScale: new THREE.Vector2(1.35, 1.35),
     roughnessMap: sharedSandstoneRoughTex,
-    roughness: 0.9
+    roughness: 0.93,
+    metalness: 0.0,
+    envMapIntensity: 0.30
   });
   const rockMatB = new THREE.MeshStandardMaterial({
-    color: 0x8b7764,
+    color: 0x685f54,
     map: sharedSandstoneTex,
     normalMap: sharedSandstoneNormalTex,
-    normalScale: new THREE.Vector2(1.15, 1.15),
+    normalScale: new THREE.Vector2(1.45, 1.45),
     roughnessMap: sharedSandstoneRoughTex,
-    roughness: 0.92
+    roughness: 0.94,
+    metalness: 0.0,
+    envMapIntensity: 0.28
   });
 
   const rockCoords = [
@@ -1528,10 +1695,10 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     [-16.0, -124, 2.0, 1.25, 1.7], [15.5, -130, 1.9, 1.2, 1.6]
   ];
   rockCoords.forEach(([x, z, sx, sy, sz], idx) => {
-    const rock = new THREE.Mesh(rockGeo, idx % 2 === 0 ? rockMatA : rockMatB);
-    rock.position.set(x, getTerrainBaseHeight(x, z) + sy * 0.38, z);
-    rock.scale.set(sx, sy, sz);
-    rock.rotation.set(idx * 0.5, idx * 1.1, 0);
+    const rock = new THREE.Mesh(cragVariants[idx % cragVariants.length], idx % 2 === 0 ? rockMatA : rockMatB);
+    rock.position.set(x, getTerrainBaseHeight(x, z) + sy * 0.48, z);
+    rock.scale.set(sx * 0.82, sy * 0.75, sz * 0.82);
+    rock.rotation.set(0, idx * 1.37, 0);
     rock.castShadow = z > -42;
     rock.receiveShadow = true;
     forestGroup.add(rock);
