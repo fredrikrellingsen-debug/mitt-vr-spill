@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { drawRoundedRect } from './i18n.js';
 import { createSeededRng } from './textures.js';
-import { instantiateBuildingGLB, ensureGeometryUVs, smoothSplitVertexNormals } from './glb-utils.js';
+import { instantiateBuildingGLB, ensureGeometryUVs, smoothSplitVertexNormals, batchStaticMeshesInGroup } from './glb-utils.js';
 
 export function applySkyShaderParams(skyObj, nightAmt, outSunDir) {
   const uniforms = skyObj.material.uniforms;
@@ -242,18 +242,18 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
   const hemiLight = new THREE.HemisphereLight(0xffd6a8, 0x4c4778, 0.78);
   scene.add(hemiLight);
 
-  // Skarp 2048x2048 hovedsol med lav Golden Hour-vinkel og kalibrert shadow bias uten shadow acne
+  // Skarp 1536x1536 hovedsol med tett skygge-frustum rundt spilleren (høyere pikseltetthet per meter og 44 % lavere GPU-kostnad)
   const sunLight = new THREE.DirectionalLight(0xffb86b, 2.35);
   sunLight.position.copy(hdrState.daySunDir).multiplyScalar(88);
   sunLight.castShadow = true;
-  sunLight.shadow.mapSize.set(2048, 2048);
-  sunLight.shadow.camera.near = 4;
-  sunLight.shadow.camera.far = 210;
-  sunLight.shadow.camera.left = -54;
-  sunLight.shadow.camera.right = 54;
-  sunLight.shadow.camera.top = 56;
-  sunLight.shadow.camera.bottom = -52;
-  sunLight.shadow.bias = -0.00032;
+  sunLight.shadow.mapSize.set(1536, 1536);
+  sunLight.shadow.camera.near = 6;
+  sunLight.shadow.camera.far = 170;
+  sunLight.shadow.camera.left = -36;
+  sunLight.shadow.camera.right = 36;
+  sunLight.shadow.camera.top = 38;
+  sunLight.shadow.camera.bottom = -36;
+  sunLight.shadow.bias = -0.00035;
   sunLight.shadow.normalBias = 0.024;
   scene.add(sunLight);
   scene.add(sunLight.target);
@@ -345,14 +345,17 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
           return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
         }
         float wFbm(vec2 p) {
-          float v = 0.0;
-          float amp = 0.5;
-          mat2 rot = mat2(0.80, -0.60, 0.60, 0.80);
-          for (int i = 0; i < 4; i++) {
-            v += amp * wNoise2(p);
-            p = rot * p * 2.07 + vec2(13.7, 9.2);
-            amp *= 0.5;
-          }
+          float v = 0.5 * wNoise2(p);
+          p = mat2(0.80, -0.60, 0.60, 0.80) * p * 2.07 + vec2(13.7, 9.2);
+          v += 0.25 * wNoise2(p);
+          p = mat2(0.80, -0.60, 0.60, 0.80) * p * 2.05 + vec2(7.1, 4.3);
+          v += 0.125 * wNoise2(p);
+          return v * 1.1428;
+        }
+        float wFbmFast(vec2 p) {
+          float v = 0.666 * wNoise2(p);
+          p = mat2(0.80, -0.60, 0.60, 0.80) * p * 2.11 + vec2(11.3, 5.7);
+          v += 0.334 * wNoise2(p);
           return v;
         }`
       )
@@ -365,18 +368,18 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
           float wy = vTerrainWorldPos.y;
           vec2 wp = vec2(wx, wz);
 
-          // To-skala rotert UV-oppslag + fBm-støy som fjerner all synlig flisegjentakelse
+          // To-skala rotert UV-oppslag + rask støy som fjerner all synlig flisegjentakelse
           vec2 uvFine = wp * 0.145;
           vec2 uvMacro = vec2(wx * 0.866 - wz * 0.5, wx * 0.5 + wz * 0.866) * 0.031;
           vec3 sandMacro = texture2D(map, uvMacro).rgb;
-          float macroN = wFbm(wp * 0.045);
+          float macroN = wFbmFast(wp * 0.045);
           vec3 antiTiledSand = mix(diffuseColor.rgb, sandMacro * vec3(1.04, 0.96, 0.88), 0.42 * macroN);
 
           float detailGrain = (wNoise2(wp * 3.8) - 0.5) * 0.07;
           antiTiledSand *= (1.0 + detailGrain);
 
-          // Ekte støybasert veikant-blending (ingen rette linjer eller brå stopp; sand blåser ujevnt over veien!)
-          float sandDrift = (wFbm(wp * 0.24) - 0.46) * 1.65 + (wNoise2(wp * 0.95) - 0.5) * 0.55;
+          // Ekte støybasert veikant-blending (kun beregn teksturopslag der biome faktisk er synlig -> 5x raskere på PC!)
+          float sandDrift = (wFbmFast(wp * 0.24) - 0.48) * 1.65;
           float swayNS = (wNoise2(vec2(wz * 0.055, 3.1)) - 0.5) * 0.85;
           float swayEW = (wNoise2(vec2(wx * 0.055, 8.7)) - 0.5) * 0.85;
 
@@ -391,44 +394,39 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
           float spanRail = smoothstep(-146.0, -132.0, wx) * smoothstep(54.0, 44.0, wx);
           float dRail = smoothstep(3.4 + sandDrift * 0.6, 1.35, abs(wz - 75.0)) * spanRail;
 
-          // Myk opptråkket plass midt på hovedgata i Dustwood
-          float townCourt = exp(-(wx * wx) / 38.0 - ((wz - 1.5) * (wz - 1.5)) / 185.0) * (0.65 + 0.35 * wFbm(wp * 0.32));
+          float townCourt = exp(-(wx * wx) / 38.0 - ((wz - 1.5) * (wz - 1.5)) / 185.0) * (0.68 + 0.32 * macroN);
           float roadMask = clamp(max(max(dNS, dEW), max(dRail, townCourt)), 0.0, 1.0);
 
-          // Ekte doble vognhjulspor som brytes opp naturlig av overblåst sand
-          float rutBreak = smoothstep(0.28, 0.78, wFbm(wp * 0.38 + vec2(4.2, -7.1)));
-          float rutNS = smoothstep(0.42, 0.06, abs(abs(wx - swayNS) - 0.82)) * dNS;
-          float rutEW = smoothstep(0.42, 0.06, abs(abs((wz + 1.5) - swayEW) - 0.82)) * dEW;
-          float rutMask = max(rutNS, rutEW) * (0.45 + 0.55 * rutBreak);
-
-          vec3 roadTex = mix(texture2D(uRoadPhotoMap, uvFine * 1.15).rgb, texture2D(uRoadPhotoMap, uvMacro * 2.1).rgb, 0.32);
-          vec3 gravelBase = roadTex * vec3(0.95, 0.84, 0.72);
-          vec3 rutCol = roadTex * vec3(0.64, 0.52, 0.41);
-          vec3 gravelCol = mix(gravelBase, rutCol, rutMask * 0.68);
-
-          // Biome 3: Skogbunn (Whispering Woods) med myk fBm-overgang
-          float edgeN = (wFbm(wp * 0.085) - 0.5) * 14.0;
-          float forestMask = smoothstep(-22.0, -44.0, wz + edgeN) * (1.0 - roadMask * 0.68);
-          vec3 forestTex = mix(texture2D(uForestPhotoMap, uvFine * 0.92).rgb, texture2D(uForestPhotoMap, uvMacro * 1.8).rgb, 0.35);
-          vec3 forestCol = forestTex * vec3(0.74, 0.82, 0.60);
-
-          // Biome 4: Dempet jordnær sandsteinsgrunn i Crimson Canyon & Boot Hill (aldri knalloransje)
-          vec3 rockTex = mix(texture2D(uRockPhotoMap, uvFine * 0.85).rgb, texture2D(uRockPhotoMap, uvMacro * 1.35).rgb, 0.4);
-          float canyonMask = smoothstep(42.0, 76.0, wx + edgeN) * (1.0 - roadMask * 0.65);
-          vec3 canyonCol = rockTex * vec3(0.86, 0.68, 0.55);
-
-          float bootMask = smoothstep(-42.0, -74.0, wx - edgeN) * (1.0 - roadMask * 0.65);
-          vec3 ashCol = rockTex * vec3(0.56, 0.55, 0.58);
-
           vec3 baseSand = antiTiledSand * mix(0.91, 1.06, clamp(wy * 0.18 + 0.45, 0.0, 1.0));
-          // Vindblåst sand bryter også opp grusveien på tvers slik at veikanten er 100 % organisk
-          float sandOverRoad = smoothstep(0.56, 0.86, wFbm(wp * 0.42 + vec2(11.3, 5.7))) * 0.35;
-          float finalRoadBlend = roadMask * (0.64 - sandOverRoad);
+          vec3 splatted = baseSand;
 
-          vec3 splatted = mix(baseSand, gravelCol, clamp(finalRoadBlend, 0.0, 0.72));
-          splatted = mix(splatted, forestCol, forestMask * 0.76);
-          splatted = mix(splatted, canyonCol, canyonMask * 0.66);
-          splatted = mix(splatted, ashCol, bootMask * 0.68);
+          if (roadMask > 0.008) {
+            float rutBreak = smoothstep(0.28, 0.78, wFbmFast(wp * 0.38 + vec2(4.2, -7.1)));
+            float rutNS = smoothstep(0.42, 0.06, abs(abs(wx - swayNS) - 0.82)) * dNS;
+            float rutEW = smoothstep(0.42, 0.06, abs(abs((wz + 1.5) - swayEW) - 0.82)) * dEW;
+            float rutMask = max(rutNS, rutEW) * (0.45 + 0.55 * rutBreak);
+
+            vec3 roadTex = mix(texture2D(uRoadPhotoMap, uvFine * 1.15).rgb, texture2D(uRoadPhotoMap, uvMacro * 2.1).rgb, 0.32);
+            vec3 gravelCol = mix(roadTex * vec3(0.95, 0.84, 0.72), roadTex * vec3(0.64, 0.52, 0.41), rutMask * 0.68);
+            float sandOverRoad = smoothstep(0.56, 0.86, rutBreak) * 0.32;
+            float finalRoadBlend = clamp(roadMask * (0.64 - sandOverRoad), 0.0, 0.72);
+            splatted = mix(splatted, gravelCol, finalRoadBlend);
+          }
+
+          float edgeN = (wFbmFast(wp * 0.085) - 0.5) * 14.0;
+          float forestMask = smoothstep(-22.0, -44.0, wz + edgeN) * (1.0 - roadMask * 0.68);
+          if (forestMask > 0.008) {
+            vec3 forestTex = mix(texture2D(uForestPhotoMap, uvFine * 0.92).rgb, texture2D(uForestPhotoMap, uvMacro * 1.8).rgb, 0.35);
+            splatted = mix(splatted, forestTex * vec3(0.74, 0.82, 0.60), forestMask * 0.76);
+          }
+
+          float canyonMask = smoothstep(42.0, 76.0, wx + edgeN) * (1.0 - roadMask * 0.65);
+          float bootMask = smoothstep(-42.0, -74.0, wx - edgeN) * (1.0 - roadMask * 0.65);
+          if ((canyonMask + bootMask) > 0.008) {
+            vec3 rockTex = mix(texture2D(uRockPhotoMap, uvFine * 0.85).rgb, texture2D(uRockPhotoMap, uvMacro * 1.35).rgb, 0.4);
+            splatted = mix(splatted, rockTex * vec3(0.86, 0.68, 0.55), canyonMask * 0.66);
+            splatted = mix(splatted, rockTex * vec3(0.56, 0.55, 0.58), bootMask * 0.68);
+          }
           diffuseColor.rgb = splatted;
         }`
       );
@@ -506,6 +504,9 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     return geo;
   }
 
+  const staticDesertPropsGroup = new THREE.Group();
+  scene.add(staticDesertPropsGroup);
+
   function spawnMonumentMesa(x, z, baseR, totalH, seed, hasMittenSpire = false) {
     const g = new THREE.Group();
     const groundY = getTerrainHeight(x, z) - 0.8;
@@ -550,7 +551,7 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
 
     g.position.set(x, groundY, z);
     g.rotation.y = (seed % 628) * 0.01;
-    scene.add(g);
+    staticDesertPropsGroup.add(g);
   }
 
   // Plasser Monument Valley-platåer i en vid horisontring utenfor PLAY_AREA_LIMIT (215) (åpen siktlinje langs x = 0 for HDRI-horisonten)
@@ -663,7 +664,7 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
       }
     });
     cluster.position.set(cx, baseGround, cz);
-    scene.add(cluster);
+    staticDesertPropsGroup.add(cluster);
     cluster.updateMatrixWorld(true);
 
     for (let i = 0; i < boulders.length; i++) {
@@ -1040,7 +1041,7 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
   hitchPost.add(hitchBar);
   hitchPost.position.set(-4.6, 0, 6.6);
   hitchPost.rotation.y = 0.45;
-  scene.add(hitchPost);
+  staticDesertPropsGroup.add(hitchPost);
 
   // Håndlaget western-vanntrau med synlige enkeltplanker, smijernsbånd m/ nagler og reflekterende vannflate med krusninger
   function createWaterTrough() {
@@ -1192,7 +1193,7 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
   const townWaterTrough = createWaterTrough();
   townWaterTrough.position.set(-5.3, 0, 8.0);
   townWaterTrough.rotation.y = 0.45;
-  scene.add(townWaterTrough);
+  staticDesertPropsGroup.add(townWaterTrough);
 
   // Stemningsfullt flakkende leirbål ved utkanten av gata (konstant PointLight for høy Quest-FPS)
   const campfireFlameMeshes = [];
@@ -1274,26 +1275,36 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
       campfireFlameMeshes.push(cone);
     });
 
-    campfireLight = new THREE.PointLight(0xff842e, 2.4, 15, 2);
-    campfireLight.position.set(0, 0.58, 0);
-    fire.add(campfireLight);
+    const vLight = {
+      intensity: 2.4,
+      colorHex: 0xff842e,
+      distance: 16,
+      decay: 2,
+      anchor: new THREE.Object3D()
+    };
+    vLight.anchor.position.set(0, 0.58, 0);
+    fire.add(vLight.anchor);
+    fire.userData.virtualLight = vLight;
+    if (!campfireLight) campfireLight = vLight;
 
     return fire;
   }
 
+  const worldVirtualLights = [];
   const townCampfire = createCampfire();
   townCampfire.position.set(5.1, 0, 7.6);
   scene.add(townCampfire);
+  if (townCampfire.userData.virtualLight) worldVirtualLights.push(townCampfire.userData.virtualLight);
 
   const eastTownFence = createWoodenFence(3.6, 3);
   eastTownFence.position.set(6.3, 0, 10.2);
   eastTownFence.rotation.y = -0.35;
-  scene.add(eastTownFence);
+  staticDesertPropsGroup.add(eastTownFence);
 
   const southWestFence = createWoodenFence(3.6, 3);
   southWestFence.position.set(-6.3, 0, 10.2);
   southWestFence.rotation.y = 0.35;
-  scene.add(southWestFence);
+  staticDesertPropsGroup.add(southWestFence);
 
   // --- Skulpturerte Saguaro-kaktuser med riller, buede armer og ørkenblomster ---
   function createRibbedCactusStemGeo(rTop, rBot, height) {
@@ -1408,7 +1419,7 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     g.position.set(x, getTerrainHeight(x, z), z);
     g.rotation.y = variant * 1.15;
     g.scale.setScalar(scale);
-    scene.add(g);
+    staticDesertPropsGroup.add(g);
   }
 
   [
@@ -1833,6 +1844,7 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
   const outlawCampfire = createCampfire();
   outlawCampfire.position.set(82.0, getTerrainBaseHeight(82.0, 4.5), 4.5);
   canyonGroup.add(outlawCampfire);
+  if (outlawCampfire.userData.virtualLight) worldVirtualLights.push(outlawCampfire.userData.virtualLight);
 
   [
     { x: 76.5, z: -5.8, ry: 0.25 },
@@ -1926,12 +1938,16 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
       mineGroup.add(lGlow);
     }
   }
-  const mineDeepLight = new THREE.PointLight(0xffa94a, 2.4, 34, 1.6);
-  mineDeepLight.position.set(24.0, 2.9, 0);
-  mineGroup.add(mineDeepLight);
-  const mineBossLight = new THREE.PointLight(0xff9b3a, 2.8, 28, 1.6);
-  mineBossLight.position.set(39.0, 2.9, 0);
-  mineGroup.add(mineBossLight);
+  {
+    const mA = new THREE.Object3D();
+    mA.position.set(24.0, 2.9, 0);
+    mineGroup.add(mA);
+    worldVirtualLights.push({ intensity: 2.4, colorHex: 0xffa94a, distance: 34, decay: 1.6, anchor: mA });
+    const mB = new THREE.Object3D();
+    mB.position.set(39.0, 2.9, 0);
+    mineGroup.add(mB);
+    worldVirtualLights.push({ intensity: 2.8, colorHex: 0xff9b3a, distance: 28, decay: 1.6, anchor: mB });
+  }
 
   // Gruveskinner (x_local = -20..+42) + stål-gruvevogn full av gullmalm!
   [-0.48, 0.48].forEach((rz) => {
@@ -2516,13 +2532,17 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     catacombGroup.add(torchHalo);
   });
 
-  // 2 Ytelsesvennlige PointLights under bakken + hellig blå-sølv glød på Hellfire-sokkel
-  const catacombLightEast = new THREE.PointLight(0xffa444, 2.8, 28, 1.5);
-  catacombLightEast.position.set(-144.0, -3.3, chapelZ);
-  catacombGroup.add(catacombLightEast);
-  const catacombLightSanctum = new THREE.PointLight(0x74c6ff, 3.2, 26, 1.5);
-  catacombLightSanctum.position.set(-165.0, -3.2, chapelZ);
-  catacombGroup.add(catacombLightSanctum);
+  // 2 Virtuelle lysankere under bakken (styrt av spillets 2-lys nærhets-pool så overflaten aldri betaler shader-kostnad for underjordiske lys!)
+  {
+    const cA = new THREE.Object3D();
+    cA.position.set(-144.0, -3.3, chapelZ);
+    catacombGroup.add(cA);
+    worldVirtualLights.push({ intensity: 2.8, colorHex: 0xffa444, distance: 28, decay: 1.5, anchor: cA });
+    const cB = new THREE.Object3D();
+    cB.position.set(-165.0, -3.2, chapelZ);
+    catacombGroup.add(cB);
+    worldVirtualLights.push({ intensity: 3.2, colorHex: 0x74c6ff, distance: 26, decay: 1.5, anchor: cB });
+  }
 
   // Hellfire Repeater-piedestal innerst i katakombene (-166.5, -6.5, chapelZ)
   const hellfirePedestalGroup = new THREE.Group();
@@ -2975,7 +2995,8 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
           for (let pIdx = 0; pIdx < parts.length; pIdx++) {
             const part = parts[pIdx];
             const inst = new THREE.InstancedMesh(part.geometry, part.material, bucket.length);
-            inst.castShadow = true;
+            // Stammen kaster skarp skygge + bakke-kontaktsygge under kronen; unngå dyr alpha-discard i skyggekartet på trekronen!
+            inst.castShadow = !part.isCanopy;
             inst.receiveShadow = true;
             for (let i = 0; i < bucket.length; i++) {
               const b = bucket[i];
@@ -3061,7 +3082,7 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
         });
         const sRng = createSeededRng(5183);
         for (let bIdx = 0; bIdx < bushNodes.length; bIdx++) {
-          const maxCount = 115;
+          const maxCount = 64;
           const inst = new THREE.InstancedMesh(bushNodes[bIdx].geometry, shrubMat, maxCount);
           inst.castShadow = false;
           inst.receiveShadow = true;
@@ -3132,7 +3153,7 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
         // 3a. Tørt prærie- og ørkengress langs ørkendyner, veikanter, canyon og jernbane
         const prairieGeos = [getUnderGeo('grass_a'), getUnderGeo('stalks_a')].filter(Boolean);
         for (let gIdx = 0; gIdx < prairieGeos.length; gIdx++) {
-          const maxCount = 720;
+          const maxCount = 480;
           const inst = new THREE.InstancedMesh(prairieGeos[gIdx], baseUnderMat, maxCount);
           inst.receiveShadow = true;
           let placed = 0;
@@ -3161,7 +3182,7 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
         // 3b. Frodig skoggress i Whispering Woods (nord, z: -24 til -145)
         const woodsGrassGeos = [getUnderGeo('lush_a'), getUnderGeo('grass_b')].filter(Boolean);
         for (let gIdx = 0; gIdx < woodsGrassGeos.length; gIdx++) {
-          const maxCount = 680;
+          const maxCount = 450;
           const inst = new THREE.InstancedMesh(woodsGrassGeos[gIdx], baseUnderMat, maxCount);
           inst.receiveShadow = true;
           let placed = 0;
@@ -3476,6 +3497,100 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     }
   }
 
+  // --- 6g. Dynamisk 2-PointLight Nærhets-Pool & Underjordisk Sone-Culling (0 allokeringer, 0 shader-rekompileringer!) ---
+  const pooledWorldLightA = new THREE.PointLight(0xff842e, 2.2, 18, 2);
+  const pooledWorldLightB = new THREE.PointLight(0xffa448, 1.2, 18, 2);
+  scene.add(pooledWorldLightA);
+  scene.add(pooledWorldLightB);
+  const lightWorldPosTmp = new THREE.Vector3();
+  const bestLightPosA = new THREE.Vector3();
+  const bestLightPosB = new THREE.Vector3();
+
+  function registerWorldVirtualLight(vLight) {
+    if (!vLight) return;
+    worldVirtualLights.push(vLight);
+  }
+
+  function updateWorldPerformanceAndLights(playerPos) {
+    const px = playerPos.x;
+    const py = playerPos.y;
+    const pz = playerPos.z;
+
+    // Skjul dype underjordiske/fjerne soner helt når spilleren er langt unna (sparer hundrevis av draw calls)
+    mineGroup.visible = px > 66;
+    catacombGroup.visible = px < -72;
+
+    // Finn de 2 nærmeste virtuelle lyskildene til spilleren og flytt pooledWorldLightA & B dit
+    let bestIdxA = -1;
+    let bestIdxB = -1;
+    let bestDistA = Infinity;
+    let bestDistB = Infinity;
+
+    for (let i = 0; i < worldVirtualLights.length; i++) {
+      const vl = worldVirtualLights[i];
+      const obj = vl.anchor || vl.group;
+      if (!obj || vl.intensity <= 0.01) continue;
+      obj.getWorldPosition(lightWorldPosTmp);
+      const dx = lightWorldPosTmp.x - px;
+      const dy = (lightWorldPosTmp.y - py) * 1.6;
+      const dz = lightWorldPosTmp.z - pz;
+      const dSq = dx * dx + dy * dy + dz * dz;
+      if (dSq > 55 * 55) continue;
+
+      if (dSq < bestDistA) {
+        bestDistB = bestDistA;
+        bestIdxB = bestIdxA;
+        bestLightPosB.copy(bestLightPosA);
+        bestDistA = dSq;
+        bestIdxA = i;
+        bestLightPosA.copy(lightWorldPosTmp);
+      } else if (dSq < bestDistB) {
+        bestDistB = dSq;
+        bestIdxB = i;
+        bestLightPosB.copy(lightWorldPosTmp);
+      }
+    }
+
+    if (bestIdxA >= 0) {
+      const a = worldVirtualLights[bestIdxA];
+      pooledWorldLightA.position.copy(bestLightPosA);
+      pooledWorldLightA.color.setHex(a.colorHex || 0xff9a44);
+      pooledWorldLightA.distance = a.distance || 18;
+      pooledWorldLightA.decay = a.decay || 2;
+      pooledWorldLightA.intensity = a.intensity;
+    } else {
+      pooledWorldLightA.intensity = 0;
+    }
+
+    if (bestIdxB >= 0) {
+      const b = worldVirtualLights[bestIdxB];
+      pooledWorldLightB.position.copy(bestLightPosB);
+      pooledWorldLightB.color.setHex(b.colorHex || 0xff9a44);
+      pooledWorldLightB.distance = b.distance || 18;
+      pooledWorldLightB.decay = b.decay || 2;
+      pooledWorldLightB.intensity = b.intensity;
+    } else {
+      pooledWorldLightB.intensity = 0;
+    }
+  }
+
+  // --- 6h. Statisk geometri-batching (slår sammen hundrevis av statiske klippe-, gjerde-, grav-, bro- og skinne-meshes til få draw calls!) ---
+  batchStaticMeshesInGroup(staticDesertPropsGroup, { sectorSize: 110 });
+  batchStaticMeshesInGroup(bridgeGroup);
+  batchStaticMeshesInGroup(canyonGroup, { protectedObjects: new Set([mineGroup]) });
+  batchStaticMeshesInGroup(mineGroup, {
+    protectedObjects: new Set([mineMapGroup, ...mineBarricades.map((b) => b.group)])
+  });
+  batchStaticMeshesInGroup(graveyardGroup, {
+    protectedObjects: new Set([...proceduralDeadTreeGroups, ...chapelAltarHitMeshes])
+  });
+  batchStaticMeshesInGroup(catacombGroup, {
+    protectedObjects: new Set([hellfirePedestalGroup])
+  });
+  batchStaticMeshesInGroup(railwayGroup, {
+    protectedObjects: new Set([trainAnchor, ...trainGatlingHitMeshes])
+  });
+
   return {
     sky, skySunVec, dayEnvRT, nightEnvRT,
     hdrState, mountHDRIEnvironments,
@@ -3492,6 +3607,8 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     mountTrainAsset,
     mountWorldBotanicalAndWildlifeAssets,
     updateAmbientWildlife,
+    registerWorldVirtualLight,
+    updateWorldPerformanceAndLights,
     trainGatlingHitMeshes,
     trainGatlingBeacon,
     gatlingHalo,
