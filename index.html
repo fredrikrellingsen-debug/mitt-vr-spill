@@ -124,6 +124,7 @@
     import { VRButton } from 'three/addons/webxr/VRButton.js';
     import { Sky } from 'three/addons/objects/Sky.js';
     import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
     import { I18N, drawRoundedRect, drawSheriffStar2D } from './js/i18n.js';
     import { initTexturesAndMaterials } from './js/textures.js';
     import { initCreatureModels } from './js/creatures.js';
@@ -846,11 +847,12 @@
     // 3–6. PBR-TEKSTURER, SKY/PMREM, ØRKENLANDSKAP, SKULPTURERTE MODELLER OG BY
     // =========================================================================
     const M = initTexturesAndMaterials(maxAnisotropy);
-    const { windowMat } = M;
+    const { windowMat, rimUniforms, texturesReadyPromise } = M;
 
     const W = buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotropy, Sky });
     const {
       sky, skySunVec, dayEnvRT, nightEnvRT,
+      hdrState, mountHDRIEnvironments,
       hemiLight, sunLight, sunMesh,
       rockColliders,
       structureWallColliders,
@@ -873,16 +875,26 @@
       campfireFlameMeshes, campfireLight, campfireEmberMat
     } = W;
 
-    // Last inn alle 19 binære .glb-modeller parallelt (med sømløs prosedyrisk fallback per fil)
+    // Last inn ekte 1K CC0 HDRI-miljølys (.hdr), fotografiske PBR-teksturer (.jpg) og alle 19 .glb-modeller parallelt
     const gltfLoader = new GLTFLoader();
+    const rgbeLoader = new RGBELoader();
     function loadOptionalGLB(url) {
       return gltfLoader.loadAsync(url).catch((err) => {
         console.warn(`[WesternVR] Fallback til prosedyrisk modell for ${url}:`, err);
         return null;
       });
     }
+    function loadOptionalHDR(url) {
+      return rgbeLoader.loadAsync(url).catch((err) => {
+        console.warn(`[WesternVR] Fallback til syntetisk himmel for ${url}:`, err);
+        return null;
+      });
+    }
 
     const [
+      desertSunsetHDR,
+      moonlitNightHDR,
+      _pbrTexturesLoaded,
       revolverGLTF,
       shotgunGLTF,
       rifleGLTF,
@@ -903,6 +915,9 @@
       horseGLTF,
       bossVampireGLTF
     ] = await Promise.all([
+      loadOptionalHDR('./assets/env/desert_sunset.hdr'),
+      loadOptionalHDR('./assets/env/moonlit_night.hdr'),
+      texturesReadyPromise || Promise.resolve(),
       loadOptionalGLB('./assets/revolver.glb'),
       loadOptionalGLB('./assets/shotgun.glb'),
       loadOptionalGLB('./assets/rifle.glb'),
@@ -923,6 +938,10 @@
       loadOptionalGLB('./assets/horse.glb'),
       loadOptionalGLB('./assets/boss_vampire.glb')
     ]);
+
+    if (mountHDRIEnvironments) {
+      mountHDRIEnvironments(desertSunsetHDR, moonlitNightHDR);
+    }
 
     if (mountTrainAsset && trainGLTF) {
       mountTrainAsset(trainGLTF);
@@ -3271,14 +3290,20 @@
 
     const daySkyColor = new THREE.Color(0xd99b66);
     const nightSkyColor = new THREE.Color(0x060b16);
-    const dayFogColor = new THREE.Color(0xe2b280);
-    const nightFogColor = new THREE.Color(0x0c1424);
-    const dayHemiSkyColor = new THREE.Color(0xffebd2);
-    const nightHemiSkyColor = new THREE.Color(0x465c8a);
-    const dayHemiGroundColor = new THREE.Color(0xc28a52);
-    const nightHemiGroundColor = new THREE.Color(0x231d30);
-    const daySunColor = new THREE.Color(0xffd699);
-    const nightSunColor = new THREE.Color(0x8fb0ff);
+    const fallbackBgColor = new THREE.Color(0xd99b66);
+    const dayFogColor = new THREE.Color(0xdf9e62);
+    const nightFogColor = new THREE.Color(0x060b16);
+    const dayHemiSkyColor = new THREE.Color(0xffd8ad);
+    const nightHemiSkyColor = new THREE.Color(0x3b5284);
+    const dayHemiGroundColor = new THREE.Color(0x4c4778);
+    const nightHemiGroundColor = new THREE.Color(0x161428);
+    const daySunColor = new THREE.Color(0xffb86b);
+    const nightSunColor = new THREE.Color(0x8db2ff);
+    const bloodSunColor = new THREE.Color(0xff5258);
+    const dayRimColor = new THREE.Color(0xffbe73);
+    const nightRimColor = new THREE.Color(0x7db2ff);
+    const bloodRimColor = new THREE.Color(0xff3d52);
+    const activeLightDir = new THREE.Vector3(0.45, 0.25, -0.85);
 
     // --- 8a. Sol, måne med glorie og stjernehimmel ---
     sunMesh.material.transparent = true;
@@ -3286,11 +3311,11 @@
 
     // Myk radial glorie-tekstur delt mellom måneglorie, nattøyne og svevende partikler
     const lanterns = [saloonLantern, tailorLantern, gunsmithLantern].filter(Boolean);
-    const dayWindowColor = new THREE.Color(0x526574);
-    const nightWindowColor = new THREE.Color(0xffcf70);
+    const dayWindowColor = new THREE.Color(0x5a6e7e);
+    const nightWindowColor = new THREE.Color(0xffcf6e);
 
-    let baseLanternIntensity = 0.35;
-    let baseSafeLanternIntensity = 1.6;
+    let baseLanternIntensity = 0.45;
+    let baseSafeLanternIntensity = 1.85;
     let baseCampfireIntensity = 2.4;
 
     const bloodSkyColor = new THREE.Color(0x28080e);
@@ -3302,69 +3327,104 @@
       const night = THREE.MathUtils.clamp(amount, 0, 1);
       const isBloodMoonStage = storyState.currentLevel === 8 || (bossEnemyRef && bossEnemyRef.alive);
       currentBloodMoonBlend = isBloodMoonStage ? night : 0;
+      const hasHDRI = !!(hdrState && hdrState.hasRealHDRI);
 
-      // Oppdater Sky-shaderen og solposisjonen for varm solnedgang om dagen og dyp natt / Blodmåne
-      applySkyShaderParams(sky, night, skySunVec);
-      sky.material.opacity = 1;
+      if (hasHDRI) {
+        sky.visible = false;
+        sunMesh.visible = false;
+        const useNightHDR = night > 0.55;
+        scene.environment = useNightHDR ? (hdrState.nightEnvTex || hdrState.dayEnvTex) : hdrState.dayEnvTex;
+        scene.background = useNightHDR ? (hdrState.nightBgTex || hdrState.dayBgTex) : hdrState.dayBgTex;
+        scene.environmentIntensity = THREE.MathUtils.lerp(1.12, 0.44, night);
+        const bgInt = THREE.MathUtils.lerp(0.96, 0.065, night);
+        scene.backgroundIntensity = currentBloodMoonBlend > 0.01 ? bgInt * 0.65 : bgInt;
+      } else {
+        // Fallback til syntetisk Sky-shader og PMREM dersom .hdr-filene ikke ble lastet
+        sky.visible = true;
+        applySkyShaderParams(sky, night, skySunVec);
+        sky.material.opacity = 1;
+        scene.environment = night > 0.55 ? nightEnvRT.texture : dayEnvRT.texture;
+        scene.environmentIntensity = THREE.MathUtils.lerp(0.95, 0.45, night);
+        fallbackBgColor.copy(daySkyColor).lerp(nightSkyColor, night);
+        if (currentBloodMoonBlend > 0.01) {
+          fallbackBgColor.lerp(bloodSkyColor, currentBloodMoonBlend * 0.72);
+        }
+        scene.background = fallbackBgColor;
+        sunMesh.position.copy(skySunVec).multiplyScalar(225);
+        sunMesh.material.opacity = Math.max(0, 1 - night * 1.35) * 0.9;
+        sunMesh.visible = night < 0.75;
+      }
 
-      // Bytte mellom forhåndsbakt dag- og natt-PMREM for ekte PBR-refleksjon ved 0 ms kostnad
-      scene.environment = night > 0.55 ? nightEnvRT.texture : dayEnvRT.texture;
-      scene.environmentIntensity = THREE.MathUtils.lerp(0.88, 0.42, night);
-      renderer.toneMappingExposure = THREE.MathUtils.lerp(1.06, 0.92, night);
+      renderer.toneMappingExposure = THREE.MathUtils.lerp(1.08, 0.94, night);
 
-      scene.background.copy(daySkyColor).lerp(nightSkyColor, night);
+      // Varm gyllen horisontdis om dagen og dyp, tett blåsvart nattetåke om natten
       scene.fog.color.copy(dayFogColor).lerp(nightFogColor, night);
       if (currentBloodMoonBlend > 0.01) {
-        scene.background.lerp(bloodSkyColor, currentBloodMoonBlend * 0.72);
         scene.fog.color.lerp(bloodFogColor, currentBloodMoonBlend * 0.78);
       }
-      scene.fog.near = THREE.MathUtils.lerp(56, 28, night);
-      scene.fog.far = THREE.MathUtils.lerp(335, 195, night);
+      scene.fog.near = THREE.MathUtils.lerp(62, 18, night);
+      scene.fog.far = THREE.MathUtils.lerp(325, 135, night);
 
+      // Kinematisk Golden Hour-lys med kjølige blå-lilla skygger (HemisphereLight)
       hemiLight.color.copy(dayHemiSkyColor).lerp(nightHemiSkyColor, night);
       hemiLight.groundColor.copy(dayHemiGroundColor).lerp(nightHemiGroundColor, night);
       if (currentBloodMoonBlend > 0.01) {
         hemiLight.color.lerp(bloodFogColor, currentBloodMoonBlend * 0.55);
       }
-      hemiLight.intensity = THREE.MathUtils.lerp(0.92, 0.46, night);
+      hemiLight.intensity = THREE.MathUtils.lerp(0.86, 0.42, night);
 
       sunLight.color.copy(daySunColor).lerp(nightSunColor, night);
       if (currentBloodMoonBlend > 0.01) {
-        sunLight.color.lerp(new THREE.Color(0xff5258), currentBloodMoonBlend * 0.65);
+        sunLight.color.lerp(bloodSunColor, currentBloodMoonBlend * 0.65);
       }
-      sunLight.intensity = THREE.MathUtils.lerp(1.9, 0.55, night);
-      if (night < 0.85) {
-        sunLight.position.set(
-          skySunVec.x * 68,
-          Math.max(14, skySunVec.y * 85),
-          skySunVec.z * 68
-        );
+      sunLight.intensity = THREE.MathUtils.lerp(2.25, 0.62, night);
+
+      if (hasHDRI) {
+        activeLightDir.copy(night < 0.55 ? hdrState.daySunDir : hdrState.nightMoonDir);
+      } else if (night < 0.85) {
+        activeLightDir.set(skySunVec.x, Math.max(0.22, skySunVec.y), skySunVec.z).normalize();
       } else {
-        sunLight.position.set(-46, 54, -76);
+        activeLightDir.set(-0.46, 0.54, -0.70).normalize();
       }
 
-      sunMesh.position.copy(skySunVec).multiplyScalar(225);
-      sunMesh.material.opacity = Math.max(0, 1 - night * 1.35) * 0.9;
-      sunMesh.visible = night < 0.75;
+      // Hold 2048x2048 skyggekameraet snappet rundt spilleren (0 objektallokeringer, sylskarpe skygger over hele verdenen)
+      const sx = Math.round(playerRig.position.x);
+      const sz = Math.round(playerRig.position.z);
+      sunLight.target.position.set(sx, 0, sz);
+      sunLight.target.updateMatrixWorld();
+      sunLight.position.set(
+        sx + activeLightDir.x * 88,
+        Math.max(18, activeLightDir.y * 88),
+        sz + activeLightDir.z * 88
+      );
+
+      // Subtilt Fresnel rim-light på karakterer, fiender og dyr slik at silhuetter trer frem i mørket
+      if (rimUniforms) {
+        rimUniforms.uRimColor.value.copy(dayRimColor).lerp(nightRimColor, night);
+        if (currentBloodMoonBlend > 0.01) {
+          rimUniforms.uRimColor.value.lerp(bloodRimColor, currentBloodMoonBlend * 0.72);
+        }
+        rimUniforms.uRimStrength.value = THREE.MathUtils.lerp(0.32, 0.54, night);
+      }
 
       moonMesh.material.opacity = night;
-      moonHaloMat.opacity = night * 0.52;
+      moonHaloMat.opacity = night * 0.56;
       moonGroup.visible = night > 0.02;
       if (updateBloodMoonVisuals) updateBloodMoonVisuals(currentBloodMoonBlend);
       if (updateGodRays) updateGodRays(night, currentBloodMoonBlend);
 
-      starMat.opacity = Math.max(0, (night - 0.18) / 0.82) * 0.95;
+      starMat.opacity = Math.max(0, (night - 0.18) / 0.82) * (hasHDRI ? 0.58 : 0.95);
       stars.visible = night > 0.18;
 
-      // Vinduer reflekterer himmelen om dagen og lyser varmt innenfra om natten
+      // Vinduer reflekterer HDRI-himmelen om dagen og gløder varmt innenfra om natten
       windowMat.color.copy(dayWindowColor).lerp(nightWindowColor, night);
-      windowMat.emissiveIntensity = THREE.MathUtils.lerp(0.14, 1.35, night);
+      windowMat.emissiveIntensity = THREE.MathUtils.lerp(0.14, 2.05, night);
 
-      lanternGlassMat.opacity = 0.58 + 0.42 * night;
-      lanternGlowMat.opacity = 0.18 + night * 0.68;
-      baseLanternIntensity = 0.35 + night * 7.2;
-      baseSafeLanternIntensity = 1.65 + night * 5.8;
-      baseCampfireIntensity = 2.2 + night * 5.6;
+      lanternGlassMat.opacity = 0.62 + 0.38 * night;
+      lanternGlowMat.opacity = 0.22 + night * 0.76;
+      baseLanternIntensity = 0.45 + night * 9.5;
+      baseSafeLanternIntensity = 1.85 + night * 6.8;
+      baseCampfireIntensity = 2.4 + night * 6.4;
     }
 
     // Naturlig flakkende lys på lykter og leirbål (kun skalarmatematikk i animasjonsløkken)
@@ -4528,8 +4588,35 @@
       renderer.render(scene, camera);
     });
 
-
-
+    window.__westernScene = {
+      scene,
+      camera,
+      renderer,
+      playerRig,
+      hdrState,
+      sunLight,
+      rimUniforms,
+      deerList,
+      wolfList,
+      bearList,
+      banditList,
+      nightEnemies,
+      bossEnemy,
+      horseEntity,
+      saloonBuilding,
+      tailorBuilding,
+      gunsmithBuilding,
+      safeHouseBuilding,
+      toggleDayNight,
+      equipWeapon,
+      unlockedWeapons,
+      isPlayerInHidingZone,
+      setLookYawPitch(yaw, pitch = 0) {
+        playerRig.rotation.y = yaw;
+        pcPitch = pitch;
+        camera.rotation.x = pitch;
+      }
+    };
   </script>
 </body>
 </html>
