@@ -863,6 +863,8 @@
       mineMapPickup,
       hellfirePickup,
       mountTrainAsset,
+      mountWorldBotanicalAndWildlifeAssets,
+      updateAmbientWildlife,
       trainGatlingHitMeshes,
       gatlingHalo,
       windUniforms,
@@ -908,12 +910,17 @@
       banditGLTF,
       tailorNpcGLTF,
       gunsmithNpcGLTF,
+      sheriffNpcGLTF,
       vampireGLTF,
       deerGLTF,
       wolfGLTF,
       bearGLTF,
       horseGLTF,
-      bossVampireGLTF
+      bossVampireGLTF,
+      treesGLTF,
+      shrubsGLTF,
+      undergrowthGLTF,
+      wildlifeGLTF
     ] = await Promise.all([
       loadOptionalHDR('./assets/env/desert_sunset.hdr'),
       loadOptionalHDR('./assets/env/moonlit_night.hdr'),
@@ -931,12 +938,17 @@
       loadOptionalGLB('./assets/bandit.glb'),
       loadOptionalGLB('./assets/tailor_npc.glb'),
       loadOptionalGLB('./assets/gunsmith_npc.glb'),
+      loadOptionalGLB('./assets/sheriff_npc.glb'),
       loadOptionalGLB('./assets/vampire.glb'),
       loadOptionalGLB('./assets/deer.glb'),
       loadOptionalGLB('./assets/wolf.glb'),
       loadOptionalGLB('./assets/bear.glb'),
       loadOptionalGLB('./assets/horse.glb'),
-      loadOptionalGLB('./assets/boss_vampire.glb')
+      loadOptionalGLB('./assets/boss_vampire.glb'),
+      loadOptionalGLB('./assets/trees.glb'),
+      loadOptionalGLB('./assets/shrubs.glb'),
+      loadOptionalGLB('./assets/undergrowth.glb'),
+      loadOptionalGLB('./assets/wildlife.glb')
     ]);
 
     if (mountHDRIEnvironments) {
@@ -945,6 +957,15 @@
 
     if (mountTrainAsset && trainGLTF) {
       mountTrainAsset(trainGLTF);
+    }
+
+    if (mountWorldBotanicalAndWildlifeAssets) {
+      mountWorldBotanicalAndWildlifeAssets({
+        trees: treesGLTF,
+        shrubs: shrubsGLTF,
+        undergrowth: undergrowthGLTF,
+        wildlife: wildlifeGLTF
+      });
     }
 
     const loadedAssets = {
@@ -961,12 +982,17 @@
       bandit: banditGLTF,
       tailorNpc: tailorNpcGLTF,
       gunsmithNpc: gunsmithNpcGLTF,
+      sheriffNpc: sheriffNpcGLTF,
       vampire: vampireGLTF,
       deer: deerGLTF,
       wolf: wolfGLTF,
       bear: bearGLTF,
       horse: horseGLTF,
-      bossVampire: bossVampireGLTF
+      bossVampire: bossVampireGLTF,
+      trees: treesGLTF,
+      shrubs: shrubsGLTF,
+      undergrowth: undergrowthGLTF,
+      wildlife: wildlifeGLTF
     };
 
     // --- 5a. Saloon / Oppdragsbygg og «SHERIFF'S BOUNTY BOARD» (repeterbar for ekstra Gull!) ---
@@ -4488,6 +4514,9 @@
       }
       if (gunsmithNPCGroup) {
         gunsmithNPCGroup.rotation.y = 0.12 + Math.sin(worldTime * 1.25 + 1.1) * 0.07;
+      }
+      if (updateAmbientWildlife) {
+        updateAmbientWildlife(dt, worldTime);
       }
       if (sheriffVanceGroup) {
         sheriffVanceGroup.rotation.y = 0.28 + Math.sin(worldTime * 1.1) * 0.06;
