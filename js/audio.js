@@ -849,6 +849,107 @@ export function initWesternAudio(audioCtx, controllers, getNightAmount) {
     controller.addEventListener('squeezestart', startBackgroundAmbience);
   });
 
+  function playHellfireSound() {
+    ensureAudioRunning();
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(240, now);
+    osc.frequency.exponentialRampToValueAtTime(75, now + 0.085);
+    g.gain.setValueAtTime(0.32, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.095);
+    osc.connect(g);
+    g.connect(sfxBus);
+    osc.start(now);
+    osc.stop(now + 0.1);
+  }
+
+  function playHoofbeatSound(gallop = true) {
+    ensureAudioRunning();
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(gallop ? 125 : 95, now);
+    osc.frequency.exponentialRampToValueAtTime(42, now + 0.06);
+    g.gain.setValueAtTime(gallop ? 0.22 : 0.14, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+    osc.connect(g);
+    g.connect(sfxBus);
+    osc.start(now);
+    osc.stop(now + 0.075);
+  }
+
+  function playHorseWhistleSound() {
+    ensureAudioRunning();
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(980, now);
+    osc.frequency.exponentialRampToValueAtTime(1480, now + 0.14);
+    osc.frequency.exponentialRampToValueAtTime(1180, now + 0.28);
+    g.gain.setValueAtTime(0.001, now);
+    g.gain.linearRampToValueAtTime(0.24, now + 0.04);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.30);
+    osc.connect(g);
+    g.connect(sfxBus);
+    osc.start(now);
+    osc.stop(now + 0.31);
+  }
+
+  function playCasingClinkSound() {
+    ensureAudioRunning();
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(3400 + Math.random() * 650, now);
+    osc.frequency.exponentialRampToValueAtTime(2200, now + 0.04);
+    g.gain.setValueAtTime(0.06, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
+    osc.connect(g);
+    g.connect(sfxBus);
+    osc.start(now);
+    osc.stop(now + 0.05);
+  }
+
+  function playBarricadeBlastSound() {
+    playExplosionSound();
+    ensureAudioRunning();
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(160, now + 0.04);
+    osc.frequency.exponentialRampToValueAtTime(48, now + 0.28);
+    g.gain.setValueAtTime(0.22, now + 0.04);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.30);
+    osc.connect(g);
+    g.connect(sfxBus);
+    osc.start(now + 0.04);
+    osc.stop(now + 0.32);
+  }
+
+  function playRelicPickupSound() {
+    ensureAudioRunning();
+    const now = audioCtx.currentTime;
+    [523.25, 659.25, 783.99, 1046.5].forEach((freq, idx) => {
+      const osc = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      osc.type = 'triangle';
+      const st = now + idx * 0.065;
+      osc.frequency.setValueAtTime(freq, st);
+      g.gain.setValueAtTime(0.18, st);
+      g.gain.exponentialRampToValueAtTime(0.001, st + 0.28);
+      osc.connect(g);
+      g.connect(sfxBus);
+      osc.start(st);
+      osc.stop(st + 0.30);
+    });
+  }
+
   return {
     sfxBus,
     ensureAudioRunning,
@@ -858,11 +959,17 @@ export function initWesternAudio(audioCtx, controllers, getNightAmount) {
     playCrossbowSound,
     playDynamiteThrowSound,
     playExplosionSound,
+    playHellfireSound,
     playWeaponSwitchSound,
     playGoldPickupSound,
     playRockRicochetSound,
     playBearRoarSound,
     playBossVictoryFanfare,
+    playHoofbeatSound,
+    playHorseWhistleSound,
+    playCasingClinkSound,
+    playBarricadeBlastSound,
+    playRelicPickupSound,
     playBottleHit,
     playFleshHitSound,
     playPlayerHitSound,
