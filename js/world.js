@@ -33,8 +33,8 @@ export function getTerrainBaseHeight(x, z) {
     Math.sin((x + z) * 0.095) * 0.24 +
     Math.cos((x - z * 1.2) * 0.075) * 0.20;
 
-  const outerFactor = Math.max(0, (cheb - 118.0) / 55.0);
-  const rimLift = outerFactor * outerFactor * (2.2 + 0.9 * Math.sin(x * 0.05) * Math.cos(z * 0.05));
+  const outerFactor = Math.max(0, (cheb - 175.0) / 55.0);
+  const rimLift = outerFactor * outerFactor * (2.6 + 0.9 * Math.sin(x * 0.05) * Math.cos(z * 0.05));
 
   let h = (dunePrimary + duneSecondary + rimLift + 0.18) * blend;
 
@@ -49,12 +49,40 @@ export function getTerrainBaseHeight(x, z) {
     }
   }
 
-  // Jevn flate foran og inne i den forlatte gullgruven (x ~ 118..134, z ~ 0)
-  const dMine = Math.hypot((x - 122) * 0.7, z);
-  if (dMine < 15.0) {
-    const fMine = Math.max(0, Math.min(1, (dMine - 7.0) / 8.0));
-    const smoothMine = fMine * fMine * (3 - 2 * fMine);
-    h = THREE.MathUtils.lerp(0.65, h, smoothMine);
+  // Jevn flate foran og langs den dype gullgruven (x ~ 116..175, z ~ -1.5)
+  if (x >= 108 && x <= 182 && Math.abs(z + 1.5) < 14) {
+    const fx = Math.min(
+      x < 120 ? Math.max(0, (x - 108) / 12.0) : 1.0,
+      x > 170 ? Math.max(0, (182 - x) / 12.0) : 1.0
+    );
+    const fz = 1.0 - Math.max(0, Math.min(1, (Math.abs(z + 1.5) - 6.0) / 8.0));
+    const fm = fx * fz;
+    const smoothMine = fm * fm * (3 - 2 * fm);
+    h = THREE.MathUtils.lerp(h, 0.65, smoothMine);
+  }
+
+  // Sørlig jernbanevoll ved z = +75 (x = -135..+50) og sprengt kløft ved broen (x = +52..+86)
+  if (x >= -145 && x <= 52 && Math.abs(z - 75) < 13) {
+    const fx = Math.min(
+      x < -130 ? Math.max(0, (x + 145) / 15.0) : 1.0,
+      x > 46 ? Math.max(0, (52 - x) / 6.0) : 1.0
+    );
+    const fz = 1.0 - Math.max(0, Math.min(1, (Math.abs(z - 75) - 5.5) / 7.5));
+    const ft = fx * fz;
+    const smoothRail = ft * ft * (3 - 2 * ft);
+    h = THREE.MathUtils.lerp(h, 0.25, smoothRail);
+  }
+  if (x >= 50 && x <= 88 && Math.abs(z - 75) < 18) {
+    const gx = Math.sin(THREE.MathUtils.clamp((x - 50) / 38.0, 0, 1) * Math.PI);
+    const gz = 1.0 - Math.max(0, Math.min(1, (Math.abs(z - 75) - 5.0) / 13.0));
+    h -= gx * gz * 5.8;
+  }
+  // Sørlig grusvei fra Dustwood til jernbanen (|x| < 5, z = 22..72)
+  if (Math.abs(x) < 6.0 && z >= 22 && z <= 73) {
+    const fr = 1.0 - Math.max(0, Math.min(1, (Math.abs(x) - 2.4) / 3.6));
+    const smoothRoad = fr * fr * (3 - 2 * fr);
+    const targetH = THREE.MathUtils.lerp(0.0, 0.25, (z - 22) / 51.0);
+    h = THREE.MathUtils.lerp(h, targetH, smoothRoad);
   }
 
   // Jevn kirkegårdsbakke rundt det ødelagte steinkapellet på Boot Hill (x ~ -120, z ~ 0)
@@ -77,7 +105,16 @@ export function getBridgeDeckY(z) {
   return baseLine + Math.max(0, 1 - spanT * spanT) * 0.62;
 }
 
-export function getTerrainHeight(x, z) {
+export function getTerrainHeight(x, z, refY = 0) {
+  // Steintrapp ned til Den sunkne katakombe under Boot Hill-kapellet (x = -122..-134, z = -3.05..+0.05)
+  if (x >= -134.2 && x <= -121.8 && z >= -3.05 && z <= 0.05) {
+    const u = THREE.MathUtils.clamp((-122.0 - x) / 12.0, 0, 1);
+    return THREE.MathUtils.lerp(0.55, -6.5, u);
+  }
+  // Underjordisk katakombe-kammer (gulv på y = -6.5 når spilleren er nede i katakomben)
+  if (refY < -1.8 && x >= -172.5 && x <= -133.5 && z >= -14.0 && z <= 11.0) {
+    return -6.5;
+  }
   const baseH = getTerrainBaseHeight(x, z);
   // Trebroen over elveleiet i Whispering Woods (x = -2.05..+2.05, z = -84.0..-72.0)
   if (Math.abs(x) <= 2.05 && z >= -84.0 && z <= -72.0) {
@@ -97,8 +134,10 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     woodWallMat, lightWoodMat, darkWoodMat,
     weatheredPlankMatA, weatheredPlankMatB, shutterWoodMat, logTimberMat,
     wroughtIronMat, polishedBrassMat, stonePlinthMat, crimsonRockMat, darkGraveStoneMat, windowMat,
-    sharedParticleGlowTex, sharedSparkGlowTex, sharedSmokePuffTex, createContactShadow
+    sharedParticleGlowTex, sharedSparkGlowTex, sharedSmokePuffTex, sharedGodRayTex, createContactShadow
   } = M;
+
+  const windUniforms = { uWindTime: { value: 0 } };
 
   // --- 3f. Atmosfærisk Sky-shader og forhåndsbakt PMREM PBR-miljølys ---
   const sky = new SkyClass();
@@ -168,8 +207,8 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
   sunMesh.position.copy(skySunVec).multiplyScalar(295);
   scene.add(sunMesh);
 
-  // --- 3g. Utvidet ørkenlandskap (-160 til +160, flatt y = 0 i Dustwood [-24..24]) ---
-  const desertGroundGeo = new THREE.PlaneGeometry(390, 390, 160, 160);
+  // --- 3g. Utvidet ørkenlandskap (-220 til +220, flatt y = 0 i Dustwood [-24..24]) + 4-biome Terrain Splatting ---
+  const desertGroundGeo = new THREE.PlaneGeometry(520, 520, 180, 180);
   desertGroundGeo.rotateX(-Math.PI / 2);
   {
     const pos = desertGroundGeo.attributes.position;
@@ -178,6 +217,22 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
       const vz = pos.getZ(i);
       pos.setY(i, getTerrainBaseHeight(vx, vz));
     }
+    // Åpne fysisk sjakt over steintrappen ned til Den sunkne katakombe (x: -133.4..-122.2, z: -3.05..0.05)
+    const idxAttr = desertGroundGeo.index;
+    if (idxAttr) {
+      const filtered = [];
+      const arr = idxAttr.array;
+      for (let i = 0; i < arr.length; i += 3) {
+        const a = arr[i], b = arr[i + 1], c = arr[i + 2];
+        const cx = (pos.getX(a) + pos.getX(b) + pos.getX(c)) / 3;
+        const cz = (pos.getZ(a) + pos.getZ(b) + pos.getZ(c)) / 3;
+        if (cx >= -133.4 && cx <= -122.2 && cz >= -3.05 && cz <= 0.05) {
+          continue;
+        }
+        filtered.push(a, b, c);
+      }
+      desertGroundGeo.setIndex(filtered);
+    }
     desertGroundGeo.computeVertexNormals();
   }
 
@@ -185,16 +240,74 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     color: 0xe2b47c,
     map: sharedDesertSandTex,
     normalMap: sharedDesertSandNormalTex,
-    normalScale: new THREE.Vector2(0.58, 0.58),
+    normalScale: new THREE.Vector2(0.68, 0.68),
     roughnessMap: sharedDesertSandRoughTex,
     roughness: 0.92,
     metalness: 0.02
   });
+  desertGroundMat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        '#include <common>\nvarying vec3 vTerrainWorldPos;'
+      )
+      .replace(
+        '#include <begin_vertex>',
+        '#include <begin_vertex>\nvTerrainWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;'
+      );
+
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        '#include <common>\nvarying vec3 vTerrainWorldPos;'
+      )
+      .replace(
+        '#include <map_fragment>',
+        `#include <map_fragment>
+        {
+          float wx = vTerrainWorldPos.x;
+          float wz = vTerrainWorldPos.z;
+          float wy = vTerrainWorldPos.y;
+          float grainN = sin(wx * 0.42 + cos(wz * 0.37)) * cos(wz * 0.31 - sin(wx * 0.23)) * 0.5 + 0.5;
+          float crackN = abs(sin(wx * 0.85 + wz * 0.65) * cos(wx * 0.65 - wz * 0.85));
+
+          // Biome 2: Pakket grusvei med mørke hjulspor langs veier og jernbane
+          float dNorth = (wz < -14.0) ? smoothstep(2.4, 1.4, abs(wx)) : 0.0;
+          float dSouth = (wz > 12.0 && wz < 74.0) ? smoothstep(2.4, 1.4, abs(wx)) : 0.0;
+          float dEast  = (wx > 14.0 && wx < 126.0) ? smoothstep(2.4, 1.4, abs(wz + 1.5)) : 0.0;
+          float dWest  = (wx < -14.0 && wx > -122.0) ? smoothstep(2.4, 1.4, abs(wz + 1.5)) : 0.0;
+          float dRail  = (wx > -142.0 && wx < 50.0) ? smoothstep(3.0, 1.6, abs(wz - 75.0)) : 0.0;
+          float roadMask = clamp(max(max(dNorth, dSouth), max(max(dEast, dWest), dRail)), 0.0, 1.0);
+          float rutX = max(smoothstep(0.32, 0.08, abs(abs(wx) - 0.72)) * max(dNorth, dSouth),
+                           smoothstep(0.32, 0.08, abs(abs(wz + 1.5) - 0.72)) * max(dEast, dWest));
+          vec3 gravelCol = mix(vec3(0.56, 0.39, 0.24), vec3(0.34, 0.23, 0.14), clamp(rutX * 0.65 + (1.0 - grainN) * 0.25, 0.0, 1.0));
+
+          // Biome 3: Mørk barnål-/mosejord i Whispering Woods (Nord)
+          float forestMask = smoothstep(-25.0, -39.0, wz) * (1.0 - roadMask * 0.75);
+          vec3 forestCol = mix(vec3(0.24, 0.26, 0.14), vec3(0.16, 0.21, 0.11), grainN);
+
+          // Biome 4: Rød okker-stein i Crimson Canyon (Øst) + sprukket aske/skifer på Boot Hill (Vest)
+          float canyonMask = smoothstep(50.0, 74.0, wx) * (1.0 - roadMask * 0.70);
+          vec3 canyonCol = mix(vec3(0.66, 0.30, 0.18), vec3(0.42, 0.18, 0.11), smoothstep(0.15, 0.55, crackN));
+
+          float bootMask = smoothstep(-48.0, -72.0, wx) * (1.0 - roadMask * 0.65);
+          vec3 ashCol = mix(vec3(0.30, 0.29, 0.31), vec3(0.18, 0.17, 0.19), smoothstep(0.10, 0.45, crackN));
+
+          // Høydefarging i kløfter / sanddyner
+          vec3 baseSand = diffuseColor.rgb * mix(0.92, 1.08, clamp(wy * 0.18 + 0.45, 0.0, 1.0));
+          vec3 splatted = mix(baseSand, gravelCol * 1.12, roadMask * 0.68);
+          splatted = mix(splatted, forestCol * 1.25, forestMask * 0.65);
+          splatted = mix(splatted, canyonCol * 1.15, canyonMask * 0.58);
+          splatted = mix(splatted, ashCol * 1.25, bootMask * 0.62);
+          diffuseColor.rgb = splatted;
+        }`
+      );
+  };
   const desertGround = new THREE.Mesh(desertGroundGeo, desertGroundMat);
   desertGround.receiveShadow = true;
   scene.add(desertGround);
 
-  // Grusveier gjennom Dustwood og ut til alle 3 ytterregionene (Nord, Øst, Vest)
+  // Grusveier gjennom Dustwood og ut til alle 4 ytterregionene (Nord, Øst, Vest, Sør Jernbane)
   const roadMat = new THREE.MeshStandardMaterial({
     color: 0xb8844f,
     map: sharedRoadSandTex,
@@ -205,9 +318,9 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     metalness: 0.01
   });
 
-  const mainRoad = new THREE.Mesh(new THREE.PlaneGeometry(7.4, 44), roadMat);
+  const mainRoad = new THREE.Mesh(new THREE.PlaneGeometry(7.4, 46), roadMat);
   mainRoad.rotation.x = -Math.PI / 2;
-  mainRoad.position.set(0, 0.016, 0);
+  mainRoad.position.set(0, 0.016, 1);
   mainRoad.receiveShadow = true;
   scene.add(mainRoad);
 
@@ -234,10 +347,11 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     return mesh;
   }
 
-  // Nordvei til Whispering Woods, Østvei til Crimson Canyon & Gruven, Vestvei til Boot Hill
+  // Nordvei til Whispering Woods, Østvei til Crimson Canyon & Gruven, Vestvei til Boot Hill, Sørvei til Jernbanen
   buildTerrainTrail(0, -82, 3.8, 124, false, 84);
   buildTerrainTrail(71, -1.5, 4.0, 102, true, 72);
   buildTerrainTrail(-69, -1.5, 3.8, 98, true, 72);
+  buildTerrainTrail(0, 48, 3.8, 52, false, 48);
 
   // --- 3h. Monument Valley-inspirerte lagdelte sandsteinsplatåer i horisontringen utenfor [-160..160] ---
   const mesaMat = new THREE.MeshStandardMaterial({
@@ -332,17 +446,17 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     scene.add(g);
   }
 
-  // Plasser Monument Valley-platåer i en vid horisontring utenfor PLAY_AREA_LIMIT (160)
+  // Plasser Monument Valley-platåer i en vid horisontring utenfor PLAY_AREA_LIMIT (215)
   [
-    { x: -135, z: -205, r: 30, h: 42, seed: 101, spire: true },
-    { x: 24, z: -218, r: 38, h: 48, seed: 202, spire: false },
-    { x: 155, z: -195, r: 32, h: 44, seed: 303, spire: true },
-    { x: -212, z: -75, r: 28, h: 36, seed: 404, spire: false },
-    { x: 215, z: -62, r: 30, h: 38, seed: 505, spire: true },
-    { x: -205, z: 78, r: 26, h: 33, seed: 606, spire: false },
-    { x: 208, z: 86, r: 28, h: 35, seed: 707, spire: false },
-    { x: -88, z: 206, r: 32, h: 40, seed: 808, spire: true },
-    { x: 96, z: 212, r: 34, h: 41, seed: 909, spire: false }
+    { x: -165, z: -245, r: 32, h: 44, seed: 101, spire: true },
+    { x: 26, z: -255, r: 40, h: 50, seed: 202, spire: false },
+    { x: 185, z: -235, r: 34, h: 46, seed: 303, spire: true },
+    { x: -248, z: -85, r: 30, h: 38, seed: 404, spire: false },
+    { x: 252, z: -68, r: 32, h: 40, seed: 505, spire: true },
+    { x: -244, z: 88, r: 28, h: 36, seed: 606, spire: false },
+    { x: 248, z: 96, r: 30, h: 38, seed: 707, spire: false },
+    { x: -102, z: 246, r: 34, h: 42, seed: 808, spire: true },
+    { x: 110, z: 252, r: 36, h: 44, seed: 909, spire: false }
   ].forEach((m) => spawnMonumentMesa(m.x, m.z, m.r, m.h, m.seed, m.spire));
 
   // Klipper og røde sandsteinsformasjoner (målt nøyaktig med THREE.Box3)
@@ -1114,6 +1228,29 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     roughnessMap: sharedBarkRoughTex,
     roughness: 0.92
   });
+  function applyWindSwayShader(mat, amp = 0.08, minY = 1.6) {
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uWindTime = windUniforms.uWindTime;
+      shader.vertexShader = shader.vertexShader
+        .replace(
+          '#include <common>',
+          '#include <common>\nuniform float uWindTime;'
+        )
+        .replace(
+          '#include <begin_vertex>',
+          `#include <begin_vertex>
+          {
+            vec4 wPos = modelMatrix * vec4(transformed, 1.0);
+            float hWeight = clamp((position.y - (${minY.toFixed(2)})) * 0.45, 0.0, 1.25);
+            float gust = sin(uWindTime * 1.9 + wPos.x * 0.14 + wPos.z * 0.11) * ${amp.toFixed(3)}
+                       + cos(uWindTime * 3.1 + wPos.z * 0.27) * ${(amp * 0.35).toFixed(3)};
+            transformed.x += gust * hWeight;
+            transformed.z += gust * 0.45 * hWeight;
+          }`
+        );
+    };
+  }
+
   const foliageMatA = new THREE.MeshStandardMaterial({
     color: 0x387836,
     map: sharedFoliageTex,
@@ -1138,6 +1275,67 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     roughnessMap: sharedFoliageRoughTex,
     roughness: 0.9
   });
+  applyWindSwayShader(foliageMatA, 0.085, 0.0);
+  applyWindSwayShader(foliageMatB, 0.095, 0.0);
+  applyWindSwayShader(foliageMatDark, 0.070, 0.0);
+
+  // Vindsusende ørken-gress/sagebrush-tuster spredt i terrenget (1 InstancedMesh draw call = 90 FPS)
+  {
+    const bladeGeo = new THREE.ConeGeometry(0.18, 0.72, 4, 2);
+    bladeGeo.translate(0, 0.36, 0);
+    const grassMat = new THREE.MeshStandardMaterial({
+      color: 0x9c8b4e,
+      roughness: 0.9,
+      metalness: 0.02
+    });
+    grassMat.onBeforeCompile = (shader) => {
+      shader.uniforms.uWindTime = windUniforms.uWindTime;
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nuniform float uWindTime;')
+        .replace(
+          '#include <begin_vertex>',
+          `#include <begin_vertex>
+          {
+            vec4 instPos = vec4(transformed, 1.0);
+            #ifdef USE_INSTANCING
+              instPos = instanceMatrix * instPos;
+            #endif
+            float hW = clamp(position.y * 1.4, 0.0, 1.2);
+            float sway = sin(uWindTime * 2.5 + instPos.x * 0.25 + instPos.z * 0.19) * 0.11;
+            transformed.x += sway * hW;
+            transformed.z += sway * 0.55 * hW;
+          }`
+        );
+    };
+    const gRng = createSeededRng(4041);
+    const grassCount = 260;
+    const grassInst = new THREE.InstancedMesh(bladeGeo, grassMat, grassCount);
+    const dummy = new THREE.Object3D();
+    const gCol = new THREE.Color();
+    let placed = 0;
+    for (let i = 0; i < 600 && placed < grassCount; i++) {
+      const gx = (gRng() - 0.5) * 340;
+      const gz = (gRng() - 0.5) * 340;
+      if (Math.abs(gx) < 26 && Math.abs(gz) < 26) continue; // Hold Dustwood rent
+      if (Math.abs(gx) < 3.8 || Math.abs(gz + 1.5) < 3.8 || Math.abs(gz - 75) < 5.0) continue;
+      if (gx < -118 && gx > -176 && Math.abs(gz + 1.5) < 16) continue;
+      if (gx > 116 && gx < 176 && Math.abs(gz + 1.5) < 12) continue;
+      const gy = getTerrainBaseHeight(gx, gz);
+      dummy.position.set(gx, gy - 0.04, gz);
+      dummy.rotation.set((gRng() - 0.5) * 0.15, gRng() * Math.PI * 2, (gRng() - 0.5) * 0.15);
+      const sc = 0.75 + gRng() * 0.9;
+      dummy.scale.set(sc, sc * (0.7 + gRng() * 0.6), sc);
+      dummy.updateMatrix();
+      grassInst.setMatrixAt(placed, dummy.matrix);
+      gCol.setHSL(gz < -28 ? 0.24 : 0.12 + gRng() * 0.05, 0.34, gz < -28 ? 0.28 : 0.42 + gRng() * 0.12);
+      grassInst.setColorAt(placed, gCol);
+      placed++;
+    }
+    grassInst.count = placed;
+    grassInst.instanceMatrix.needsUpdate = true;
+    if (grassInst.instanceColor) grassInst.instanceColor.needsUpdate = true;
+    scene.add(grassInst);
+  }
 
   function addTree(x, z, scale = 1, variant = 0) {
     const tree = new THREE.Group();
@@ -1286,16 +1484,20 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
   // =========================================================================
   const structureWallColliders = [];
 
-  function pushMeasuredWorldBoxCollider(meshOrGroup, maxY = 4.2, shrinkPad = 0.04) {
+  function pushMeasuredWorldBoxCollider(meshOrGroup, maxY = 4.2, shrinkPad = 0.04, minY = -20) {
     meshOrGroup.updateMatrixWorld(true);
     rockMeasureBox.setFromObject(meshOrGroup);
-    structureWallColliders.push({
+    const col = {
       minX: rockMeasureBox.min.x + shrinkPad,
       maxX: rockMeasureBox.max.x - shrinkPad,
       minZ: rockMeasureBox.min.z + shrinkPad,
       maxZ: rockMeasureBox.max.z - shrinkPad,
-      maxY
-    });
+      minY,
+      maxY,
+      disabled: false
+    };
+    structureWallColliders.push(col);
+    return col;
   }
 
   // Grunt glitrende elveløp (sømløs terrengfølgende elveflate) gjennom Whispering Woods under trebroen
@@ -1417,7 +1619,7 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     }
   });
 
-  // Forsterket gruveinngang (Abandoned Gold Mine) ved x = 124, z = -1.5 (vendt mot -X vest)
+  // Forsterket dyp gullgruve (Abandoned Gold Mine) ved x = 124..168, z = -1.5 (vendt mot -X vest)
   const mineOriginX = 124.0;
   const mineOriginZ = -1.5;
   const mineBaseY = getTerrainBaseHeight(mineOriginX, mineOriginZ); // 0.65
@@ -1425,49 +1627,77 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
   mineGroup.position.set(mineOriginX, mineBaseY, mineOriginZ);
   canyonGroup.add(mineGroup);
 
-  // Røde klippeblokker rundt gruveåpningen (fri tunnelåpning z_local = -1.55..+1.55 -> 3,10 m!)
-  const mineCliffLeft = new THREE.Mesh(new THREE.BoxGeometry(8.5, 7.2, 6.2), crimsonRockMat || mesaMat);
-  mineCliffLeft.position.set(3.8, 3.5, -4.65);
+  // Røde klippeblokker rundt og langs hele den 44 m dype gruvegjenget (fri passasje z_local = -1.75..+1.75)
+  const mineCliffLeft = new THREE.Mesh(new THREE.BoxGeometry(46.0, 7.2, 6.0), crimsonRockMat || mesaMat);
+  mineCliffLeft.position.set(22.5, 3.5, -4.85);
   mineCliffLeft.castShadow = true;
   mineCliffLeft.receiveShadow = true;
   mineGroup.add(mineCliffLeft);
 
-  const mineCliffRight = new THREE.Mesh(new THREE.BoxGeometry(8.5, 7.2, 6.2), crimsonRockMat || mesaMat);
-  mineCliffRight.position.set(3.8, 3.5, 4.65);
+  const mineCliffRight = new THREE.Mesh(new THREE.BoxGeometry(46.0, 7.2, 6.0), crimsonRockMat || mesaMat);
+  mineCliffRight.position.set(22.5, 3.5, 4.85);
   mineCliffRight.castShadow = true;
   mineCliffRight.receiveShadow = true;
   mineGroup.add(mineCliffRight);
 
-  const mineCliffTop = new THREE.Mesh(new THREE.BoxGeometry(8.6, 3.6, 4.2), crimsonRockMat || mesaMat);
-  mineCliffTop.position.set(3.8, 5.4, 0);
+  const mineCliffTop = new THREE.Mesh(new THREE.BoxGeometry(46.5, 3.6, 4.4), crimsonRockMat || mesaMat);
+  mineCliffTop.position.set(22.5, 5.4, 0);
   mineCliffTop.castShadow = true;
   mineGroup.add(mineCliffTop);
 
-  const mineBackWall = new THREE.Mesh(new THREE.BoxGeometry(1.6, 5.2, 5.0), darkGraveStoneMat || mesaCapMat);
-  mineBackWall.position.set(7.6, 2.5, 0);
+  // Stort endekammer innerst (x_local = 33..45) for kamp mot Foreman Slade
+  const mineChamberFloor = new THREE.Mesh(new THREE.BoxGeometry(45.0, 0.24, 4.2), darkGraveStoneMat || stonePlinthMat);
+  mineChamberFloor.position.set(22.0, -0.08, 0);
+  mineChamberFloor.receiveShadow = true;
+  mineGroup.add(mineChamberFloor);
+
+  const mineBackWall = new THREE.Mesh(new THREE.BoxGeometry(1.8, 5.6, 5.6), darkGraveStoneMat || mesaCapMat);
+  mineBackWall.position.set(44.8, 2.7, 0);
   mineGroup.add(mineBackWall);
 
-  // Kraftige tømmerrammer innover i gruvetunnelen
-  for (let tx = -0.2; tx <= 6.2; tx += 2.1) {
-    [-1.62, 1.62].forEach((tz) => {
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.32, 3.4, 0.32), logTimberMat);
-      post.position.set(tx, 1.7, tz);
+  // Kraftige tømmerrammer og hengende gruvelykter hele veien inn til x = 166
+  for (let tx = -0.2; tx <= 42.5; tx += 3.5) {
+    [-1.68, 1.68].forEach((tz) => {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.32, 3.5, 0.32), logTimberMat);
+      post.position.set(tx, 1.72, tz);
       post.castShadow = true;
       mineGroup.add(post);
     });
-    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.36, 3.8), logTimberMat);
-    beam.position.set(tx, 3.45, 0);
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.36, 3.9), logTimberMat);
+    beam.position.set(tx, 3.52, 0);
     beam.castShadow = true;
     mineGroup.add(beam);
-  }
 
-  // Gruveskinner (x_local = -20..+6.4) + stål-gruvevogn full av gullmalm!
+    if (tx > 4.0 && Math.round(tx * 10) % 2 === 0) {
+      const lGlow = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: sharedSparkGlowTex || sharedParticleGlowTex,
+          color: 0xffb347,
+          transparent: true,
+          opacity: 0.72,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false
+        })
+      );
+      lGlow.scale.set(1.65, 1.65, 1);
+      lGlow.position.set(tx, 3.15, 0);
+      mineGroup.add(lGlow);
+    }
+  }
+  const mineDeepLight = new THREE.PointLight(0xffa94a, 2.4, 34, 1.6);
+  mineDeepLight.position.set(24.0, 2.9, 0);
+  mineGroup.add(mineDeepLight);
+  const mineBossLight = new THREE.PointLight(0xff9b3a, 2.8, 28, 1.6);
+  mineBossLight.position.set(39.0, 2.9, 0);
+  mineGroup.add(mineBossLight);
+
+  // Gruveskinner (x_local = -20..+42) + stål-gruvevogn full av gullmalm!
   [-0.48, 0.48].forEach((rz) => {
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(26.0, 0.07, 0.07), wroughtIronMat);
-    rail.position.set(-6.5, 0.08, rz);
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(62.0, 0.07, 0.07), wroughtIronMat);
+    rail.position.set(11.0, 0.08, rz);
     mineGroup.add(rail);
   });
-  for (let sx = -19.0; sx <= 6.0; sx += 0.95) {
+  for (let sx = -19.0; sx <= 41.5; sx += 1.05) {
     const sleeper = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.05, 1.38), darkWoodMat);
     sleeper.position.set(sx, 0.03, 0);
     mineGroup.add(sleeper);
@@ -1532,12 +1762,112 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
   mineGlow.position.set(-0.35, 3.15, -1.55);
   mineGroup.add(mineGlow);
 
-  // Mål gruvevegger nøyaktig med THREE.Box3 (fri inngang 3,10 m i midten!)
+  // Mål gruvevegger nøyaktig med THREE.Box3 (fri inngang hele veien innover til Foreman Slade!)
   canyonGroup.updateMatrixWorld(true);
   pushMeasuredWorldBoxCollider(mineCliffLeft, 7.2, 0.05);
   pushMeasuredWorldBoxCollider(mineCliffRight, 7.2, 0.05);
-  pushMeasuredWorldBoxCollider(mineBackWall, 5.2, 0.05);
+  pushMeasuredWorldBoxCollider(mineBackWall, 5.6, 0.05);
   pushMeasuredWorldBoxCollider(minecart, 1.3, 0.04);
+
+  // 2 Sprengbare Dynamitt-barrikader inne i gruvetunnelen (x = 136 og x = 150)
+  const mineBarricades = [];
+  const barricadeHitMeshes = [];
+  const tntBarrelMat = new THREE.MeshStandardMaterial({
+    color: 0xb9221d,
+    emissive: 0x330400,
+    roughness: 0.55,
+    metalness: 0.15
+  });
+  [12.0, 26.0].forEach((localX, bIdx) => {
+    const bGroup = new THREE.Group();
+    bGroup.position.set(localX, 0, 0);
+    // Kryssede tømmerbjelker og kasser
+    const b1 = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.34, 3.1), logTimberMat);
+    b1.position.set(0, 0.75, 0);
+    b1.rotation.x = 0.24;
+    bGroup.add(b1);
+    const b2 = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.34, 3.1), logTimberMat);
+    b2.position.set(0, 1.35, 0);
+    b2.rotation.x = -0.22;
+    bGroup.add(b2);
+    const crateL = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.88, 0.96), darkWoodMat);
+    crateL.position.set(0, 0.44, -0.78);
+    bGroup.add(crateL);
+    const tntKeg = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.92, 12), tntBarrelMat);
+    tntKeg.position.set(-0.22, 0.46, 0.18);
+    bGroup.add(tntKeg);
+    const crateR = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.88, 0.96), darkWoodMat);
+    crateR.position.set(0, 0.44, 0.88);
+    bGroup.add(crateR);
+
+    const tntGlow = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: sharedSparkGlowTex || sharedParticleGlowTex,
+        color: 0xff5a22,
+        transparent: true,
+        opacity: 0.75,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      })
+    );
+    tntGlow.scale.set(1.2, 1.2, 1);
+    tntGlow.position.set(-0.22, 1.15, 0.18);
+    bGroup.add(tntGlow);
+
+    mineGroup.add(bGroup);
+    bGroup.updateMatrixWorld(true);
+    const colRef = pushMeasuredWorldBoxCollider(bGroup, 3.5, 0.04);
+    const barEntry = {
+      index: bIdx,
+      group: bGroup,
+      worldPos: new THREE.Vector3(mineOriginX + localX, mineBaseY + 0.6, mineOriginZ),
+      hp: 4,
+      destroyed: false,
+      colliderRef: colRef,
+      meshes: [b1, b2, crateL, tntKeg, crateR]
+    };
+    barEntry.meshes.forEach((bm) => {
+      bm.userData.barricadeEntry = barEntry;
+      barricadeHitMeshes.push(bm);
+    });
+    mineBarricades.push(barEntry);
+  });
+
+  // Gammelt Gruvekart (Old Mine Map) på ambolt innerst i gruven (x = 163.5, z = -1.5)
+  const mineMapGroup = new THREE.Group();
+  mineMapGroup.position.set(39.5, 0, 0);
+  const mapPedestal = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.82, 0.95), darkWoodMat);
+  mapPedestal.position.y = 0.41;
+  mineMapGroup.add(mapPedestal);
+  const scrollMesh = new THREE.Mesh(
+    new THREE.BoxGeometry(0.58, 0.12, 0.72),
+    new THREE.MeshStandardMaterial({ color: 0xf4dfb4, emissive: 0x3b2a10, roughness: 0.55 })
+  );
+  scrollMesh.position.y = 0.90;
+  scrollMesh.rotation.y = 0.25;
+  mineMapGroup.add(scrollMesh);
+  const mapHalo = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map: sharedSparkGlowTex || sharedParticleGlowTex,
+      color: 0xffe066,
+      transparent: true,
+      opacity: 0.88,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    })
+  );
+  mapHalo.scale.set(1.65, 1.65, 1);
+  mapHalo.position.y = 1.15;
+  mineMapGroup.add(mapHalo);
+  mineGroup.add(mineMapGroup);
+  const mineMapPickup = {
+    group: mineMapGroup,
+    hitMesh: scrollMesh,
+    worldPos: new THREE.Vector3(mineOriginX + 39.5, mineBaseY + 0.9, mineOriginZ),
+    collected: false
+  };
+  scrollMesh.userData.mineMapPickup = mineMapPickup;
+  mapPedestal.userData.mineMapPickup = mineMapPickup;
 
   // 6 Glitrende gullklumper / skattekister i og ved gruven som gir Gull (Gold)
   const goldPickups = [];
@@ -1747,12 +2077,19 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
   graveyardGroup.add(chapelGroup);
 
   const chapelStoneMat = darkGraveStoneMat || stonePlinthMat;
-  const chapelFloor = new THREE.Mesh(new THREE.BoxGeometry(9.6, 0.22, 8.6), chapelStoneMat);
-  chapelFloor.position.set(0, 0.11, 0);
-  chapelFloor.receiveShadow = true;
-  chapelGroup.add(chapelFloor);
+  // Kapellgulv slutter ved x_local = -2.0 (x = -122) slik at steintrappen ned til Katakombene er åpen!
+  const chapelFloorFront = new THREE.Mesh(new THREE.BoxGeometry(6.8, 0.22, 8.6), chapelStoneMat);
+  chapelFloorFront.position.set(1.4, 0.11, 0);
+  chapelFloorFront.receiveShadow = true;
+  chapelGroup.add(chapelFloorFront);
+  const chapelFloorSideN = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.22, 2.8), chapelStoneMat);
+  chapelFloorSideN.position.set(-3.4, 0.11, -2.9);
+  chapelGroup.add(chapelFloorSideN);
+  const chapelFloorSideS = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.22, 2.8), chapelStoneMat);
+  chapelFloorSideS.position.set(-3.4, 0.11, 2.9);
+  chapelGroup.add(chapelFloorSideS);
 
-  // Nordvegg (-Z), Sørvegg (+Z), Vestvegg (-X bakvegg) og to Østvegg-fløyer (+X) rundt 2,80 m åpen dør (-1.40..+1.40)
+  // Nordvegg (-Z), Sørvegg (+Z), Vestvegg (-X med 2,70 m åpen trappeportal!) og Østvegg (+X med 2,80 m åpen dør)
   const chNorthWall = new THREE.Mesh(new THREE.BoxGeometry(9.4, 3.9, 0.52), chapelStoneMat);
   chNorthWall.position.set(0, 2.05, -4.04);
   chNorthWall.castShadow = true;
@@ -1763,10 +2100,19 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
   chSouthWall.castShadow = true;
   chapelGroup.add(chSouthWall);
 
-  const chBackWall = new THREE.Mesh(new THREE.BoxGeometry(0.56, 5.2, 8.6), chapelStoneMat);
-  chBackWall.position.set(-4.52, 2.70, 0);
-  chBackWall.castShadow = true;
-  chapelGroup.add(chBackWall);
+  const chBackNorth = new THREE.Mesh(new THREE.BoxGeometry(0.56, 5.2, 2.95), chapelStoneMat);
+  chBackNorth.position.set(-4.52, 2.70, -2.83);
+  chBackNorth.castShadow = true;
+  chapelGroup.add(chBackNorth);
+
+  const chBackSouth = new THREE.Mesh(new THREE.BoxGeometry(0.56, 5.2, 2.95), chapelStoneMat);
+  chBackSouth.position.set(-4.52, 2.70, 2.83);
+  chBackSouth.castShadow = true;
+  chapelGroup.add(chBackSouth);
+
+  const chBackHeader = new THREE.Mesh(new THREE.BoxGeometry(0.58, 1.65, 3.1), chapelStoneMat);
+  chBackHeader.position.set(-4.52, 4.35, 0);
+  chapelGroup.add(chBackHeader);
 
   const chFrontNorth = new THREE.Mesh(new THREE.BoxGeometry(0.56, 4.2, 2.90), chapelStoneMat);
   chFrontNorth.position.set(4.52, 2.20, -2.85);
@@ -1798,10 +2144,10 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
   chapelSignMesh.rotation.y = Math.PI / 2;
   chapelGroup.add(chapelSignMesh);
 
-  // Glødende Blodalter inne i kapellet (klikk/skyt for å fremkalle natt og Lord Malakor!)
+  // Glødende Blodalter ved nordveggen inne i kapellet (klikk/skyt for Blodmåne & Lord Malakor!)
   const chapelAltarHitMeshes = [];
-  const altarPedestal = new THREE.Mesh(new THREE.BoxGeometry(1.15, 1.08, 1.65), chapelStoneMat);
-  altarPedestal.position.set(-2.95, 0.65, 0);
+  const altarPedestal = new THREE.Mesh(new THREE.BoxGeometry(1.15, 1.08, 1.50), chapelStoneMat);
+  altarPedestal.position.set(-1.6, 0.65, -2.65);
   altarPedestal.castShadow = true;
   chapelGroup.add(altarPedestal);
   chapelAltarHitMeshes.push(altarPedestal);
@@ -1814,7 +2160,7 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     metalness: 0.35
   });
   const bloodChaliceOrb = new THREE.Mesh(new THREE.OctahedronGeometry(0.28, 1), bloodOrbMat);
-  bloodChaliceOrb.position.set(-2.95, 1.52, 0);
+  bloodChaliceOrb.position.set(-1.6, 1.52, -2.65);
   chapelGroup.add(bloodChaliceOrb);
   chapelAltarHitMeshes.push(bloodChaliceOrb);
 
@@ -1829,19 +2175,337 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     })
   );
   altarHalo.scale.set(1.8, 1.8, 1);
-  altarHalo.position.set(-2.95, 1.52, 0);
+  altarHalo.position.set(-1.6, 1.52, -2.65);
   chapelGroup.add(altarHalo);
 
   graveyardGroup.updateMatrixWorld(true);
-  pushMeasuredWorldBoxCollider(chNorthWall, 4.5, 0.02);
-  pushMeasuredWorldBoxCollider(chSouthWall, 4.2, 0.02);
-  pushMeasuredWorldBoxCollider(chBackWall, 5.4, 0.02);
-  pushMeasuredWorldBoxCollider(chFrontNorth, 4.4, 0.02);
-  pushMeasuredWorldBoxCollider(chFrontSouth, 4.4, 0.02);
-  pushMeasuredWorldBoxCollider(altarPedestal, 1.4, 0.02);
+  pushMeasuredWorldBoxCollider(chNorthWall, 4.5, 0.02, -0.4);
+  pushMeasuredWorldBoxCollider(chSouthWall, 4.2, 0.02, -0.4);
+  pushMeasuredWorldBoxCollider(chBackNorth, 5.4, 0.02, -0.4);
+  pushMeasuredWorldBoxCollider(chBackSouth, 5.4, 0.02, -0.4);
+  pushMeasuredWorldBoxCollider(chFrontNorth, 4.4, 0.02, -0.4);
+  pushMeasuredWorldBoxCollider(chFrontSouth, 4.4, 0.02, -0.4);
+  pushMeasuredWorldBoxCollider(altarPedestal, 1.4, 0.02, -0.4);
 
   // =========================================================================
-  // 6e. FIRE REGIONALE VEISKILT (CanvasTexture på EN/NO) LANGS GRUSVEIENE
+  // 6d-2. DEN SUNKNE KATAKOMBE UNDER BOOT HILL KAPELL (x = -122..-172, y = -6.5)
+  // =========================================================================
+  const catacombGroup = new THREE.Group();
+  scene.add(catacombGroup);
+
+  // 14 brede steintrappetrinn ned vestover fra (-122, 0.55) til (-134, -6.5)
+  const stairSteps = 14;
+  for (let si = 0; si < stairSteps; si++) {
+    const t0 = si / stairSteps;
+    const t1 = (si + 1) / stairSteps;
+    const sx = THREE.MathUtils.lerp(-122.0, -134.0, (t0 + t1) * 0.5);
+    const sy = THREE.MathUtils.lerp(0.55, -6.5, (t0 + t1) * 0.5);
+    const stepMesh = new THREE.Mesh(new THREE.BoxGeometry(12.2 / stairSteps + 0.08, 0.52, 2.74), chapelStoneMat);
+    stepMesh.position.set(sx, sy - 0.25, chapelZ);
+    stepMesh.receiveShadow = true;
+    catacombGroup.add(stepMesh);
+  }
+
+  // Trappesjakt-sidevegger (hindrer å falle ut til siden, gjelder fra y = -7.5 opp til +3.5)
+  const stairWallN = new THREE.Mesh(new THREE.BoxGeometry(12.6, 10.5, 0.55), chapelStoneMat);
+  stairWallN.position.set(-128.0, -2.2, chapelZ - 1.65);
+  catacombGroup.add(stairWallN);
+  const stairWallS = new THREE.Mesh(new THREE.BoxGeometry(12.6, 10.5, 0.55), chapelStoneMat);
+  stairWallS.position.set(-128.0, -2.2, chapelZ + 1.65);
+  catacombGroup.add(stairWallS);
+  const stairCeiling = new THREE.Mesh(new THREE.BoxGeometry(9.0, 0.45, 3.3), chapelStoneMat);
+  stairCeiling.position.set(-130.5, -0.45, chapelZ);
+  catacombGroup.add(stairCeiling);
+
+  // Hovedhall i Den sunkne katakombe (x = -134..-172, z = -13.5..+10.5, gulv y = -6.5, tak y = -1.2)
+  const catFloor = new THREE.Mesh(new THREE.BoxGeometry(38.8, 0.4, 24.4), chapelStoneMat);
+  catFloor.position.set(-153.0, -6.7, chapelZ);
+  catFloor.receiveShadow = true;
+  catacombGroup.add(catFloor);
+
+  const catCeiling = new THREE.Mesh(new THREE.BoxGeometry(38.8, 0.5, 24.4), chapelStoneMat);
+  catCeiling.position.set(-153.0, -1.0, chapelZ);
+  catacombGroup.add(catCeiling);
+
+  const catWallN = new THREE.Mesh(new THREE.BoxGeometry(38.8, 5.6, 0.8), chapelStoneMat);
+  catWallN.position.set(-153.0, -3.8, chapelZ - 12.1);
+  catacombGroup.add(catWallN);
+  const catWallS = new THREE.Mesh(new THREE.BoxGeometry(38.8, 5.6, 0.8), chapelStoneMat);
+  catWallS.position.set(-153.0, -3.8, chapelZ + 12.1);
+  catacombGroup.add(catWallS);
+  const catWallW = new THREE.Mesh(new THREE.BoxGeometry(0.9, 5.6, 24.4), chapelStoneMat);
+  catWallW.position.set(-172.0, -3.8, chapelZ);
+  catacombGroup.add(catWallW);
+  const catWallEN = new THREE.Mesh(new THREE.BoxGeometry(0.8, 5.6, 10.6), chapelStoneMat);
+  catWallEN.position.set(-134.0, -3.8, chapelZ - 6.85);
+  catacombGroup.add(catWallEN);
+  const catWallES = new THREE.Mesh(new THREE.BoxGeometry(0.8, 5.6, 10.6), chapelStoneMat);
+  catWallES.position.set(-134.0, -3.8, chapelZ + 6.85);
+  catacombGroup.add(catWallES);
+
+  // 4 Utskårne katakombe-steinsøyler + fakler
+  const catacombTorchSpots = [
+    [-143.5, chapelZ - 4.8], [-143.5, chapelZ + 4.8],
+    [-158.0, chapelZ - 4.8], [-158.0, chapelZ + 4.8]
+  ];
+  catacombTorchSpots.forEach(([px, pz]) => {
+    const colMesh = new THREE.Mesh(new THREE.BoxGeometry(1.15, 5.4, 1.15), chapelStoneMat);
+    colMesh.position.set(px, -3.8, pz);
+    colMesh.castShadow = true;
+    colMesh.receiveShadow = true;
+    catacombGroup.add(colMesh);
+    pushMeasuredWorldBoxCollider(colMesh, -0.5, 0.02, -7.5);
+
+    const torchHalo = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: sharedSparkGlowTex || sharedParticleGlowTex,
+        color: 0xffaa44,
+        transparent: true,
+        opacity: 0.78,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      })
+    );
+    torchHalo.scale.set(1.4, 1.4, 1);
+    torchHalo.position.set(px + (px > -150 ? 0.75 : -0.75), -4.1, pz);
+    catacombGroup.add(torchHalo);
+  });
+
+  // 2 Ytelsesvennlige PointLights under bakken + hellig blå-sølv glød på Hellfire-sokkel
+  const catacombLightEast = new THREE.PointLight(0xffa444, 2.8, 28, 1.5);
+  catacombLightEast.position.set(-144.0, -3.3, chapelZ);
+  catacombGroup.add(catacombLightEast);
+  const catacombLightSanctum = new THREE.PointLight(0x74c6ff, 3.2, 26, 1.5);
+  catacombLightSanctum.position.set(-165.0, -3.2, chapelZ);
+  catacombGroup.add(catacombLightSanctum);
+
+  // Hellfire Repeater-piedestal innerst i katakombene (-166.5, -6.5, chapelZ)
+  const hellfirePedestalGroup = new THREE.Group();
+  hellfirePedestalGroup.position.set(-166.5, -6.5, chapelZ);
+  const hfStoneBase = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 1.05, 1.05, 8), chapelStoneMat);
+  hfStoneBase.position.y = 0.52;
+  hellfirePedestalGroup.add(hfStoneBase);
+  const hfOrb = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.28, 1),
+    new THREE.MeshStandardMaterial({
+      color: 0x62d2ff,
+      emissive: 0x2a8cff,
+      emissiveIntensity: 2.0,
+      metalness: 0.5,
+      roughness: 0.15
+    })
+  );
+  hfOrb.position.y = 1.42;
+  hellfirePedestalGroup.add(hfOrb);
+  const hfHalo = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map: sharedSparkGlowTex || sharedParticleGlowTex,
+      color: 0x70d4ff,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    })
+  );
+  hfHalo.scale.set(2.2, 2.2, 1);
+  hfHalo.position.y = 1.48;
+  hellfirePedestalGroup.add(hfHalo);
+  catacombGroup.add(hellfirePedestalGroup);
+
+  const hellfirePickup = {
+    group: hellfirePedestalGroup,
+    orb: hfOrb,
+    halo: hfHalo,
+    hitMesh: hfOrb,
+    basePedestal: hfStoneBase,
+    worldPos: new THREE.Vector3(-166.5, -5.1, chapelZ),
+    collected: false
+  };
+  hfOrb.userData.hellfirePickup = hellfirePickup;
+  hfStoneBase.userData.hellfirePickup = hellfirePickup;
+
+  catacombGroup.updateMatrixWorld(true);
+  pushMeasuredWorldBoxCollider(stairWallN, 3.2, 0.02, -7.5);
+  pushMeasuredWorldBoxCollider(stairWallS, 3.2, 0.02, -7.5);
+  pushMeasuredWorldBoxCollider(catWallN, -0.5, 0.02, -7.5);
+  pushMeasuredWorldBoxCollider(catWallS, -0.5, 0.02, -7.5);
+  pushMeasuredWorldBoxCollider(catWallW, -0.5, 0.02, -7.5);
+  pushMeasuredWorldBoxCollider(catWallEN, -0.5, 0.02, -7.5);
+  pushMeasuredWorldBoxCollider(catWallES, -0.5, 0.02, -7.5);
+  pushMeasuredWorldBoxCollider(hfStoneBase, -0.5, 0.02, -7.5);
+
+  // =========================================================================
+  // 6d-3. SØRLIG JERNBANE, SPRENGT KLØFTBRO & PANSRET DAMPTOG (z = +75)
+  // =========================================================================
+  const railwayGroup = new THREE.Group();
+  const railZ = 75.0;
+  const railGroundY = 0.25;
+  scene.add(railwayGroup);
+
+  // Parallele jernbaneskinner & sviller fra x = -135 til brokanten ved x = +50
+  [-0.92, 0.92].forEach((rzOff) => {
+    const track = new THREE.Mesh(new THREE.BoxGeometry(185.0, 0.11, 0.09), wroughtIronMat);
+    track.position.set(-42.5, railGroundY + 0.09, railZ + rzOff);
+    railwayGroup.add(track);
+  });
+  for (let tx = -134.0; tx <= 49.0; tx += 1.15) {
+    const tie = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.08, 2.65), darkWoodMat);
+    tie.position.set(tx, railGroundY + 0.02, railZ);
+    railwayGroup.add(tie);
+  }
+  // Sprengt jernbanebro ved østre kløft (x = +50..+88) med ødelagte bropilarer og skjeve bjelker
+  [51.5, 86.5].forEach((bx) => {
+    const pier = new THREE.Mesh(new THREE.BoxGeometry(2.2, 5.2, 4.2), stonePlinthMat);
+    pier.position.set(bx, railGroundY - 2.3, railZ);
+    railwayGroup.add(pier);
+  });
+  [-0.92, 0.92].forEach((rzOff) => {
+    const bentRailW = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.11, 0.10), wroughtIronMat);
+    bentRailW.position.set(53.4, railGroundY - 0.65, railZ + rzOff);
+    bentRailW.rotation.z = -0.24;
+    railwayGroup.add(bentRailW);
+    const bentRailE = new THREE.Mesh(new THREE.BoxGeometry(6.8, 0.11, 0.10), wroughtIronMat);
+    bentRailE.position.set(83.2, railGroundY - 0.72, railZ + rzOff);
+    bentRailE.rotation.z = 0.26;
+    railwayGroup.add(bentRailE);
+  });
+  // Usynlig sperreboks langs kanten av den sprengte broen
+  structureWallColliders.push({ minX: 49.2, maxX: 88.5, minZ: railZ - 2.4, maxZ: railZ + 2.4, minY: -8, maxY: 6 });
+
+  // Pansret Damptog-gruppe sentrert ved (0, railGroundY + 0.10, +75)
+  const trainAnchor = new THREE.Group();
+  trainAnchor.position.set(0, railGroundY + 0.10, railZ);
+  railwayGroup.add(trainAnchor);
+
+  const trainFallbackGroup = new THREE.Group();
+  {
+    const fbBoiler = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 0.95, 9.5, 14), wroughtIronMat);
+    fbBoiler.rotation.z = Math.PI / 2;
+    fbBoiler.position.set(-16.0, 2.0, 0);
+    trainFallbackGroup.add(fbBoiler);
+    const fbCab = new THREE.Mesh(new THREE.BoxGeometry(3.5, 2.8, 2.6), darkWoodMat);
+    fbCab.position.set(-10.0, 2.1, 0);
+    trainFallbackGroup.add(fbCab);
+    const fbBox = new THREE.Mesh(new THREE.BoxGeometry(12.2, 2.5, 2.5), wroughtIronMat);
+    fbBox.position.set(4.1, 2.1, 0);
+    trainFallbackGroup.add(fbBox);
+    const fbFlat = new THREE.Mesh(new THREE.BoxGeometry(9.4, 0.9, 2.5), darkWoodMat);
+    fbFlat.position.set(15.85, 0.95, 0);
+    trainFallbackGroup.add(fbFlat);
+  }
+  trainAnchor.add(trainFallbackGroup);
+
+  function mountTrainAsset(trainGLTF) {
+    if (!trainGLTF || !trainGLTF.scene) return false;
+    trainAnchor.remove(trainFallbackGroup);
+    const cloned = trainGLTF.scene.clone(true);
+    cloned.traverse((node) => {
+      if (!node.isMesh || !node.material) return;
+      node.castShadow = true;
+      node.receiveShadow = true;
+      if (node.geometry && node.geometry.attributes && node.geometry.attributes.color) {
+        node.material = node.material.clone();
+        node.material.vertexColors = true;
+      }
+    });
+    trainAnchor.add(cloned);
+    return true;
+  }
+
+  // Skrå trerampe opp til Gatling-flakvognen fra byen (nordside av x = +13..+16)
+  const trainRamp = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.20, 3.8), weatheredPlankMatA);
+  trainRamp.position.set(13.6, railGroundY + 0.62, railZ - 2.95);
+  trainRamp.rotation.x = 0.30;
+  trainRamp.receiveShadow = true;
+  railwayGroup.add(trainRamp);
+
+  // Kollisjonsbokser rundt toget (lokomotiv, kulletender, pansret vogn og flakvogn — åpning ved rampen)
+  structureWallColliders.push({ minX: -22.2, maxX: -8.2, minZ: railZ - 1.38, maxZ: railZ + 1.38, minY: 0, maxY: 5.0 });
+  structureWallColliders.push({ minX: -8.1, maxX: -2.6, minZ: railZ - 1.32, maxZ: railZ + 1.32, minY: 0, maxY: 4.0 });
+  structureWallColliders.push({ minX: -2.0, maxX: 10.4, minZ: railZ - 1.35, maxZ: railZ + 1.35, minY: 0, maxY: 4.5 });
+  structureWallColliders.push({ minX: 11.1, maxX: 20.8, minZ: railZ + 0.95, maxZ: railZ + 1.45, minY: 0, maxY: 4.0 });
+
+  // Interaktivt Gatling-mål på bakvognen (x = +16.4, z = +75)
+  const trainGatlingHitMeshes = [];
+  const trainGatlingBeacon = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.45, 0.45, 1.35, 10),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.0, depthWrite: false })
+  );
+  trainGatlingBeacon.position.set(16.4, railGroundY + 1.95, railZ);
+  railwayGroup.add(trainGatlingBeacon);
+  trainGatlingHitMeshes.push(trainGatlingBeacon);
+
+  const gatlingHalo = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map: sharedSparkGlowTex || sharedParticleGlowTex,
+      color: 0xffd24c,
+      transparent: true,
+      opacity: 0.78,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    })
+  );
+  gatlingHalo.scale.set(2.2, 2.2, 1);
+  gatlingHalo.position.set(16.4, railGroundY + 2.65, railZ);
+  railwayGroup.add(gatlingHalo);
+
+  // =========================================================================
+  // 6d-4. VOLUMETRISKE LYSSTRÅLER (GOD RAYS) GJENNOM SKOG, KAPELL & BY
+  // =========================================================================
+  const godRayMeshes = [];
+  if (sharedGodRayTex) {
+    const rayGeo = new THREE.PlaneGeometry(4.2, 16.5);
+    const raySpecs = [
+      { x: -12.0, z: -48.0, rotY: 0.35, tiltZ: 0.28, sx: 1.0, sy: 1.0 },
+      { x: 11.0, z: -66.0, rotY: 0.85, tiltZ: 0.25, sx: 1.2, sy: 1.05 },
+      { x: -8.5, z: -98.0, rotY: 0.15, tiltZ: 0.30, sx: 1.15, sy: 1.1 },
+      { x: 1.5, z: -6.5, rotY: 0.45, tiltZ: 0.32, sx: 1.35, sy: 1.1 },
+      { x: 118.0, z: -1.5, rotY: 0.2, tiltZ: 0.28, sx: 1.1, sy: 1.0 },
+      { x: -119.5, z: -1.5, rotY: 0.55, tiltZ: 0.24, sx: 0.95, sy: 0.95 },
+      { x: 12.0, z: 75.0, rotY: 0.40, tiltZ: 0.28, sx: 1.3, sy: 1.05 }
+    ];
+    raySpecs.forEach((rs) => {
+      const mat = new THREE.MeshBasicMaterial({
+        map: sharedGodRayTex,
+        color: 0xffe4b2,
+        transparent: true,
+        opacity: 0.16,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide
+      });
+      const rGroup = new THREE.Group();
+      const gy = getTerrainBaseHeight(rs.x, rs.z);
+      rGroup.position.set(rs.x, gy + 7.2, rs.z);
+      rGroup.rotation.set(0.14, rs.rotY, rs.tiltZ);
+      rGroup.scale.set(rs.sx, rs.sy, rs.sx);
+      const p1 = new THREE.Mesh(rayGeo, mat);
+      const p2 = new THREE.Mesh(rayGeo, mat);
+      p2.rotation.y = Math.PI * 0.5;
+      rGroup.add(p1, p2);
+      scene.add(rGroup);
+      godRayMeshes.push({ group: rGroup, mat, baseOpacity: 0.15 });
+    });
+  }
+
+  function updateGodRays(nightBlend, bloodMoonBlend = 0) {
+    for (let i = 0; i < godRayMeshes.length; i++) {
+      const gr = godRayMeshes[i];
+      if (bloodMoonBlend > 0.05) {
+        gr.mat.color.setHex(0xff5258);
+        gr.mat.opacity = 0.08 + bloodMoonBlend * 0.11;
+      } else if (nightBlend > 0.5) {
+        gr.mat.color.setHex(0x88b0e8);
+        gr.mat.opacity = gr.baseOpacity * 0.45;
+      } else {
+        gr.mat.color.setHex(0xffe6b8);
+        gr.mat.opacity = gr.baseOpacity * (1.0 - nightBlend * 0.45);
+      }
+    }
+  }
+
+  // =========================================================================
+  // 6e. FEM REGIONALE VEISKILT (CanvasTexture på EN/NO) LANGS GRUSVEIENE
   // =========================================================================
   const roadSignEntries = [];
   function spawnRoadSignpost(x, z, rotY, titleKey, subKey) {
@@ -1872,6 +2536,7 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
   spawnRoadSignpost(3.2, -21.5, 0.0, 'roadWoodsTitle', 'roadWoodsSub');
   spawnRoadSignpost(21.5, -4.6, -Math.PI / 2, 'roadCanyonTitle', 'roadCanyonSub');
   spawnRoadSignpost(-21.5, -4.6, Math.PI / 2, 'roadGraveyardTitle', 'roadGraveyardSub');
+  spawnRoadSignpost(-3.4, 21.5, Math.PI, 'roadRailwayTitle', 'roadRailwaySub');
   spawnRoadSignpost(3.4, 15.2, 0.0, 'roadTownTitle', 'roadTownSub');
 
   function refreshRegionSigns() {
@@ -1893,10 +2558,22 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     structureWallColliders,
     goldPickups,
     goldHitMeshes,
+    mineBarricades,
+    barricadeHitMeshes,
+    mineMapPickup,
+    hellfirePickup,
+    trainAnchor,
+    mountTrainAsset,
+    trainGatlingHitMeshes,
+    trainGatlingBeacon,
+    gatlingHalo,
     chapelAltarHitMeshes,
     bloodChaliceOrb,
     mineGroup,
     chapelGroup,
+    catacombGroup,
+    windUniforms,
+    updateGodRays,
     refreshRegionSigns,
     createWesternSign, createDetailedBarrel, createWagonWheel,
     createFramedWindow, addWeatheredFacadePlanks, createWoodenFence,
