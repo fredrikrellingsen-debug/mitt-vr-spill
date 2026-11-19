@@ -39,6 +39,9 @@ from build_deer import build_deer_glb  # noqa: E402
 from build_wolf import build_wolf_glb  # noqa: E402
 from build_bear import build_bear_glb  # noqa: E402
 from build_boss_vampire import build_boss_vampire_glb  # noqa: E402
+from build_horse import build_horse as build_horse_glb  # noqa: E402
+from build_train import build_train as build_train_glb  # noqa: E402
+from build_hellfire import build_hellfire as build_hellfire_glb  # noqa: E402
 
 
 ASSET_JOBS = [
@@ -47,9 +50,11 @@ ASSET_JOBS = [
     ("rifle.glb", build_rifle_glb),
     ("crossbow.glb", build_crossbow_glb),
     ("dynamite.glb", build_dynamite_glb),
+    ("hellfire.glb", build_hellfire_glb),
     ("saloon.glb", build_saloon_glb),
     ("tailor.glb", build_tailor_glb),
     ("gunsmith.glb", build_gunsmith_glb),
+    ("train.glb", build_train_glb),
     ("bandit.glb", build_bandit_glb),
     ("tailor_npc.glb", build_tailor_npc_glb),
     ("gunsmith_npc.glb", build_gunsmith_npc_glb),
@@ -57,6 +62,7 @@ ASSET_JOBS = [
     ("deer.glb", build_deer_glb),
     ("wolf.glb", build_wolf_glb),
     ("bear.glb", build_bear_glb),
+    ("horse.glb", build_horse_glb),
     ("boss_vampire.glb", build_boss_vampire_glb),
 ]
 
