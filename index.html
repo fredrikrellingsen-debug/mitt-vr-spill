@@ -3288,10 +3288,10 @@
     let combatHitFound = false;
     let combatHitBestDistance = Infinity;
 
-    const daySkyColor = new THREE.Color(0xd99b66);
+    const daySkyColor = new THREE.Color(0xcfa884);
     const nightSkyColor = new THREE.Color(0x060b16);
-    const fallbackBgColor = new THREE.Color(0xd99b66);
-    const dayFogColor = new THREE.Color(0xdf9e62);
+    const fallbackBgColor = new THREE.Color(0xcfa884);
+    const dayFogColor = new THREE.Color(0xcfb193);
     const nightFogColor = new THREE.Color(0x060b16);
     const dayHemiSkyColor = new THREE.Color(0xffd8ad);
     const nightHemiSkyColor = new THREE.Color(0x3b5284);
@@ -3404,7 +3404,7 @@
         if (currentBloodMoonBlend > 0.01) {
           rimUniforms.uRimColor.value.lerp(bloodRimColor, currentBloodMoonBlend * 0.72);
         }
-        rimUniforms.uRimStrength.value = THREE.MathUtils.lerp(0.32, 0.54, night);
+        rimUniforms.uRimStrength.value = THREE.MathUtils.lerp(0.11, 0.36, night);
       }
 
       moonMesh.material.opacity = night;
