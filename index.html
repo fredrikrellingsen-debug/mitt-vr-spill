@@ -372,7 +372,16 @@
     {
       "imports": {
         "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
-        "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/"
+        "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/",
+        "./js/i18n.js": "./js/i18n.js?v=20261119p2",
+        "./js/textures.js": "./js/textures.js?v=20261119p2",
+        "./js/glb-utils.js": "./js/glb-utils.js?v=20261119p2",
+        "./js/creatures.js": "./js/creatures.js?v=20261119p2",
+        "./js/world.js": "./js/world.js?v=20261119p2",
+        "./js/buildings.js": "./js/buildings.js?v=20261119p2",
+        "./js/audio.js": "./js/audio.js?v=20261119p2",
+        "./js/revolver-fx.js": "./js/revolver-fx.js?v=20261119p2",
+        "./js/entities.js": "./js/entities.js?v=20261119p2"
       }
     }
   </script>
@@ -5480,7 +5489,7 @@
       if (isNight && playerHiddenStatus && !storyState.act3NightSurvived) {
         storyState.act3SafeHouseTimer += dt;
         if (storyState.act3SafeHouseTimer >= 4.0) {
-          storyState.act3NightSurvived = true;
+          storyState.act3SafeHouseTimer = true;
           checkStoryProgression();
           updateStatusUI();
         }
