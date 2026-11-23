@@ -94,6 +94,32 @@ export function getTerrainBaseHeight(x, z) {
     h = THREE.MathUtils.lerp(0.55, h, smoothChap);
   }
 
+  // 4 Nye Hjørnebiomer for 48-timers Grenselandsutvidelse:
+  // (A) NV Silverpine Peak høyfjellsplatå (x = -142, z = -138, h = 2.85)
+  const dSilverpine = Math.hypot(x + 142.0, z + 138.0);
+  if (dSilverpine < 28.0) {
+    const fp = Math.max(0, Math.min(1, (dSilverpine - 13.5) / 14.5));
+    h = THREE.MathUtils.lerp(2.85, h, fp * fp * (3 - 2 * fp));
+  }
+  // (B) NØ Fort Rattlesnake i Sunscorch Badlands (x = 140, z = -132, h = 1.45)
+  const dFort = Math.max(Math.abs(x - 140.0), Math.abs(z + 132.0));
+  if (dFort < 24.0) {
+    const ff = Math.max(0, Math.min(1, (dFort - 13.0) / 11.0));
+    h = THREE.MathUtils.lerp(1.45, h, ff * ff * (3 - 2 * ff));
+  }
+  // (C) SØ Brimstone Ghost Town i Devil's Basin (x = 140, z = 136, h = 0.55)
+  const dBrim = Math.max(Math.abs(x - 140.0), Math.abs(z - 136.0));
+  if (dBrim < 25.0) {
+    const fb = Math.max(0, Math.min(1, (dBrim - 14.0) / 11.0));
+    h = THREE.MathUtils.lerp(0.55, h, fb * fb * (3 - 2 * fb));
+  }
+  // (D) SV Ancient Stone Circle på Thunder Plains (x = -140, z = 136, h = 1.15)
+  const dStoneCircle = Math.hypot(x + 140.0, z - 136.0);
+  if (dStoneCircle < 25.0) {
+    const fs = Math.max(0, Math.min(1, (dStoneCircle - 14.0) / 11.0));
+    h = THREE.MathUtils.lerp(1.15, h, fs * fs * (3 - 2 * fs));
+  }
+
   return h;
 }
 
@@ -2127,7 +2153,7 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
   scrollMesh.userData.mineMapPickup = mineMapPickup;
   mapPedestal.userData.mineMapPickup = mineMapPickup;
 
-  // 6 Glitrende gullklumper / skattekister i og ved gruven som gir Gull (Gold)
+  // 12 Glitrende gullklumper / skattekister i gruven og i de 4 nye hjørnebiomene som gir Gull (Gold)
   const goldPickups = [];
   const goldHitMeshes = [];
   [
@@ -2136,7 +2162,13 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     { x: 122.2, z: -2.4, amount: 12, isChest: false },
     { x: 114.5, z: 2.2, amount: 15, isChest: true },
     { x: 91.5, z: -2.8, amount: 12, isChest: false },
-    { x: 83.8, z: 6.4, amount: 15, isChest: true }
+    { x: 83.8, z: 6.4, amount: 15, isChest: true },
+    { x: -142.0, z: -133.5, amount: 25, isChest: true },
+    { x: 145.5, z: -136.5, amount: 28, isChest: true },
+    { x: 134.0, z: -127.0, amount: 22, isChest: false },
+    { x: 144.8, z: 136.2, amount: 26, isChest: true },
+    { x: -145.0, z: 131.5, amount: 24, isChest: true },
+    { x: -58.0, z: -118.0, amount: 18, isChest: false }
   ].forEach((gpSpec) => {
     const gHolder = new THREE.Group();
     const gy = getTerrainBaseHeight(gpSpec.x, gpSpec.z);
@@ -2797,16 +2829,468 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
   spawnRoadSignpost(-21.5, -4.6, Math.PI / 2, 'roadGraveyardTitle', 'roadGraveyardSub');
   spawnRoadSignpost(-3.4, 21.5, Math.PI, 'roadRailwayTitle', 'roadRailwaySub');
   spawnRoadSignpost(3.4, 15.2, 0.0, 'roadTownTitle', 'roadTownSub');
+  spawnRoadSignpost(-16.5, -21.5, 0.55, 'roadSilverpineTitle', 'roadSilverpineSub');
+  spawnRoadSignpost(16.5, -21.5, -0.55, 'roadFortTitle', 'roadFortSub');
+  spawnRoadSignpost(16.5, 21.5, -2.55, 'roadBrimstoneTitle', 'roadBrimstoneSub');
+  spawnRoadSignpost(-16.5, 21.5, 2.55, 'roadStoneCircleTitle', 'roadStoneCircleSub');
+
+  // =========================================================================
+  // 6e-2. FIRE NYE HJØRNEBIOMER & LANDEMERKER FOR 48-TIMERS GRENSELANDSUTVIDELSE
+  // =========================================================================
+  // (1) NV Silverpine Peak & Trapper's Stone Watchtower Ruin (x = -142, z = -138)
+  const silverpineGroup = new THREE.Group();
+  const spCenterY = getTerrainBaseHeight(-142.0, -138.0);
+  silverpineGroup.position.set(-142.0, spCenterY, -138.0);
+  scene.add(silverpineGroup);
+
+  const spPlinth = new THREE.Mesh(new THREE.CylinderGeometry(5.8, 6.4, 0.34, 12), stonePlinthMat);
+  spPlinth.position.y = 0.17;
+  spPlinth.receiveShadow = true;
+  silverpineGroup.add(spPlinth);
+
+  // Åtte gamle vakttårn-søyler rundt ruin-platået (bred åpen inngang mot sørøst)
+  for (let i = 0; i < 8; i++) {
+    const ang = (i / 8) * Math.PI * 2;
+    if (Math.cos(ang - Math.PI * 0.25) > 0.65) continue;
+    const colH = 3.2 + (i % 3) * 0.85;
+    const col = new THREE.Mesh(new THREE.BoxGeometry(0.95, colH, 0.95), darkGraveStoneMat || stonePlinthMat);
+    col.position.set(Math.cos(ang) * 4.8, colH * 0.5 + 0.2, Math.sin(ang) * 4.8);
+    col.rotation.y = -ang;
+    col.castShadow = true;
+    col.receiveShadow = true;
+    silverpineGroup.add(col);
+  }
+  const spSignMesh = createWesternSign(
+    dInit.signSilverpineTitle || 'SILVERPINE PEAK',
+    dInit.signSilverpineSub || 'MOONSTONE GROVE',
+    3.8,
+    0.96
+  );
+  spSignMesh.position.set(3.8, 3.6, 3.8);
+  spSignMesh.rotation.y = Math.PI * 0.25;
+  silverpineGroup.add(spSignMesh);
+
+  silverpineGroup.updateMatrixWorld(true);
+  silverpineGroup.children.forEach((ch) => {
+    if (ch.isMesh && ch !== spPlinth && !ch.userData.updateSign) {
+      pushMeasuredWorldBoxCollider(ch, 4.5, 0.04, 2.5);
+    }
+  });
+
+  // 3 Lysende Månestein-totemer (Moonstone Totems) rundt Silverpine Peak
+  const moonstoneTotems = [];
+  const moonstoneHitMeshes = [];
+  const moonstoneMat = new THREE.MeshStandardMaterial({
+    color: 0x9adfff,
+    emissive: 0x2f9bff,
+    emissiveIntensity: 1.85,
+    metalness: 0.45,
+    roughness: 0.18
+  });
+  [
+    { x: -131.5, z: -126.5 },
+    { x: -153.5, z: -136.0 },
+    { x: -140.5, z: -151.5 }
+  ].forEach((pt, idx) => {
+    const tGrp = new THREE.Group();
+    const gy = getTerrainBaseHeight(pt.x, pt.z);
+    tGrp.position.set(pt.x, gy, pt.z);
+    const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.54, 0.72, 8), stonePlinthMat);
+    ped.position.y = 0.36;
+    tGrp.add(ped);
+    const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.32, 0), moonstoneMat);
+    crystal.position.y = 1.16;
+    crystal.scale.set(0.85, 1.55, 0.85);
+    tGrp.add(crystal);
+    const halo = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: sharedSparkGlowTex || sharedParticleGlowTex,
+        color: 0x86dcff,
+        transparent: true,
+        opacity: 0.85,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      })
+    );
+    halo.scale.set(1.8, 1.8, 1);
+    halo.position.y = 1.22;
+    tGrp.add(halo);
+    scene.add(tGrp);
+    const entry = {
+      id: `moonstone_${idx}`,
+      kind: 'moonstone',
+      group: tGrp,
+      hitMesh: crystal,
+      halo,
+      worldPos: new THREE.Vector3(pt.x, gy + 1.1, pt.z),
+      collected: false,
+      respawnTimer: 0
+    };
+    crystal.userData.frontierObjective = entry;
+    ped.userData.frontierObjective = entry;
+    moonstoneTotems.push(entry);
+    moonstoneHitMeshes.push(crystal);
+  });
+
+  // (2) NØ Fort Rattlesnake i Sunscorch Badlands (x = 140, z = -132)
+  const fortGroup = new THREE.Group();
+  const fortBaseY = getTerrainBaseHeight(140.0, -132.0);
+  fortGroup.position.set(140.0, fortBaseY, -132.0);
+  scene.add(fortGroup);
+
+  // Tømmerpalisader rundt en 19m × 17m borggård med 4,8m bred åpen sørport mot Dustwood!
+  const fortWallN = new THREE.Mesh(new THREE.BoxGeometry(19.2, 3.4, 0.55), logTimberMat);
+  fortWallN.position.set(0, 1.7, -8.5);
+  fortWallN.castShadow = true;
+  fortGroup.add(fortWallN);
+
+  const fortWallW = new THREE.Mesh(new THREE.BoxGeometry(0.55, 3.4, 17.2), logTimberMat);
+  fortWallW.position.set(-9.4, 1.7, 0);
+  fortWallW.castShadow = true;
+  fortGroup.add(fortWallW);
+
+  const fortWallE = new THREE.Mesh(new THREE.BoxGeometry(0.55, 3.4, 17.2), logTimberMat);
+  fortWallE.position.set(9.4, 1.7, 0);
+  fortWallE.castShadow = true;
+  fortGroup.add(fortWallE);
+
+  const fortWallSW = new THREE.Mesh(new THREE.BoxGeometry(7.0, 3.4, 0.55), logTimberMat);
+  fortWallSW.position.set(-6.0, 1.7, 8.5);
+  fortWallSW.castShadow = true;
+  fortGroup.add(fortWallSW);
+
+  const fortWallSE = new THREE.Mesh(new THREE.BoxGeometry(7.0, 3.4, 0.55), logTimberMat);
+  fortWallSE.position.set(6.0, 1.7, 8.5);
+  fortWallSE.castShadow = true;
+  fortGroup.add(fortWallSE);
+
+  const fortGateArch = new THREE.Mesh(new THREE.BoxGeometry(5.6, 0.48, 0.65), darkWoodMat);
+  fortGateArch.position.set(0, 3.55, 8.5);
+  fortGroup.add(fortGateArch);
+
+  // To hjørnevakttårn på palisaden
+  [-9.1, 9.1].forEach((tx) => {
+    const tower = new THREE.Mesh(new THREE.BoxGeometry(2.6, 5.2, 2.6), woodWallMat);
+    tower.position.set(tx, 2.6, 8.2);
+    tower.castShadow = true;
+    fortGroup.add(tower);
+    const tRoof = new THREE.Mesh(new THREE.ConeGeometry(2.15, 1.35, 4), M.roofMat || darkWoodMat);
+    tRoof.position.set(tx, 5.85, 8.2);
+    tRoof.rotation.y = Math.PI * 0.25;
+    fortGroup.add(tRoof);
+  });
+
+  const fortFire = createCampfire();
+  fortFire.position.set(0, 0, -1.2);
+  fortGroup.add(fortFire);
+  if (fortFire.userData.virtualLight) worldVirtualLights.push(fortFire.userData.virtualLight);
+
+  const fortSignMesh = createWesternSign(
+    dInit.signFortTitle || 'FORT RATTLESNAKE',
+    dInit.signFortSub || 'OUTLAW STRONGHOLD',
+    4.1,
+    1.02
+  );
+  fortSignMesh.position.set(0, 4.35, 8.88);
+  fortGroup.add(fortSignMesh);
+
+  fortGroup.updateMatrixWorld(true);
+  [fortWallN, fortWallW, fortWallE, fortWallSW, fortWallSE].forEach((fw) => {
+    pushMeasuredWorldBoxCollider(fw, 4.2, 0.04, 1.0);
+  });
+
+  // 3 Stjålne Pengekasser (Treasury Strongboxes) i Fort Rattlesnake
+  const fortStrongboxes = [];
+  const fortStrongboxHitMeshes = [];
+  const strongboxMat = new THREE.MeshStandardMaterial({
+    color: 0x32404d,
+    metalness: 0.78,
+    roughness: 0.34
+  });
+  [
+    { x: 133.8, z: -137.2 },
+    { x: 146.2, z: -136.8 },
+    { x: 140.0, z: -126.5 }
+  ].forEach((pt, idx) => {
+    const sbGrp = new THREE.Group();
+    const gy = getTerrainBaseHeight(pt.x, pt.z);
+    sbGrp.position.set(pt.x, gy, pt.z);
+    const chest = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.58, 0.62), strongboxMat);
+    chest.position.y = 0.29;
+    chest.castShadow = true;
+    sbGrp.add(chest);
+    const trim = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.14, 0.66), polishedBrassMat);
+    trim.position.y = 0.52;
+    sbGrp.add(trim);
+    const halo = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: sharedSparkGlowTex || sharedParticleGlowTex,
+        color: 0xffd24c,
+        transparent: true,
+        opacity: 0.82,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      })
+    );
+    halo.scale.set(1.55, 1.55, 1);
+    halo.position.y = 0.82;
+    sbGrp.add(halo);
+    scene.add(sbGrp);
+    const entry = {
+      id: `strongbox_${idx}`,
+      kind: 'strongbox',
+      group: sbGrp,
+      hitMesh: chest,
+      halo,
+      worldPos: new THREE.Vector3(pt.x, gy + 0.5, pt.z),
+      collected: false,
+      respawnTimer: 0
+    };
+    chest.userData.frontierObjective = entry;
+    trim.userData.frontierObjective = entry;
+    fortStrongboxes.push(entry);
+    fortStrongboxHitMeshes.push(chest);
+  });
+
+  // (3) SØ Brimstone Ghost Town i Devil's Basin (x = 140, z = 136)
+  const brimstoneGroup = new THREE.Group();
+  const brimBaseY = getTerrainBaseHeight(140.0, 136.0);
+  brimstoneGroup.position.set(140.0, brimBaseY, 136.0);
+  scene.add(brimstoneGroup);
+
+  // To forfalne spøkelsesby-fasader på hver side av en åpen gate (z_local = -6.8 og +6.8)
+  const brimWallN1 = new THREE.Mesh(new THREE.BoxGeometry(10.5, 4.2, 0.48), darkWoodMat);
+  brimWallN1.position.set(-4.5, 2.1, -6.8);
+  brimWallN1.castShadow = true;
+  brimstoneGroup.add(brimWallN1);
+
+  const brimWallN2 = new THREE.Mesh(new THREE.BoxGeometry(8.5, 3.5, 0.48), weatheredPlankMatA);
+  brimWallN2.position.set(6.5, 1.75, -6.8);
+  brimWallN2.castShadow = true;
+  brimstoneGroup.add(brimWallN2);
+
+  const brimWallS1 = new THREE.Mesh(new THREE.BoxGeometry(11.0, 3.8, 0.48), woodWallMat);
+  brimWallS1.position.set(4.0, 1.9, 6.8);
+  brimWallS1.castShadow = true;
+  brimstoneGroup.add(brimWallS1);
+
+  const brimGallowsPost = new THREE.Mesh(new THREE.BoxGeometry(0.28, 3.8, 0.28), darkWoodMat);
+  brimGallowsPost.position.set(-7.5, 1.9, 5.2);
+  brimstoneGroup.add(brimGallowsPost);
+  const brimGallowsArm = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.24, 0.24), darkWoodMat);
+  brimGallowsArm.position.set(-6.6, 3.68, 5.2);
+  brimstoneGroup.add(brimGallowsArm);
+
+  const brimSignMesh = createWesternSign(
+    dInit.signBrimstoneTitle || 'BRIMSTONE',
+    dInit.signBrimstoneSub || 'CURSED GHOST TOWN',
+    3.9,
+    0.98
+  );
+  brimSignMesh.position.set(-4.5, 4.65, -6.48);
+  brimstoneGroup.add(brimSignMesh);
+
+  brimstoneGroup.updateMatrixWorld(true);
+  [brimWallN1, brimWallN2, brimWallS1].forEach((bw) => {
+    pushMeasuredWorldBoxCollider(bw, 4.4, 0.04, 0.2);
+  });
+
+  // 3 Forbannede Svovel-totemer (Cursed Brimstone Totems — skytes i stykker!)
+  const brimstoneTotems = [];
+  const brimstoneTotemHitMeshes = [];
+  const brimCoreMat = new THREE.MeshStandardMaterial({
+    color: 0xff5a1f,
+    emissive: 0xff3b08,
+    emissiveIntensity: 2.1,
+    roughness: 0.3
+  });
+  [
+    { x: 131.5, z: 133.0 },
+    { x: 148.5, z: 134.5 },
+    { x: 139.5, z: 145.5 }
+  ].forEach((pt, idx) => {
+    const btGrp = new THREE.Group();
+    const gy = getTerrainBaseHeight(pt.x, pt.z);
+    btGrp.position.set(pt.x, gy, pt.z);
+    const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.44, 1.65, 7), darkGraveStoneMat || stonePlinthMat);
+    pillar.position.y = 0.82;
+    pillar.castShadow = true;
+    btGrp.add(pillar);
+    const emberOrb = new THREE.Mesh(new THREE.DodecahedronGeometry(0.32, 0), brimCoreMat);
+    emberOrb.position.y = 1.88;
+    btGrp.add(emberOrb);
+    const halo = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: sharedSparkGlowTex || sharedParticleGlowTex,
+        color: 0xff6424,
+        transparent: true,
+        opacity: 0.88,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      })
+    );
+    halo.scale.set(1.9, 1.9, 1);
+    halo.position.y = 1.92;
+    btGrp.add(halo);
+    scene.add(btGrp);
+    const entry = {
+      id: `brimtotem_${idx}`,
+      kind: 'brimstone_totem',
+      group: btGrp,
+      hitMesh: emberOrb,
+      pillarMesh: pillar,
+      halo,
+      worldPos: new THREE.Vector3(pt.x, gy + 1.5, pt.z),
+      hp: 3,
+      maxHp: 3,
+      destroyed: false,
+      respawnTimer: 0
+    };
+    emberOrb.userData.brimstoneTotem = entry;
+    pillar.userData.brimstoneTotem = entry;
+    brimstoneTotems.push(entry);
+    brimstoneTotemHitMeshes.push(emberOrb, pillar);
+  });
+
+  // (4) SV Ancient Stone Circle på Thunder Plains (x = -140, z = 136)
+  const stoneCircleGroup = new THREE.Group();
+  const scBaseY = getTerrainBaseHeight(-140.0, 136.0);
+  stoneCircleGroup.position.set(-140.0, scBaseY, 136.0);
+  scene.add(stoneCircleGroup);
+
+  const monolithPillars = [];
+  for (let i = 0; i < 8; i++) {
+    const ang = (i / 8) * Math.PI * 2;
+    const mx = Math.cos(ang) * 11.2;
+    const mz = Math.sin(ang) * 11.2;
+    const mStone = new THREE.Mesh(new THREE.BoxGeometry(1.35, 4.5, 0.92), mesaCapMat || stonePlinthMat);
+    mStone.position.set(mx, 2.25, mz);
+    mStone.rotation.y = -ang + Math.PI * 0.5;
+    mStone.castShadow = true;
+    mStone.receiveShadow = true;
+    stoneCircleGroup.add(mStone);
+    monolithPillars.push(mStone);
+  }
+  const scSignMesh = createWesternSign(
+    dInit.signStoneCircleTitle || 'ANCIENT STONE CIRCLE',
+    dInit.signStoneCircleSub || 'THUNDER PLAINS ALTAR',
+    4.1,
+    1.02
+  );
+  scSignMesh.position.set(8.2, 3.85, -8.2);
+  scSignMesh.rotation.y = Math.PI * 0.75;
+  stoneCircleGroup.add(scSignMesh);
+
+  // Sentral Ur-Obelisk i Steinringen (vekker Ur-Wendigoen eller starter ny Prestisje-kamp!)
+  const wendigoAltarHitMeshes = [];
+  const wendigoPedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.25, 1.15, 8), darkGraveStoneMat || stonePlinthMat);
+  wendigoPedestal.position.set(0, 0.58, 0);
+  wendigoPedestal.castShadow = true;
+  stoneCircleGroup.add(wendigoPedestal);
+  wendigoAltarHitMeshes.push(wendigoPedestal);
+
+  const wendigoObeliskOrb = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.36, 1),
+    new THREE.MeshStandardMaterial({
+      color: 0x58ffb8,
+      emissive: 0x16d488,
+      emissiveIntensity: 2.2,
+      metalness: 0.4,
+      roughness: 0.16
+    })
+  );
+  wendigoObeliskOrb.position.set(0, 1.62, 0);
+  stoneCircleGroup.add(wendigoObeliskOrb);
+  wendigoAltarHitMeshes.push(wendigoObeliskOrb);
+
+  const wendigoHalo = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map: sharedSparkGlowTex || sharedParticleGlowTex,
+      color: 0x58ffb8,
+      transparent: true,
+      opacity: 0.88,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    })
+  );
+  wendigoHalo.scale.set(2.1, 2.1, 1);
+  wendigoHalo.position.set(0, 1.62, 0);
+  stoneCircleGroup.add(wendigoHalo);
+  const wendigoAltarWorldPos = new THREE.Vector3(-140.0, scBaseY + 1.55, 136.0);
+
+  stoneCircleGroup.updateMatrixWorld(true);
+  monolithPillars.forEach((mp) => pushMeasuredWorldBoxCollider(mp, 4.8, 0.04, 0.8));
+  pushMeasuredWorldBoxCollider(wendigoPedestal, 1.6, 0.04, 0.8);
+
+  // 3 Eldgamle Solruner (Ancient Sun Runes) rundt Thunder Plains
+  const ancientRunes = [];
+  const ancientRuneHitMeshes = [];
+  const sunRuneMat = new THREE.MeshStandardMaterial({
+    color: 0xffe478,
+    emissive: 0xd99b16,
+    emissiveIntensity: 1.9,
+    metalness: 0.65,
+    roughness: 0.22
+  });
+  [
+    { x: -126.0, z: 128.0 },
+    { x: -154.0, z: 134.0 },
+    { x: -138.0, z: 151.5 }
+  ].forEach((pt, idx) => {
+    const rGrp = new THREE.Group();
+    const gy = getTerrainBaseHeight(pt.x, pt.z);
+    rGrp.position.set(pt.x, gy, pt.z);
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.40, 0.52, 0.68, 8), stonePlinthMat);
+    base.position.y = 0.34;
+    rGrp.add(base);
+    const rune = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.075, 8, 18), sunRuneMat);
+    rune.position.y = 1.12;
+    rGrp.add(rune);
+    const halo = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: sharedSparkGlowTex || sharedParticleGlowTex,
+        color: 0xffe26a,
+        transparent: true,
+        opacity: 0.86,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      })
+    );
+    halo.scale.set(1.75, 1.75, 1);
+    halo.position.y = 1.12;
+    rGrp.add(halo);
+    scene.add(rGrp);
+    const entry = {
+      id: `sunrune_${idx}`,
+      kind: 'sun_rune',
+      group: rGrp,
+      hitMesh: rune,
+      halo,
+      worldPos: new THREE.Vector3(pt.x, gy + 1.05, pt.z),
+      collected: false,
+      respawnTimer: 0
+    };
+    rune.userData.frontierObjective = entry;
+    base.userData.frontierObjective = entry;
+    ancientRunes.push(entry);
+    ancientRuneHitMeshes.push(rune);
+  });
 
   function refreshRegionSigns() {
     if (!L) return;
     const d = L();
     mineSignMesh.userData.updateSign(d.signMineTitle, d.signMineSub);
     chapelSignMesh.userData.updateSign(d.signChapelTitle, d.signChapelSub);
+    if (spSignMesh && d.signSilverpineTitle) spSignMesh.userData.updateSign(d.signSilverpineTitle, d.signSilverpineSub);
+    if (fortSignMesh && d.signFortTitle) fortSignMesh.userData.updateSign(d.signFortTitle, d.signFortSub);
+    if (brimSignMesh && d.signBrimstoneTitle) brimSignMesh.userData.updateSign(d.signBrimstoneTitle, d.signBrimstoneSub);
+    if (scSignMesh && d.signStoneCircleTitle) scSignMesh.userData.updateSign(d.signStoneCircleTitle, d.signStoneCircleSub);
     for (let i = 0; i < roadSignEntries.length; i++) {
       const rs = roadSignEntries[i];
-      rs.signA.userData.updateSign(d[rs.titleKey], d[rs.subKey]);
-      rs.signB.userData.updateSign(d[rs.titleKey], d[rs.subKey]);
+      if (d[rs.titleKey]) {
+        rs.signA.userData.updateSign(d[rs.titleKey], d[rs.subKey] || '');
+        rs.signB.userData.updateSign(d[rs.titleKey], d[rs.subKey] || '');
+      }
     }
   }
 
@@ -2888,9 +3372,13 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     const creekZ = -78.0 + Math.sin(x * 0.065) * 3.6;
     if (Math.abs(z - creekZ) < 2.25) return false;
     if (Math.abs(x) < 4.6 && z > -85.5 && z < -70.5) return false;
-    // Hold kapellgulvet på Boot Hill og gruveåpningen i Crimson Canyon fri
+    // Hold kapellgulvet på Boot Hill, gruveåpningen og de 4 nye hjørnelandemerkene fri for busker/trær
     if (x > -128 && x < -112 && Math.abs(z + 1.5) < 8.5) return false;
     if (x > 113 && x < 138 && Math.abs(z + 1.5) < 9.5) return false;
+    if (Math.hypot(x + 142, z + 138) < 11.5) return false;
+    if (Math.abs(x - 140) < 13.5 && Math.abs(z + 132) < 12.5) return false;
+    if (Math.abs(x - 140) < 14.5 && Math.abs(z - 136) < 11.5) return false;
+    if (Math.hypot(x + 140, z - 136) < 14.5) return false;
     return true;
   }
 
@@ -2988,6 +3476,22 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
           });
         }
 
+        // Legg til høyreiste furutrær rundt NV Silverpine Peak uten ekstra draw calls (samme InstancedMesh!)
+        for (let spIdx = 0; spIdx < 28; spIdx++) {
+          const ang = (spIdx / 28) * Math.PI * 2 + extraWoodsRng() * 0.22;
+          const rad = 14.5 + extraWoodsRng() * 34.0;
+          const sx = -142.0 + Math.cos(ang) * rad;
+          const sz = -138.0 + Math.sin(ang) * rad;
+          if (sx < -202 || sz < -202 || !isClearForFlora(sx, sz)) continue;
+          allTreePlacements.push({
+            x: sx,
+            z: sz,
+            s: 1.22 + extraWoodsRng() * 0.52,
+            rotY: extraWoodsRng() * Math.PI * 2,
+            tplIdx: 0
+          });
+        }
+
         for (let t = 0; t < liveTemplates.length; t++) {
           const bucket = allTreePlacements.filter((p) => p.tplIdx === t);
           if (bucket.length === 0) continue;
@@ -3032,7 +3536,9 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
       if (deadParts) {
         const canyonSnags = [
           [48, -15, 1.05], [64, 14, 1.18], [82, -17, 1.12], [98, 16, 1.24],
-          [112, -16, 1.15], [-46, 14, 0.96], [-58, -15, 1.08], [38, 28, 1.02]
+          [112, -16, 1.15], [-46, 14, 0.96], [-58, -15, 1.08], [38, 28, 1.02],
+          [122, 122, 1.14], [156, 124, 1.20], [124, 152, 1.08], [158, 150, 1.18],
+          [122, -118, 1.06], [158, -148, 1.16]
         ];
         const snagPlacements = [
           ...bootHillDeadTreeCoords.map(([dx, dz], idx) => ({
@@ -3590,6 +4096,10 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
   batchStaticMeshesInGroup(railwayGroup, {
     protectedObjects: new Set([trainAnchor, ...trainGatlingHitMeshes])
   });
+  batchStaticMeshesInGroup(silverpineGroup);
+  batchStaticMeshesInGroup(fortGroup, { protectedObjects: new Set([fortFire]) });
+  batchStaticMeshesInGroup(brimstoneGroup);
+  batchStaticMeshesInGroup(stoneCircleGroup, { protectedObjects: new Set([...wendigoAltarHitMeshes]) });
 
   return {
     sky, skySunVec, dayEnvRT, nightEnvRT,
@@ -3599,6 +4109,17 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     structureWallColliders,
     goldPickups,
     goldHitMeshes,
+    moonstoneTotems,
+    moonstoneHitMeshes,
+    fortStrongboxes,
+    fortStrongboxHitMeshes,
+    brimstoneTotems,
+    brimstoneTotemHitMeshes,
+    ancientRunes,
+    ancientRuneHitMeshes,
+    wendigoAltarHitMeshes,
+    wendigoObeliskOrb,
+    wendigoAltarWorldPos,
     mineBarricades,
     barricadeHitMeshes,
     mineMapPickup,
