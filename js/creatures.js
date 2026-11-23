@@ -1928,21 +1928,277 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     legs[3].rotation.x = s;
   }
 
+  // --- 48-Timers Utvidelse: Fargetone- og 3D-helsemåler-hjelpere + 10 nye dyre-, fiende- og boss-modeller ---
+  function tintCreatureMeshes(group, hexColor, lerpAmt = 0.72) {
+    const targetCol = new THREE.Color(hexColor);
+    const cloneMap = new Map();
+    group.traverse((node) => {
+      if (!node.isMesh || !node.material) return;
+      const mats = Array.isArray(node.material) ? node.material : [node.material];
+      let changed = false;
+      const updated = mats.map((mat) => {
+        if (!mat || !mat.color) return mat;
+        const mn = (mat.name || '').toLowerCase();
+        if (mn.includes('eye') || mn.includes('brass') || mn.includes('steel') || mn.includes('iron') || mat.metalness > 0.5) {
+          return mat;
+        }
+        let cMat = cloneMap.get(mat);
+        if (!cMat) {
+          cMat = mat.clone();
+          cMat.color.lerp(targetCol, lerpAmt);
+          if (applyCharacterRimLighting && !cMat.transparent && !(cMat.alphaTest > 0)) {
+            applyCharacterRimLighting(cMat);
+          }
+          cloneMap.set(mat, cMat);
+        }
+        changed = true;
+        return cMat;
+      });
+      if (changed) {
+        node.material = Array.isArray(node.material) ? updated : updated[0];
+      }
+    });
+  }
+
+  function attachOverheadBossBar(group, yOffset = 2.55, initMaxHp = 30, initTitle = 'BOSS', gradEnd = '#ff6838') {
+    const barCanvas = document.createElement('canvas');
+    barCanvas.width = 512;
+    barCanvas.height = 112;
+    const barCtx = barCanvas.getContext('2d');
+    const barTex = new THREE.CanvasTexture(barCanvas);
+    barTex.colorSpace = THREE.SRGBColorSpace;
+
+    const barMat = new THREE.SpriteMaterial({
+      map: barTex,
+      transparent: true,
+      depthTest: true,
+      depthWrite: false,
+      fog: false,
+      toneMapped: false
+    });
+    const barSprite = new THREE.Sprite(barMat);
+    barSprite.scale.set(2.55, 0.56, 1);
+    barSprite.position.set(0, yOffset, 0);
+    group.add(barSprite);
+
+    function updateBossHealthBar(hp, maxHp, titleLabel = initTitle) {
+      const ratio = Math.max(0, Math.min(1, hp / Math.max(1, maxHp)));
+      barCtx.clearRect(0, 0, 512, 112);
+
+      barCtx.fillStyle = 'rgba(22, 12, 10, 0.92)';
+      barCtx.strokeStyle = '#e5b354';
+      barCtx.lineWidth = 5;
+      barCtx.beginPath();
+      barCtx.roundRect(8, 8, 496, 96, 16);
+      barCtx.fill();
+      barCtx.stroke();
+
+      barCtx.font = 'bold 24px Georgia, serif';
+      barCtx.fillStyle = '#ffe6b3';
+      barCtx.textAlign = 'center';
+      barCtx.fillText(`${titleLabel} (${Math.max(0, Math.ceil(hp))}/${maxHp})`, 256, 40);
+
+      barCtx.fillStyle = '#2d1210';
+      barCtx.fillRect(32, 56, 448, 30);
+
+      const grad = barCtx.createLinearGradient(32, 0, 480, 0);
+      grad.addColorStop(0, '#9e1919');
+      grad.addColorStop(1, gradEnd);
+      barCtx.fillStyle = grad;
+      barCtx.fillRect(32, 56, Math.round(448 * ratio), 30);
+
+      barCtx.strokeStyle = 'rgba(255, 220, 150, 0.7)';
+      barCtx.lineWidth = 2;
+      barCtx.strokeRect(32, 56, 448, 30);
+      barTex.needsUpdate = true;
+    }
+
+    updateBossHealthBar(initMaxHp, initMaxHp, initTitle);
+    group.userData.updateBossHealthBar = updateBossHealthBar;
+    group.userData.healthBarSprite = barSprite;
+  }
+
+  // 1) Legendarisk Hvit Kronhjort (Silverpine Peak)
+  function createWhiteStagModel() {
+    const g = createDeerModel();
+    g.scale.setScalar(1.18);
+    tintCreatureMeshes(g, 0xf6f8ff, 0.88);
+    const crown = new THREE.Group();
+    crown.position.set(0, 1.82, -0.58);
+    [-1, 1].forEach((side) => {
+      const tine1 = new THREE.Mesh(new THREE.ConeGeometry(0.028, 0.42, 7), polishedBrassMat);
+      tine1.position.set(side * 0.16, 0.16, 0.04);
+      tine1.rotation.z = side * -0.48;
+      tine1.rotation.x = -0.18;
+      crown.add(tine1);
+      const tine2 = new THREE.Mesh(new THREE.ConeGeometry(0.022, 0.30, 6), polishedBrassMat);
+      tine2.position.set(side * 0.25, 0.24, -0.05);
+      tine2.rotation.z = side * -0.28;
+      crown.add(tine2);
+    });
+    g.add(crown);
+    return g;
+  }
+
+  // 2) Fjellpuma / Mountain Cougar (rask gyllenbrun rovdyrkatt)
+  function createCougarModel() {
+    const g = createWolfModel();
+    g.scale.set(1.06, 1.04, 1.12);
+    tintCreatureMeshes(g, 0xdca05c, 0.78);
+    return g;
+  }
+
+  // 3) Alfa-ulv / Alpha Direwolf (diger sølvsvart flokkleder)
+  function createAlphaDirewolfModel() {
+    const g = createWolfModel();
+    g.scale.setScalar(1.28);
+    tintCreatureMeshes(g, 0x3b4252, 0.75);
+    return g;
+  }
+
+  // 4) Præriebison / Plains Bison (tungt hornet bøffeldyr på Thunder Plains)
+  const bisonHornMat = new THREE.MeshStandardMaterial({ color: 0xe6dcc8, roughness: 0.52, metalness: 0.05 });
+  function createBisonModel() {
+    const g = createBearModel();
+    g.scale.set(1.14, 1.12, 1.18);
+    tintCreatureMeshes(g, 0x3a2212, 0.82);
+    const hornRig = new THREE.Group();
+    hornRig.position.set(0, 1.16, -0.78);
+    [-1, 1].forEach((side) => {
+      const horn = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.36, 8), bisonHornMat);
+      horn.position.set(side * 0.28, 0.08, 0);
+      horn.rotation.z = side * -0.95;
+      horn.rotation.x = 0.28;
+      hornRig.add(horn);
+    });
+    g.add(hornRig);
+    return g;
+  }
+
+  // 5) Fort-desperado (Fort Rattlesnake eliteskytter)
+  function createFortDesperadoModel() {
+    const g = createBanditModel();
+    g.scale.setScalar(1.05);
+    tintCreatureMeshes(g, 0x36557c, 0.72);
+    return g;
+  }
+
+  // 6) Brimstone-plyndrer (Spøkelsesby-revolvermann)
+  function createBrimstoneRaiderModel() {
+    const g = createBanditModel();
+    g.scale.setScalar(1.08);
+    tintCreatureMeshes(g, 0x7c361e, 0.74);
+    return g;
+  }
+
+  // 7) General Cortez — Fort Warlord Boss (med 3D helsemåler!)
+  function createGeneralCortezModel() {
+    const g = createBanditCaptainModel();
+    g.scale.setScalar(1.26);
+    tintCreatureMeshes(g, 0x8f1d28, 0.76);
+    attachOverheadBossBar(g, 2.38, 26, 'GENERAL CORTEZ', '#ffaa28');
+    return g;
+  }
+
+  // 8) Brimstone-gjenganger (glødende lava-udød)
+  function createBrimstoneRevenantModel() {
+    const g = createNightEnemyModel();
+    g.scale.setScalar(1.12);
+    tintCreatureMeshes(g, 0xb84318, 0.74);
+    const emberCrown = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.12, 0),
+      new THREE.MeshStandardMaterial({ color: 0xff7b29, emissive: 0xff4508, emissiveIntensity: 2.2 })
+    );
+    emberCrown.position.set(0, 1.46, -0.16);
+    g.add(emberCrown);
+    return g;
+  }
+
+  // 9) The Brimstone Marshal — Ghost Town Boss (med 3D helsemåler!)
+  function createBrimstoneMarshalModel() {
+    const g = createBanditCaptainModel();
+    g.scale.setScalar(1.34);
+    tintCreatureMeshes(g, 0x3b1b14, 0.82);
+    const starCrest = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.14, 0),
+      new THREE.MeshStandardMaterial({ color: 0xff6a1a, emissive: 0xff3b00, emissiveIntensity: 2.4 })
+    );
+    starCrest.position.set(0, 1.40, -0.22);
+    g.add(starCrest);
+    attachOverheadBossBar(g, 2.46, 34, 'BRIMSTONE MARSHAL', '#ff5e1a');
+    return g;
+  }
+
+  // 10) Wendigo-skyggerovdyr (Thunder Plains & dyp skog)
+  function createWendigoStalkerModel() {
+    const g = createNightEnemyModel();
+    g.scale.setScalar(1.28);
+    tintCreatureMeshes(g, 0x3b8f74, 0.70);
+    [-1, 1].forEach((side) => {
+      const antler = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.44, 6), bisonHornMat);
+      antler.position.set(side * 0.14, 1.92, -0.06);
+      antler.rotation.z = side * -0.42;
+      g.add(antler);
+    });
+    return g;
+  }
+
+  // 11) The Ancient Wendigo — Ur-Boss i Steinringen (med 3D helsemåler!)
+  function createAncientWendigoBossModel() {
+    const bossGLTF = loadedAssets && loadedAssets.bossVampire;
+    let g;
+    if (bossGLTF && bossGLTF.scene) {
+      const inst = instantiateGLTFCreature(bossGLTF, 'ancientWendigo', 2.85, -1);
+      g = inst.group;
+      const arm0 = inst.model.getObjectByName('arm0');
+      const arm1 = inst.model.getObjectByName('arm1');
+      g.userData.arms = [arm0, arm1].filter(Boolean);
+    } else {
+      g = createNightEnemyModel();
+      g.scale.setScalar(1.65);
+    }
+    if (createContactShadow) g.add(createContactShadow(1.12, 1.12));
+    tintCreatureMeshes(g, 0x2fb886, 0.72);
+    [-1, 1].forEach((side) => {
+      const hornA = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.72, 7), bisonHornMat);
+      hornA.position.set(side * 0.22, 2.75, -0.08);
+      hornA.rotation.z = side * -0.46;
+      g.add(hornA);
+      const hornB = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.48, 6), bisonHornMat);
+      hornB.position.set(side * 0.36, 2.88, -0.14);
+      hornB.rotation.z = side * -0.22;
+      g.add(hornB);
+    });
+    attachOverheadBossBar(g, 3.12, 42, 'ANCIENT WENDIGO', '#2effa8');
+    return g;
+  }
+
   return {
     createSculptedCowboyHat,
     createTailorNPC,
     createGunsmithNPC,
     createSheriffVanceNPC,
     createDeerModel,
+    createWhiteStagModel,
     createWolfModel,
+    createCougarModel,
+    createAlphaDirewolfModel,
     createBearModel,
+    createBisonModel,
     createHorseModel,
     createBanditModel,
+    createFortDesperadoModel,
+    createBrimstoneRaiderModel,
     createBanditCaptainModel,
+    createGeneralCortezModel,
+    createBrimstoneMarshalModel,
     createForemanSladeModel,
     createNightEnemyModel,
+    createBrimstoneRevenantModel,
+    createWendigoStalkerModel,
     createCatacombGuardianModel,
     createBossVampireModel,
+    createAncientWendigoBossModel,
     createSilverRelicMesh,
     animateQuadrupedLegs
   };
