@@ -7,8 +7,8 @@ export const I18N = {
     saloonLangSign: 'LANGUAGE: [EN] / NO',
     saloonLangSub: 'Click or shoot to switch',
     pcHintHtml:
-      'PC: WASD / Arrows = move • Click game = FPS Mouse Look (Esc = unlock) • Click/Hold = shoot / interact • 1–6 / Wheel = weapon • C = call horse • R = mount • E = eat • F = door • N = day/night<br />' +
-      'Phone & Pad: Left stick = move • Swipe right side = smooth look • Hold FIRE + drag = aim & shoot • Meta Quest VR: Left stick = move • Right stick = turn • Trigger = shoot • Grip = eat / horse • Auto-Saved!',
+      'PC: WASD / Arrows = move • Click game = FPS Mouse Look (Esc = unlock) • Click/Hold = shoot / interact • J = next quest • 1–6 / Q / Wheel = weapon • C = call horse • R = mount • E = eat • F = door • N = day/night<br />' +
+      'Phone & Pad: Left stick = move • Swipe right side = smooth look • Hold FIRE + drag = aim & shoot • Tap Quest Banner = next quest • Meta Quest VR: Left stick = move • Right stick = turn • Trigger = shoot • Auto-Saved!',
     sensBtn: (pct) => `⚙ Sens: ${pct}%`,
     sensTitle: 'CONTROLS, GRAPHICS & SAVE',
     sensLookLabel: 'Look Sensitivity',
@@ -68,9 +68,14 @@ export const I18N = {
     wristLegendPrefix: 'HERO • ',
     eatBtn: 'EAT (+35 HP)',
     weaponCycleBtn: (wName) => `WEAPON: ${wName}`,
-    questPrefix: 'Bounty',
-    questNone: 'Bounty: Check Saloon Board',
-    questAllDone: 'Bounty: Escalating Contracts Open!',
+    questPrefix: 'Quest',
+    questNone: 'Quest: Tap banner / [J] or pick at Saloon Board',
+    questAllDone: 'Quest: New Frontier Contracts Ready!',
+    questHudIdleBtn: (seq, title) => `📜 Next Quest [J]: #${seq} ${title} (Click here or pick at Saloon Board)`,
+    questHudActiveBtn: (seq, title, prog, goal, rewardShort) =>
+      `🎯 ACTIVE #${seq}: ${title} (${prog}/${goal})  •  ${rewardShort}`,
+    questHudDoneBanner: (seq, title, rewardShort) =>
+      `✓ COMPLETED #${seq}: ${title}! (${rewardShort}) — Click here or [J] for next quest!`,
 
     // 20-Level Grand Campaign + Infinite Frontier Prestige Chapters (48h+ Marathon Progression)
     storyPrefix: 'Campaign',
@@ -330,49 +335,20 @@ export const I18N = {
     gunsmithMsgBoughtDynamite: (count) => `+3 Dynamite purchased! (Total: ${count})`,
     gunsmithMsgMasteryUp: (rank, pct) => `Weapon Mastery Lv.${rank} forged! (+${pct}% Damage!)`,
 
-    // Escalating Bounty Board (Infinite Tiers 1 -> 100+)
+    // Sequential Rotating Bounty & Quest Board (36 Hand-Crafted Quests + Infinite Contracts #37..#999+)
     questBoardTitle: "SHERIFF'S BOUNTY BOARD",
-    questBoardActiveSub: (title, prog, goal, gold) =>
-      `Active: ${title} (${prog}/${goal})  •  Gold: ${gold}`,
+    questBoardActiveSub: (seq, title, prog, goal, done, gold) =>
+      `Active: #${seq} ${title} (${prog}/${goal})  •  Done: ${done}  •  Gold: ${gold}`,
     questBoardIdleSub: (done, gold) =>
-      `Escalating Contracts • Total Cleared: ${done} • Gold: ${gold}`,
+      `Pick any quest below (or press J)  •  Completed: ${done}  •  Gold: ${gold}`,
     badgeOpen: 'OPEN',
     badgeActive: 'ACTIVE',
-    badgeDone: 'NEXT TIER',
-    quests: {
-      deer_hunt: {
-        title: 'Frontier Big-Game Hunt',
-        formatTask: (tier, goal) =>
-          `"Frontier Hunt ${tier > 1 ? `Tier ${tier}` : ''}" – Hunt ${goal} beasts (Deer, Cougars, Grizzlies, Bison)`,
-        formatReward: (gold, food, pelts, first) =>
-          first
-            ? `Reward: +${gold} Gold, +${food} Food, +${pelts} Pelts & Sheriff Star`
-            : `Reward: +${gold} Gold, +${food} Food & +${pelts} Pelts`
-      },
-      bandit_clear: {
-        title: 'Outlaw & Fort Warrant',
-        formatTask: (tier, goal) =>
-          `"Outlaw Warrant ${tier > 1 ? `Tier ${tier}` : ''}" – Defeat ${goal} outlaws (Canyon, Fort, Brimstone)`,
-        formatReward: (gold, _f, _p, first) =>
-          first
-            ? `Reward: +${gold} Gold & Golden Revolver (2x base damage)`
-            : `Reward: +${gold} Gold & +1 Dynamite`
-      },
-      night_guardian: {
-        title: 'Occult & Monster Purge',
-        formatTask: (tier, goal) =>
-          `"Occult Purge ${tier > 1 ? `Tier ${tier}` : ''}" – Slay ${goal} Vampires, Revenants, Wendigos or Bosses`,
-        formatReward: (gold) =>
-          `Reward: +${gold} Gold, +1 Pelt & Full Health Restore`
-      }
-    },
-    questMsgDoneAlready: 'Next Escalating Bounty Tier accepted!',
-    questMsgActiveNow: (title, prog, goal) => `Active bounty: ${title} (${prog}/${goal})`,
-    questMsgAccepted: (title) => `Bounty accepted: ${title}!`,
-    questMsgRewardGeneric: (gold, tier) => `Bounty Tier ${tier} Complete! +${gold} Gold earned!`,
-    questMsgRewardDeer: 'Completed! +25 Gold, +2 Food, +2 Pelts & Sheriff Star!',
-    questMsgRewardBandit: 'Completed! +30 Gold & Golden Revolver!',
-    questMsgRewardNight: 'Completed! +45 Gold & Full Health!',
+    badgeCompleted: '✓ COMPLETED!',
+    questCompletedSlotLine1: (seq, title) => `✓ #${seq} ${title} — COMPLETED!`,
+    questCompletedSlotLine2: (rewardSummary) => `Paid: ${rewardSummary}  •  Loading next quest...`,
+    questMsgActiveNow: (seq, title, prog, goal) => `Active quest: #${seq} ${title} (${prog}/${goal})`,
+    questMsgAccepted: (seq, title) => `Quest #${seq} accepted: ${title}!`,
+    questMsgCompletedToast: (seq, title, rewardSummary) => `✓ COMPLETED #${seq} ${title}! (${rewardSummary})`,
 
     // 4 World Lore / Wanted Posters
     posters: [
@@ -430,8 +406,8 @@ export const I18N = {
     saloonLangSign: 'SPRÅK: EN / [NO]',
     saloonLangSub: 'Klikk eller skyt for å bytte',
     pcHintHtml:
-      'PC: WASD / piltaster = gå • Klikk i spillet = FPS-mus (Esc = frigjør peker) • Klikk/hold = skyt / velg • 1–6 / hjul = våpen • C = rop på hest • R = ri • E = spis • F = dør • N = dag/natt<br />' +
-      'Telefon & Pad: Venstre spak = gå • Sveip høyre side = se rundt • Hold SKYT + dra = sikt & skyt • Meta Quest VR: Venstre spak = gå • Høyre spak = sving • Avtrekker = skyt • Autolagring aktiv!',
+      'PC: WASD / piltaster = gå • Klikk i spillet = FPS-mus (Esc = frigjør peker) • Klikk/hold = skyt / velg • J = neste oppdrag • 1–6 / Q / hjul = våpen • C = rop på hest • R = ri • E = spis • F = dør • N = dag/natt<br />' +
+      'Telefon & Pad: Venstre spak = gå • Sveip høyre side = se rundt • Hold SKYT + dra = sikt & skyt • Trykk Oppdrags-linjen = neste oppdrag • Meta Quest VR: Spaker + Avtrekker • Autolagring aktiv!',
     sensBtn: (pct) => `⚙ Følsomhet: ${pct}%`,
     sensTitle: 'KONTROLLER, GRAFIKK & LAGRING',
     sensLookLabel: 'Sikte-følsomhet',
@@ -491,9 +467,14 @@ export const I18N = {
     wristLegendPrefix: 'HELT • ',
     eatBtn: 'SPIS (+35 HP)',
     weaponCycleBtn: (wName) => `VÅPEN: ${wName}`,
-    questPrefix: 'Dusør',
-    questNone: 'Dusør: Sjekk Saloon-tavlen',
-    questAllDone: 'Dusør: Nye eskalerende oppdrag klare!',
+    questPrefix: 'Oppdrag',
+    questNone: 'Oppdrag: Trykk linjen / [J] eller velg på Saloon-tavlen',
+    questAllDone: 'Oppdrag: Nye oppdrag klare på Saloon-tavlen!',
+    questHudIdleBtn: (seq, title) => `📜 Neste oppdrag [J]: #${seq} ${title} (Klikk her eller på Saloon-tavlen)`,
+    questHudActiveBtn: (seq, title, prog, goal, rewardShort) =>
+      `🎯 AKTIVT #${seq}: ${title} (${prog}/${goal})  •  ${rewardShort}`,
+    questHudDoneBanner: (seq, title, rewardShort) =>
+      `✓ FULLFØRT #${seq}: ${title}! (${rewardShort}) — Klikk her eller [J] for neste oppdrag!`,
 
     // 20-stegs hovedkampanje + Evige Prestisje-kapitler (48+ timers progresjon)
     storyPrefix: 'Kampanje',
@@ -753,49 +734,20 @@ export const I18N = {
     gunsmithMsgBoughtDynamite: (count) => `+3 Dynamitt kjøpt! (Totalt: ${count})`,
     gunsmithMsgMasteryUp: (rank, pct) => `Våpenmestring Nivå ${rank} smidd! (+${pct}% skade!)`,
 
-    // Eskalerende Oppdragstavle (Nivå 1 -> 100+)
+    // Sekvensiell Roterende Oppdragstavle (36 håndlagde oppdrag + uendelige kontrakter #37..#999+)
     questBoardTitle: 'SHERIFFENS OPPDRAGSTAVLE',
-    questBoardActiveSub: (title, prog, goal, gold) =>
-      `Aktivt: ${title} (${prog}/${goal})  •  Gull: ${gold}`,
+    questBoardActiveSub: (seq, title, prog, goal, done, gold) =>
+      `Aktivt: #${seq} ${title} (${prog}/${goal})  •  Fullført: ${done}  •  Gull: ${gold}`,
     questBoardIdleSub: (done, gold) =>
-      `Eskalerende dusører • Fullført totalt: ${done} • Gull: ${gold}`,
+      `Velg et oppdrag under (eller trykk J)  •  Fullført: ${done}  •  Gull: ${gold}`,
     badgeOpen: 'LEDIG',
     badgeActive: 'AKTIVT',
-    badgeDone: 'NESTE NIVÅ',
-    quests: {
-      deer_hunt: {
-        title: 'Storviltjegeren',
-        formatTask: (tier, goal) =>
-          `«Storviltjakt ${tier > 1 ? `Nivå ${tier}` : ''}» – Felle ${goal} vilt (Hjort, Puma, Grizzly, Bison)`,
-        formatReward: (gold, food, pelts, first) =>
-          first
-            ? `Belønning: +${gold} Gull, +${food} Mat, +${pelts} Skinn & Sheriff-stjerne`
-            : `Belønning: +${gold} Gull, +${food} Mat & +${pelts} Skinn`
-      },
-      bandit_clear: {
-        title: 'Lovløs- & Fortdusør',
-        formatTask: (tier, goal) =>
-          `«Lovløs-jakt ${tier > 1 ? `Nivå ${tier}` : ''}» – Bekjemp ${goal} lovløse (Canyon, Fort, Brimstone)`,
-        formatReward: (gold, _f, _p, first) =>
-          first
-            ? `Belønning: +${gold} Gull & Gull-revolver (2x grunnskade)`
-            : `Belønning: +${gold} Gull & +1 Dynamitt`
-      },
-      night_guardian: {
-        title: 'Mørkejeger-kontrakt',
-        formatTask: (tier, goal) =>
-          `«Mørkejakt ${tier > 1 ? `Nivå ${tier}` : ''}» – Bekjemp ${goal} Vampyrer, Gjengangere, Wendigo eller Bosser`,
-        formatReward: (gold) =>
-          `Belønning: +${gold} Gull, +1 Skinn & Full Helse`
-      }
-    },
-    questMsgDoneAlready: 'Neste eskalerende dusørnivå aktivert!',
-    questMsgActiveNow: (title, prog, goal) => `Aktivt oppdrag: ${title} (${prog}/${goal})`,
-    questMsgAccepted: (title) => `Oppdrag aktivert: ${title}!`,
-    questMsgRewardGeneric: (gold, tier) => `Dusør Nivå ${tier} fullført! +${gold} Gull utbetalt!`,
-    questMsgRewardDeer: 'Fullført! +25 Gull, +2 Mat, +2 Skinn og Sheriff-stjerne!',
-    questMsgRewardBandit: 'Fullført! +30 Gull og Gull-revolver!',
-    questMsgRewardNight: 'Fullført! +45 Gull og full helse!',
+    badgeCompleted: '✓ FULLFØRT!',
+    questCompletedSlotLine1: (seq, title) => `✓ #${seq} ${title} — FULLFØRT!`,
+    questCompletedSlotLine2: (rewardSummary) => `Utbetalt: ${rewardSummary}  •  Henter neste oppdrag...`,
+    questMsgActiveNow: (seq, title, prog, goal) => `Aktivt oppdrag: #${seq} ${title} (${prog}/${goal})`,
+    questMsgAccepted: (seq, title) => `Oppdrag #${seq} valgt: ${title}!`,
+    questMsgCompletedToast: (seq, title, rewardSummary) => `✓ FULLFØRT #${seq} ${title}! (${rewardSummary})`,
 
     // 4 Lore / Etterlyst-plakater
     posters: [
@@ -882,4 +834,373 @@ function lineWidthSafe(ctx) {
   ctx.lineWidth = 2;
   ctx.strokeStyle = '#9e6b14';
   ctx.stroke();
+}
+
+// ============================================================================
+// SEKVENSIELL OPPDRAGSKATALOG (36 unike håndlagde oppdrag + uendelig kø #37+)
+// Når et oppdrag fullføres, merkes det med ✓ FULLFØRT, forsvinner fra tavlen
+// og erstattes av neste oppdrag i rekken (#4, #5, #6 ... #999+)!
+// ============================================================================
+export const CURATED_QUEST_CATALOG = [
+  {
+    seq: 1, targetType: 'deer_any', goal: 2, gold: 25, food: 2, pelts: 2, dynamite: 0,
+    grantsSheriffStar: true,
+    enTitle: 'Whispering Woods Hunt', enTask: 'Hunt 2 deer north in Whispering Woods',
+    noTitle: 'Skogsjegeren', noTask: 'Felle 2 hjorter nord i Whispering Woods'
+  },
+  {
+    seq: 2, targetType: 'bandit_any', goal: 3, gold: 30, food: 0, pelts: 0, dynamite: 0,
+    grantsGoldRevolver: true,
+    enTitle: 'Canyon Outlaw Warrant', enTask: 'Defeat 3 outlaws in Crimson Canyon →',
+    noTitle: 'Canyon-opprydning', noTask: 'Bekjemp 3 banditter i Crimson Canyon →'
+  },
+  {
+    seq: 3, targetType: 'night_any', goal: 4, gold: 45, food: 0, pelts: 1, dynamite: 0,
+    fullHeal: true,
+    enTitle: 'Boot Hill Night Watch', enTask: 'Slay 4 night fiends (Night or Boot Hill ←)',
+    noTitle: 'Nattvakt ved Boot Hill', noTask: 'Bekjemp 4 nattmonstre (om natten eller på Boot Hill ←)'
+  },
+  {
+    seq: 4, targetType: 'bottle', goal: 5, gold: 25, food: 2, pelts: 0, dynamite: 0,
+    enTitle: 'Saloon Sharpshooter', enTask: 'Shoot down 5 practice bottles outside town',
+    noTitle: 'Blinkskyting ved Saloonen', noTask: 'Skyt ned 5 øvingsflasker i Dustwood'
+  },
+  {
+    seq: 5, targetType: 'wolf', goal: 3, gold: 38, food: 1, pelts: 2, dynamite: 0,
+    enTitle: 'Northern Wolf Pack', enTask: 'Slay 3 wolves in Whispering Woods ↑',
+    noTitle: 'Ulvejakt i Nord', noTask: 'Bekjemp 3 ulver i Whispering Woods ↑'
+  },
+  {
+    seq: 6, targetType: 'gold_pickup', goal: 3, gold: 42, food: 0, pelts: 0, dynamite: 2,
+    enTitle: "Prospector's Gold Rush", enTask: 'Collect or shoot 3 Gold Veins in Crimson Canyon →',
+    noTitle: 'Gullgraverens Lykke', noTask: 'Plukk eller skyt 3 gullklumper i Crimson Canyon →'
+  },
+  {
+    seq: 7, targetType: 'grizzly', goal: 1, gold: 55, food: 3, pelts: 3, dynamite: 0,
+    enTitle: 'Grizzly Trophy Hunt', enTask: 'Hunt 1 Grizzly Bear beyond the north bridge ↑',
+    noTitle: 'Grizzly-trofeet', noTask: 'Felle 1 Grizzlybjørn nord for trebroen ↑'
+  },
+  {
+    seq: 8, targetType: 'bandit_any', goal: 5, gold: 58, food: 0, pelts: 0, dynamite: 2,
+    enTitle: "Iron-Jaw's Raiders", enTask: 'Defeat 5 outlaws across Canyon or Railway',
+    noTitle: 'Jernkjeves Røverbande', noTask: 'Bekjemp 5 banditter i Canyon eller ved Jernbanen'
+  },
+  {
+    seq: 9, targetType: 'mine_action', goal: 2, gold: 62, food: 0, pelts: 0, dynamite: 3,
+    enTitle: 'Deep Mine Breacher', enTask: 'Clear 2 Mine Barricades or defeat Mine outlaws →',
+    noTitle: 'Gruvesprengeren', noTask: 'Spreng 2 gruvebarrikader eller ta gruvevoktere →'
+  },
+  {
+    seq: 10, targetType: 'train_sniper', goal: 4, gold: 68, food: 1, pelts: 0, dynamite: 2,
+    enTitle: 'Armored Train Ambush', enTask: 'Defeat 4 Train Snipers at Southern Railway ↓',
+    noTitle: 'Jernbane-bakholdet', noTask: 'Bekjemp 4 tog-skarpskyttere ved Søndre Jernbane ↓'
+  },
+  {
+    seq: 11, targetType: 'silver_relic', goal: 2, gold: 70, food: 0, pelts: 2, dynamite: 0,
+    fullHeal: true,
+    enTitle: 'Relics of Boot Hill', enTask: 'Recover 2 glowing Silver Relics on Boot Hill ←',
+    noTitle: 'Sølvrelikviene på Boot Hill', noTask: 'Finn 2 lysende Sølvrelikvier på Boot Hill ←'
+  },
+  {
+    seq: 12, targetType: 'catacomb_guardian', goal: 3, gold: 78, food: 2, pelts: 1, dynamite: 0,
+    enTitle: 'Catacomb Purge', enTask: 'Slay 3 Catacomb Guardians beneath Boot Hill Chapel ←',
+    noTitle: 'Katakombenes Voktere', noTask: 'Bekjemp 3 katakombevoktere under Boot Hill Kapell ←'
+  },
+  {
+    seq: 13, targetType: 'bison', goal: 3, gold: 80, food: 4, pelts: 3, dynamite: 0,
+    enTitle: 'Thunder Plains Buffalo', enTask: 'Hunt 3 Plains Bison on Thunder Plains ↙',
+    noTitle: 'Bisonjakt på Tordensletten', noTask: 'Felle 3 præriebison på Thunder Plains ↙'
+  },
+  {
+    seq: 14, targetType: 'cougar', goal: 2, gold: 76, food: 2, pelts: 3, dynamite: 0,
+    enTitle: 'Silverpine Cougars', enTask: 'Hunt 2 Mountain Cougars near Silverpine Peak ↖',
+    noTitle: 'Fjellpuma i Nordvest', noTask: 'Felle 2 fjellpumaer ved Silverpine Peak ↖'
+  },
+  {
+    seq: 15, targetType: 'moonstone', goal: 3, gold: 85, food: 0, pelts: 2, dynamite: 0,
+    enTitle: 'Moonstone Seeker', enTask: 'Collect 3 glowing Moonstones at Silverpine Peak ↖',
+    noTitle: 'Månestein-søkeren', noTask: 'Samle 3 glødende Månesteiner på Silverpine Peak ↖'
+  },
+  {
+    seq: 16, targetType: 'white_stag', goal: 1, gold: 95, food: 3, pelts: 4, dynamite: 0,
+    enTitle: 'The Legendary White Stag', enTask: 'Hunt 1 White Stag high on Silverpine Peak ↖',
+    noTitle: 'Den Hvite Kronhjorten', noTask: 'Felle 1 Hvit Kronhjort på Silverpine Peak ↖'
+  },
+  {
+    seq: 17, targetType: 'alpha_wolf', goal: 3, gold: 90, food: 1, pelts: 3, dynamite: 0,
+    enTitle: 'Alpha Direwolf Pack', enTask: 'Slay 3 Alpha Direwolves in NW Silverpine ↖',
+    noTitle: 'Alfa-ulvenes Flokk', noTask: 'Bekjemp 3 alfa-skrekkulver ved Silverpine Peak ↖'
+  },
+  {
+    seq: 18, targetType: 'fort_bandit', goal: 5, gold: 95, food: 0, pelts: 0, dynamite: 3,
+    enTitle: 'Storm Fort Rattlesnake', enTask: 'Defeat 5 Fort Desperados at NE Stronghold ↗',
+    noTitle: 'Storm Fort Rattlesnake', noTask: 'Bekjemp 5 desperadoer ved Fort Rattlesnake ↗'
+  },
+  {
+    seq: 19, targetType: 'strongbox', goal: 3, gold: 105, food: 0, pelts: 0, dynamite: 1,
+    enTitle: 'Stolen Payroll Chests', enTask: 'Recover 3 Treasury Strongboxes inside Fort Rattlesnake ↗',
+    noTitle: 'Stjålne Pengekasser', noTask: 'Hent 3 stjålne pengekasser i Fort Rattlesnake ↗'
+  },
+  {
+    seq: 20, targetType: 'cortez', goal: 1, gold: 140, food: 2, pelts: 0, dynamite: 3,
+    fullHeal: true,
+    enTitle: 'Bounty: General Cortez', enTask: 'Defeat Warlord General Cortez at Fort Rattlesnake ↗',
+    noTitle: 'Dusør: General Cortez', noTask: 'Beseir krigsherren General Cortez i Fort Rattlesnake ↗'
+  },
+  {
+    seq: 21, targetType: 'brimstone_foe', goal: 5, gold: 110, food: 2, pelts: 1, dynamite: 0,
+    enTitle: 'Ghost Town Sweep', enTask: 'Defeat 5 Raiders or Revenants in Brimstone SE ↘',
+    noTitle: 'Rens Spøkelsesbyen', noTask: 'Bekjemp 5 plyndrere eller gjengangere i Brimstone ↘'
+  },
+  {
+    seq: 22, targetType: 'brimstone_totem', goal: 3, gold: 105, food: 0, pelts: 0, dynamite: 2,
+    enTitle: 'Totem Breaker', enTask: 'Shatter 3 Cursed Brimstone Totems in SE Ghost Town ↘',
+    noTitle: 'Knus Svovel-totemene', noTask: 'Skyt i stykker 3 Svovel-totemer i Brimstone ↘'
+  },
+  {
+    seq: 23, targetType: 'marshal', goal: 1, gold: 150, food: 0, pelts: 3, dynamite: 2,
+    fullHeal: true,
+    enTitle: 'Bounty: Brimstone Marshal', enTask: 'Defeat The Undead Brimstone Marshal in SE ↘',
+    noTitle: 'Dusør: Den Udøde Marskalken', noTask: 'Beseir den udøde Brimstone Marshal i SØ ↘'
+  },
+  {
+    seq: 24, targetType: 'sun_rune', goal: 3, gold: 105, food: 2, pelts: 1, dynamite: 0,
+    fullHeal: true,
+    enTitle: 'Ancient Sun Runes', enTask: 'Attune 3 Sun Runes at the SW Stone Circle ↙',
+    noTitle: 'Solrunenes Kraft', noTask: 'Aktiver 3 Solruner i den eldgamle Steinringen ↙'
+  },
+  {
+    seq: 25, targetType: 'wendigo', goal: 4, gold: 125, food: 2, pelts: 4, dynamite: 0,
+    enTitle: 'Wendigo Stalker Hunt', enTask: 'Slay 4 Wendigo Stalkers in SW Stone Circle ↙',
+    noTitle: 'Wendigo-jegeren', noTask: 'Bekjemp 4 Wendigo-rovdyr ved Steinringen ↙'
+  },
+  {
+    seq: 26, targetType: 'wendigo_boss', goal: 1, gold: 170, food: 3, pelts: 4, dynamite: 0,
+    fullHeal: true,
+    enTitle: 'Bounty: Ancient Wendigo', enTask: 'Summon & slay The Ancient Wendigo at SW Obelisk ↙',
+    noTitle: 'Dusør: Ur-Wendigoen', noTask: 'Vekk og beseir Ur-Wendigoen ved Obelisken i SV ↙'
+  },
+  {
+    seq: 27, targetType: 'malakor', goal: 1, gold: 180, food: 3, pelts: 3, dynamite: 2,
+    fullHeal: true,
+    enTitle: 'Bounty: Lord Malakor', enTask: 'Summon & slay Lord Malakor at Boot Hill Altar ←',
+    noTitle: 'Dusør: Lord Malakor', noTask: 'Vekk og beseir Lord Malakor ved Boot Hill-alteret ←'
+  },
+  {
+    seq: 28, targetType: 'bottle', goal: 8, gold: 65, food: 2, pelts: 0, dynamite: 2,
+    enTitle: 'Trick-Shot Champion', enTask: 'Shoot down 8 practice bottles in Dustwood',
+    noTitle: 'Mester-skytteren', noTask: 'Skyt ned 8 øvingsflasker utenfor Saloonen'
+  },
+  {
+    seq: 29, targetType: 'wild_beast', goal: 6, gold: 115, food: 4, pelts: 4, dynamite: 0,
+    enTitle: 'Grand Frontier Safari', enTask: 'Hunt 6 wild animals across any region',
+    noTitle: 'Storvilt-ekspedisjonen', noTask: 'Felle 6 ville dyr på tvers av alle regioner'
+  },
+  {
+    seq: 30, targetType: 'vampire_or_catacomb', goal: 6, gold: 125, food: 2, pelts: 2, dynamite: 0,
+    fullHeal: true,
+    enTitle: 'Crimson Eclipse Purge', enTask: 'Slay 6 Vampires or Catacomb Guardians',
+    noTitle: 'Blodmånens Vampyrjakt', noTask: 'Bekjemp 6 vampyrer eller katakombevoktere'
+  },
+  {
+    seq: 31, targetType: 'apex_predator', goal: 4, gold: 130, food: 3, pelts: 4, dynamite: 0,
+    enTitle: 'Apex Predator Challenge', enTask: 'Hunt 4 Grizzlies, Cougars or Alpha Direwolves',
+    noTitle: 'Rovdyrenes Konge', noTask: 'Felle 4 grizzlybjørner, fjellpumaer eller alfa-ulver'
+  },
+  {
+    seq: 32, targetType: 'treasure_any', goal: 4, gold: 135, food: 0, pelts: 1, dynamite: 3,
+    enTitle: 'Badlands Treasure Hunter', enTask: 'Collect 4 Gold Veins, Strongboxes, Runes or Moonstones',
+    noTitle: 'Skattejeger i Ødemarken', noTask: 'Samle 4 gullklumper, pengekasser, solruner eller månesteiner'
+  },
+  {
+    seq: 33, targetType: 'bandit_any', goal: 8, gold: 140, food: 2, pelts: 0, dynamite: 3,
+    enTitle: 'Territory Lawkeeper', enTask: 'Defeat 8 outlaws across Canyon, Train, Fort or Brimstone',
+    noTitle: 'Grenselandets Lovmann', noTask: 'Bekjemp 8 lovløse i Canyon, Toget, Fortet eller Brimstone'
+  },
+  {
+    seq: 34, targetType: 'elite_foe', goal: 8, gold: 160, food: 3, pelts: 3, dynamite: 2,
+    enTitle: 'War of the Four Corners', enTask: 'Defeat 8 Elite enemies (Fort, Brimstone, Wendigo, Train)',
+    noTitle: 'Slaget om De Fire Hjørner', noTask: 'Bekjemp 8 elitefiender (Fort, Brimstone, Wendigo, Tog)'
+  },
+  {
+    seq: 35, targetType: 'any_boss', goal: 2, gold: 220, food: 3, pelts: 4, dynamite: 3,
+    fullHeal: true,
+    enTitle: 'Slayer of Overlords', enTask: 'Defeat any 2 Bosses (Cortez, Marshal, Wendigo, Malakor)',
+    noTitle: 'Overherrenes Bane', noTask: 'Beseir 2 valgfrie bosser (Cortez, Marshal, Wendigo, Malakor)'
+  },
+  {
+    seq: 36, targetType: 'combat_any', goal: 12, gold: 195, food: 4, pelts: 3, dynamite: 3,
+    fullHeal: true,
+    enTitle: "Legend's Grand Sweep", enTask: 'Defeat 12 Outlaws or Night Monsters anywhere',
+    noTitle: 'Legendens Storoffensiv', noTask: 'Bekjemp 12 lovløse eller monstre hvor som helst'
+  }
+];
+
+const PROCEDURAL_QUEST_TEMPLATES = [
+  {
+    targetType: 'wild_beast', baseGoal: 5, stepGoal: 1, maxGoal: 14, baseGold: 95, food: 3, pelts: 3, dynamite: 0,
+    enTitle: 'Frontier Big-Game Contract', enTask: (g) => `Hunt ${g} wild beasts across Woods, Peaks or Plains`,
+    noTitle: 'Storvilt-kontrakt', noTask: (g) => `Felle ${g} vilt i skogen, fjellet eller på sletten`
+  },
+  {
+    targetType: 'bandit_any', baseGoal: 6, stepGoal: 1, maxGoal: 15, baseGold: 105, food: 1, pelts: 0, dynamite: 2,
+    enTitle: 'Outlaw Posse Warrant', enTask: (g) => `Defeat ${g} outlaws in Canyon, Train or Fort`,
+    noTitle: 'Dusør på Lovløse', noTask: (g) => `Bekjemp ${g} lovløse i Canyon, Toget eller Fortet`
+  },
+  {
+    targetType: 'night_any', baseGoal: 6, stepGoal: 1, maxGoal: 14, baseGold: 115, food: 1, pelts: 2, dynamite: 0, fullHeal: true,
+    enTitle: 'Shadow Hunter Contract', enTask: (g) => `Slay ${g} Vampires, Revenants or Wendigos`,
+    noTitle: 'Mørkejeger-oppdrag', noTask: (g) => `Bekjemp ${g} vampyrer, gjengangere eller wendigoer`
+  },
+  {
+    targetType: 'bison', baseGoal: 3, stepGoal: 1, maxGoal: 6, baseGold: 105, food: 4, pelts: 3, dynamite: 0,
+    enTitle: 'Thunder Plains Herd', enTask: (g) => `Hunt ${g} Plains Bison in SW Thunder Plains ↙`,
+    noTitle: 'Tordenslettens Bison', noTask: (g) => `Felle ${g} præriebison på Thunder Plains ↙`
+  },
+  {
+    targetType: 'fort_bandit', baseGoal: 5, stepGoal: 1, maxGoal: 10, baseGold: 120, food: 0, pelts: 0, dynamite: 3,
+    enTitle: 'Fort Rattlesnake Raid', enTask: (g) => `Defeat ${g} Desperados at NE Fort Rattlesnake ↗`,
+    noTitle: 'Angrep på Fort Rattlesnake', noTask: (g) => `Bekjemp ${g} desperadoer ved Fort Rattlesnake ↗`
+  },
+  {
+    targetType: 'brimstone_foe', baseGoal: 5, stepGoal: 1, maxGoal: 10, baseGold: 125, food: 2, pelts: 1, dynamite: 1,
+    enTitle: 'Brimstone Exorcism', enTask: (g) => `Defeat ${g} Raiders or Revenants in Brimstone SE ↘`,
+    noTitle: 'Eksorsisme i Brimstone', noTask: (g) => `Bekjemp ${g} plyndrere eller gjengangere i Brimstone ↘`
+  },
+  {
+    targetType: 'apex_predator', baseGoal: 3, stepGoal: 1, maxGoal: 7, baseGold: 120, food: 3, pelts: 4, dynamite: 0,
+    enTitle: 'Silverpine Apex Hunt', enTask: (g) => `Hunt ${g} Cougars, Grizzlies or Alpha Wolves`,
+    noTitle: 'Rovdyrjakt i Fjellet', noTask: (g) => `Felle ${g} pumaer, grizzlybjørner eller alfa-ulver`
+  },
+  {
+    targetType: 'treasure_any', baseGoal: 3, stepGoal: 1, maxGoal: 6, baseGold: 125, food: 0, pelts: 1, dynamite: 2,
+    enTitle: 'Relic & Gold Expedition', enTask: (g) => `Recover ${g} Strongboxes, Gold Veins, Runes or Moonstones`,
+    noTitle: 'Skatte- & Relikviejakt', noTask: (g) => `Finn ${g} pengekasser, gullklumper, solruner eller månesteiner`
+  },
+  {
+    targetType: 'wendigo', baseGoal: 4, stepGoal: 1, maxGoal: 8, baseGold: 135, food: 2, pelts: 3, dynamite: 0,
+    enTitle: 'Stone Circle Stalkers', enTask: (g) => `Slay ${g} Wendigos near SW Stone Circle ↙`,
+    noTitle: 'Steinringens Rovdyr', noTask: (g) => `Bekjemp ${g} Wendigo-rovdyr ved Steinringen ↙`
+  },
+  {
+    targetType: 'cortez', baseGoal: 1, stepGoal: 0, maxGoal: 1, baseGold: 160, food: 2, pelts: 0, dynamite: 3, fullHeal: true,
+    enTitle: 'Warlord Warrant: Cortez', enTask: () => 'Defeat Warlord General Cortez at NE Fort ↗',
+    noTitle: 'Etterlyst: General Cortez', noTask: () => 'Beseir krigsherren General Cortez i NØ-fortet ↗'
+  },
+  {
+    targetType: 'marshal', baseGoal: 1, stepGoal: 0, maxGoal: 1, baseGold: 170, food: 2, pelts: 2, dynamite: 2, fullHeal: true,
+    enTitle: 'Dead Warrant: Marshal', enTask: () => 'Defeat The Brimstone Marshal in SE Ghost Town ↘',
+    noTitle: 'Etterlyst: Brimstone Marshal', noTask: () => 'Beseir den udøde Brimstone Marshal i SØ ↘'
+  },
+  {
+    targetType: 'wendigo_boss', baseGoal: 1, stepGoal: 0, maxGoal: 1, baseGold: 185, food: 3, pelts: 4, dynamite: 0, fullHeal: true,
+    enTitle: 'Elder Hunt: Ancient Wendigo', enTask: () => 'Summon & slay The Ancient Wendigo at SW Obelisk ↙',
+    noTitle: 'Ur-jakt: Ancient Wendigo', noTask: () => 'Vekk og beseir Ur-Wendigoen ved Obelisken i SV ↙'
+  },
+  {
+    targetType: 'malakor', baseGoal: 1, stepGoal: 0, maxGoal: 1, baseGold: 195, food: 3, pelts: 3, dynamite: 2, fullHeal: true,
+    enTitle: 'Blood Warrant: Malakor', enTask: () => 'Summon & slay Lord Malakor at Boot Hill Altar ←',
+    noTitle: 'Bloddusør: Lord Malakor', noTask: () => 'Vekk og beseir Lord Malakor ved Boot Hill-alteret ←'
+  },
+  {
+    targetType: 'brimstone_totem', baseGoal: 3, stepGoal: 0, maxGoal: 3, baseGold: 120, food: 0, pelts: 0, dynamite: 3,
+    enTitle: 'Brimstone Totem Purge', enTask: (g) => `Shatter ${g} Cursed Brimstone Totems in SE ↘`,
+    noTitle: 'Knus Svovel-totemer', noTask: (g) => `Skyt i stykker ${g} Svovel-totemer i SØ ↘`
+  },
+  {
+    targetType: 'bottle', baseGoal: 6, stepGoal: 1, maxGoal: 12, baseGold: 75, food: 2, pelts: 0, dynamite: 1,
+    enTitle: 'Gunslinger Exhibition', enTask: (g) => `Shoot down ${g} practice bottles in Dustwood`,
+    noTitle: 'Revolver-oppvisning', noTask: (g) => `Skyt ned ${g} øvingsflasker i Dustwood`
+  },
+  {
+    targetType: 'elite_foe', baseGoal: 7, stepGoal: 1, maxGoal: 14, baseGold: 165, food: 3, pelts: 3, dynamite: 2,
+    enTitle: 'Four Corners Patrol', enTask: (g) => `Defeat ${g} Elite enemies or Bosses across the map`,
+    noTitle: 'Patrulje i De Fire Hjørner', noTask: (g) => `Bekjemp ${g} elitefiender eller bosser på kartet`
+  }
+];
+
+export function getQuestBySeq(seqNum, prestigeRank = 0) {
+  const seq = Math.max(1, Math.floor(seqNum || 1));
+  const pMult = 1 + Math.max(0, prestigeRank || 0) * 0.35;
+
+  if (seq <= CURATED_QUEST_CATALOG.length) {
+    const base = CURATED_QUEST_CATALOG[seq - 1];
+    return {
+      seq,
+      id: `q_${seq}`,
+      targetType: base.targetType,
+      goal: base.goal,
+      gold: Math.round(base.gold * pMult),
+      food: base.food || 0,
+      pelts: base.pelts || 0,
+      dynamite: base.dynamite || 0,
+      fullHeal: !!base.fullHeal,
+      grantsSheriffStar: !!base.grantsSheriffStar,
+      grantsGoldRevolver: !!base.grantsGoldRevolver,
+      enTitle: base.enTitle,
+      noTitle: base.noTitle,
+      enTask: base.enTask,
+      noTask: base.noTask
+    };
+  }
+
+  const offset = seq - CURATED_QUEST_CATALOG.length - 1;
+  const tplIdx = (offset * 7 + Math.floor(offset / PROCEDURAL_QUEST_TEMPLATES.length)) % PROCEDURAL_QUEST_TEMPLATES.length;
+  const tpl = PROCEDURAL_QUEST_TEMPLATES[tplIdx];
+  const cycle = Math.floor(offset / PROCEDURAL_QUEST_TEMPLATES.length);
+  const goal = Math.min(tpl.maxGoal, tpl.baseGoal + cycle * tpl.stepGoal);
+  const scaledGold = Math.round((tpl.baseGold + offset * 4) * pMult);
+
+  return {
+    seq,
+    id: `q_${seq}`,
+    targetType: tpl.targetType,
+    goal,
+    gold: scaledGold,
+    food: tpl.food || 0,
+    pelts: tpl.pelts || 0,
+    dynamite: tpl.dynamite || 0,
+    fullHeal: !!tpl.fullHeal,
+    grantsSheriffStar: false,
+    grantsGoldRevolver: false,
+    enTitle: tpl.enTitle,
+    noTitle: tpl.noTitle,
+    enTask: tpl.enTask(goal),
+    noTask: tpl.noTask(goal)
+  };
+}
+
+export function formatQuestTexts(quest, lang = 'en', opts = {}) {
+  const isNo = lang === 'no';
+  const title = isNo ? quest.noTitle : quest.enTitle;
+  const task = isNo ? quest.noTask : quest.enTask;
+
+  const parts = [];
+  parts.push(`+${quest.gold} ${isNo ? 'Gull' : 'Gold'}`);
+  if (quest.food > 0) parts.push(`+${quest.food} ${isNo ? 'Mat' : 'Food'}`);
+  if (quest.pelts > 0) parts.push(`+${quest.pelts} ${isNo ? 'Skinn' : 'Pelts'}`);
+  if (quest.dynamite > 0) parts.push(`+${quest.dynamite} ${isNo ? 'Dynamitt' : 'Dynamite'}`);
+  if (quest.grantsSheriffStar && !opts.hasSheriffStar) {
+    parts.push(isNo ? 'Sheriff-stjerne' : 'Sheriff Star');
+  }
+  if (quest.grantsGoldRevolver && !opts.hasGoldenRevolver) {
+    parts.push(isNo ? 'Gull-revolver (2x skade)' : 'Gold Revolver (2x Dmg)');
+  } else if (quest.grantsGoldRevolver && opts.hasGoldenRevolver) {
+    parts.push(isNo ? '+1 Dynamitt' : '+1 Dynamite');
+  }
+  if (quest.fullHeal) {
+    parts.push(isNo ? 'Full Helse' : 'Full Health');
+  }
+
+  const rewardSummary = parts.join(', ');
+  const rewardLine = isNo ? `Belønning: ${rewardSummary}` : `Reward: ${rewardSummary}`;
+  const cardTitleLine = `#${quest.seq} «${title}» – ${task}`;
+
+  return {
+    title,
+    task,
+    rewardSummary,
+    rewardLine,
+    cardTitleLine
+  };
 }
