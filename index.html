@@ -373,15 +373,15 @@
       "imports": {
         "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
         "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/",
-        "./js/i18n.js": "./js/i18n.js?v=20261119p2",
-        "./js/textures.js": "./js/textures.js?v=20261119p2",
-        "./js/glb-utils.js": "./js/glb-utils.js?v=20261119p2",
-        "./js/creatures.js": "./js/creatures.js?v=20261119p2",
-        "./js/world.js": "./js/world.js?v=20261119p2",
-        "./js/buildings.js": "./js/buildings.js?v=20261119p2",
-        "./js/audio.js": "./js/audio.js?v=20261119p2",
-        "./js/revolver-fx.js": "./js/revolver-fx.js?v=20261119p2",
-        "./js/entities.js": "./js/entities.js?v=20261119p2"
+        "./js/i18n.js": "./js/i18n.js?v=20261123x48h",
+        "./js/textures.js": "./js/textures.js?v=20261123x48h",
+        "./js/glb-utils.js": "./js/glb-utils.js?v=20261123x48h",
+        "./js/creatures.js": "./js/creatures.js?v=20261123x48h",
+        "./js/world.js": "./js/world.js?v=20261123x48h",
+        "./js/buildings.js": "./js/buildings.js?v=20261123x48h",
+        "./js/audio.js": "./js/audio.js?v=20261123x48h",
+        "./js/revolver-fx.js": "./js/revolver-fx.js?v=20261123x48h",
+        "./js/entities.js": "./js/entities.js?v=20261123x48h"
       }
     }
   </script>
@@ -418,7 +418,11 @@
         <button id="sens-perf-btn" class="sens-mini-btn active" type="button">Auto (Smooth)</button>
       </div>
       <div class="sens-row">
-        <button id="sens-reset-btn" class="sens-mini-btn" type="button" style="width: 100%;">Reset 100%</button>
+        <span id="sens-career-label">Career Auto-Save</span>
+        <button id="sens-career-reset-btn" class="sens-mini-btn" type="button">New Game (Reset)</button>
+      </div>
+      <div class="sens-row">
+        <button id="sens-reset-btn" class="sens-mini-btn" type="button" style="width: 100%;">Reset Controls 100%</button>
       </div>
     </div>
     <div id="pc-hint"></div>
@@ -504,6 +508,7 @@
 
     const playerState = {
       health: 100,
+      maxHealth: 100,
       gold: 15,
       food: 0,
       pelt: 0,
@@ -515,10 +520,13 @@
       title: ''
     };
 
-    // Globale kamp-, våpen-, rustnings-, gull- og 4-akts historievariabler
+    // Globale kamp-, våpen-, rustnings-, mestrings-, gull- og 20-nivås + Prestisje historievariabler
     let damageMultiplier = 1.0;
     let nightMonsterDamage = 1;
     let currentOutfitTier = 0;
+    let weaponMasteryRank = 0; // +20 % all våpenskade per nivå hos Våpensmeden
+    let totalPlaySeconds = 0;
+    let autoSaveAccum = 0;
 
     let weaponDamage = 1;
     const WEAPON_ORDER = ['revolver', 'shotgun', 'rifle', 'crossbow', 'dynamite', 'hellfire'];
@@ -540,16 +548,24 @@
     let questProgress = 0;
     const completedQuests = [];
     const questProgressMap = Object.create(null);
+    const questTiers = { deer_hunt: 1, bandit_clear: 1, night_guardian: 1 };
     let hasSheriffStar = false;
     let hasGoldenRevolver = false;
     let hasLegendTitle = false;
     let isNightStateFlag = false;
     let playerHiddenStatus = false;
 
-    // 8-Level Campaign (Acts 1–8)
+    // 20-Level Grand Campaign + Infinite Frontier Prestige Chapters (48h+ Marathon Progression)
     const storyState = {
-      currentLevel: 1, // 1..8 (9 = fullført)
+      currentLevel: 1, // 1..20 kampanje, 21+ evige Prestisje-kapitler
       currentAct: 1,
+      prestigeRank: 0,
+      prestigeBeasts: 0,
+      prestigeFoes: 0,
+      prestigeBosses: 0,
+      prestigeGoalBeasts: 8,
+      prestigeGoalFoes: 10,
+      prestigeGoalBosses: 1,
       talkedSheriff: false,
       act1Deer: 0,
       boughtGear: false,
@@ -574,8 +590,124 @@
       bossActive: false,
       bossHp: 30,
       bossMaxHp: 30,
-      bossDefeated: false
+      bossDefeated: false,
+      bisonHunted: 0,
+      cougarsHunted: 0,
+      whiteStagsHunted: 0,
+      alphaWolvesKilled: 0,
+      moonstonesCollected: 0,
+      fortBanditsKilled: 0,
+      strongboxesRecovered: 0,
+      cortezDefeated: false,
+      brimstoneFoesKilled: 0,
+      brimstoneTotemsShattered: 0,
+      brimstoneMarshalDefeated: false,
+      ancientRunesAttuned: 0,
+      wendigosKilled: 0,
+      wendigoBossActive: false,
+      wendigoBossHp: 42,
+      wendigoBossMaxHp: 42,
+      wendigoBossDefeated: false,
+      totalBountiesDone: 0,
+      masterUpgradeBought: false,
+      eliteKills: 0,
+      eclipseKills: 0,
+      ascendedMalakorDefeated: false,
+      totalKills: 0
     };
+
+    const CAREER_SAVE_KEY = 'western_vr_career_v2';
+    function saveCareerProgress() {
+      try {
+        const payload = {
+          v: 2,
+          lang: currentLang,
+          health: playerState.health,
+          maxHealth: playerState.maxHealth,
+          gold: playerState.gold,
+          food: playerState.food,
+          pelt: playerState.pelt,
+          dynamite: playerState.dynamite,
+          outfitTier: currentOutfitTier,
+          damageMultiplier,
+          nightMonsterDamage,
+          weaponDamage,
+          weaponMasteryRank,
+          unlockedWeapons: { ...unlockedWeapons },
+          activeWeaponId,
+          hasSheriffStar,
+          hasGoldenRevolver,
+          hasLegendTitle,
+          completedQuests: [...completedQuests],
+          questTiers: { ...questTiers },
+          totalPlaySeconds: Math.round(totalPlaySeconds),
+          story: {
+            ...storyState,
+            bossActive: false,
+            wendigoBossActive: false
+          }
+        };
+        localStorage.setItem(CAREER_SAVE_KEY, JSON.stringify(payload));
+      } catch (_) {
+        // localStorage er valgfri
+      }
+    }
+
+    function loadCareerSave() {
+      try {
+        const raw = localStorage.getItem(CAREER_SAVE_KEY);
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        if (!data || typeof data !== 'object') return;
+        if (data.lang === 'no' || data.lang === 'en') currentLang = data.lang;
+        if (typeof data.maxHealth === 'number') playerState.maxHealth = Math.max(100, Math.min(300, Math.round(data.maxHealth)));
+        if (typeof data.health === 'number') playerState.health = Math.max(25, Math.min(playerState.maxHealth, Math.round(data.health)));
+        if (typeof data.gold === 'number') playerState.gold = Math.max(0, Math.round(data.gold));
+        if (typeof data.food === 'number') playerState.food = Math.max(0, Math.round(data.food));
+        if (typeof data.pelt === 'number') playerState.pelt = Math.max(0, Math.round(data.pelt));
+        if (typeof data.dynamite === 'number') playerState.dynamite = Math.max(0, Math.round(data.dynamite));
+        if (typeof data.outfitTier === 'number') currentOutfitTier = Math.max(0, Math.min(4, Math.round(data.outfitTier)));
+        if (typeof data.damageMultiplier === 'number') damageMultiplier = Math.max(0.2, Math.min(1, data.damageMultiplier));
+        if (typeof data.nightMonsterDamage === 'number') nightMonsterDamage = Math.max(1, Math.min(4, data.nightMonsterDamage));
+        if (typeof data.weaponDamage === 'number') weaponDamage = Math.max(1, data.weaponDamage);
+        if (typeof data.weaponMasteryRank === 'number') weaponMasteryRank = Math.max(0, Math.min(40, Math.round(data.weaponMasteryRank)));
+        if (data.unlockedWeapons && typeof data.unlockedWeapons === 'object') {
+          for (const wk of WEAPON_ORDER) {
+            if (typeof data.unlockedWeapons[wk] === 'boolean') unlockedWeapons[wk] = data.unlockedWeapons[wk];
+          }
+          unlockedWeapons.revolver = true;
+          unlockedWeapons.dynamite = true;
+        }
+        if (typeof data.activeWeaponId === 'string' && unlockedWeapons[data.activeWeaponId]) {
+          activeWeaponId = data.activeWeaponId;
+        }
+        if (typeof data.hasSheriffStar === 'boolean') hasSheriffStar = data.hasSheriffStar;
+        if (typeof data.hasGoldenRevolver === 'boolean') hasGoldenRevolver = data.hasGoldenRevolver;
+        if (typeof data.hasLegendTitle === 'boolean') hasLegendTitle = data.hasLegendTitle;
+        if (Array.isArray(data.completedQuests)) {
+          completedQuests.length = 0;
+          data.completedQuests.forEach((qid) => {
+            if (typeof qid === 'string') completedQuests.push(qid);
+          });
+        }
+        if (data.questTiers && typeof data.questTiers === 'object') {
+          for (const k of Object.keys(questTiers)) {
+            if (typeof data.questTiers[k] === 'number') questTiers[k] = Math.max(1, Math.round(data.questTiers[k]));
+          }
+        }
+        if (typeof data.totalPlaySeconds === 'number') totalPlaySeconds = Math.max(0, data.totalPlaySeconds);
+        if (data.story && typeof data.story === 'object') {
+          for (const sk of Object.keys(storyState)) {
+            if (sk === 'bossActive' || sk === 'wendigoBossActive') continue;
+            if (data.story[sk] !== undefined) storyState[sk] = data.story[sk];
+          }
+        }
+      } catch (_) {
+        // Ignorer korrupt lagring
+      }
+    }
+    loadCareerSave();
+    window.addEventListener('pagehide', saveCareerProgress);
 
     let refreshGunsmithHook = null;
     let refreshSheriffHook = null;
@@ -601,6 +733,8 @@
     const sensVrBtnEl = document.getElementById('sens-vr-btn');
     const sensPerfLabelEl = document.getElementById('sens-perf-label');
     const sensPerfBtnEl = document.getElementById('sens-perf-btn');
+    const sensCareerLabelEl = document.getElementById('sens-career-label');
+    const sensCareerResetBtnEl = document.getElementById('sens-career-reset-btn');
     const sensResetBtnEl = document.getElementById('sens-reset-btn');
 
     const touchJoyRingEl = document.getElementById('touch-joy-ring');
@@ -696,6 +830,10 @@
         sensPerfBtnEl.classList.toggle('active', controlSettings.perfMode !== 'ultra');
       }
       if (sensResetBtnEl && dict.sensResetBtn) sensResetBtnEl.textContent = dict.sensResetBtn;
+      if (sensCareerLabelEl && dict.careerSaveLabel) sensCareerLabelEl.textContent = dict.careerSaveLabel;
+      if (sensCareerResetBtnEl && !sensCareerResetBtnEl.dataset.confirming && dict.careerResetBtn) {
+        sensCareerResetBtnEl.textContent = dict.careerResetBtn;
+      }
       if (btnTouchFireEl && dict.touchFire) btnTouchFireEl.textContent = dict.touchFire;
       if (btnTouchWeaponEl && dict.touchWeapon) btnTouchWeaponEl.textContent = dict.touchWeapon;
       if (btnTouchHorseEl && dict.touchHorse) btnTouchHorseEl.textContent = dict.touchHorse;
@@ -711,22 +849,34 @@
       return dict.weapons[wId] || wId;
     }
 
+    function formatPlaytimeShort(sec) {
+      const totalMin = Math.floor(Math.max(0, sec) / 60);
+      const hrs = Math.floor(totalMin / 60);
+      const mins = totalMin % 60;
+      return hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
+    }
+
     function syncLocalizedStateStrings() {
       const dict = L();
       playerState.outfit = dict.outfits[currentOutfitTier] || dict.outfits[0];
-      playerState.weapon = getLocalizedWeaponName(activeWeaponId);
+      const baseWName = getLocalizedWeaponName(activeWeaponId);
+      playerState.weapon = weaponMasteryRank > 0 ? `${baseWName} +${weaponMasteryRank}` : baseWName;
       playerState.timeOfDay = isNightStateFlag ? dict.night : dict.day;
-      playerState.title = hasLegendTitle ? dict.legendTitle : '';
+      if ((storyState.prestigeRank || 0) > 0 && dict.prestigeTitle) {
+        playerState.title = dict.prestigeTitle(storyState.prestigeRank);
+      } else {
+        playerState.title = hasLegendTitle ? dict.legendTitle : '';
+      }
     }
 
     function getStoryStatusLine() {
       const dict = L();
       storyState.hasVampireGear = currentOutfitTier >= 3 || unlockedWeapons.crossbow || unlockedWeapons.hellfire;
-      if (storyState.currentLevel > 8 || storyState.bossDefeated) {
-        return dict.storyComplete;
+      if (storyState.currentLevel > 20) {
+        return dict.formatPrestigeProgress ? dict.formatPrestigeProgress(storyState) : dict.storyComplete;
       }
       const lvlDef = dict.acts[storyState.currentLevel - 1];
-      return lvlDef ? lvlDef.formatProgress(storyState) : '';
+      return lvlDef ? lvlDef.formatProgress(storyState) : dict.storyComplete;
     }
 
     function checkStoryProgression() {
@@ -746,21 +896,13 @@
         advanced = true;
       }
 
-      if (
-        storyState.currentLevel === 2 &&
-        storyState.level2Wolves >= 3 &&
-        storyState.grizzlyDefeated
-      ) {
+      if (storyState.currentLevel === 2 && storyState.level2Wolves >= 3 && storyState.grizzlyDefeated) {
         storyState.currentLevel = 3;
         playerState.gold += 35;
         advanced = true;
       }
 
-      if (
-        storyState.currentLevel === 3 &&
-        storyState.act2Bandits >= 4 &&
-        storyState.captainDefeated
-      ) {
+      if (storyState.currentLevel === 3 && storyState.act2Bandits >= 4 && storyState.captainDefeated) {
         storyState.currentLevel = 4;
         playerState.gold += 40;
         weaponDamage = Math.max(weaponDamage, 2);
@@ -779,31 +921,19 @@
         advanced = true;
       }
 
-      if (
-        storyState.currentLevel === 5 &&
-        storyState.trainSnipersKilled >= 4 &&
-        storyState.trainGatlingCaptured
-      ) {
+      if (storyState.currentLevel === 5 && storyState.trainSnipersKilled >= 4 && storyState.trainGatlingCaptured) {
         storyState.currentLevel = 6;
         playerState.gold += 55;
         advanced = true;
       }
 
-      if (
-        storyState.currentLevel === 6 &&
-        storyState.bootHillVampires >= 4 &&
-        storyState.bootHillRelics >= 2
-      ) {
+      if (storyState.currentLevel === 6 && storyState.bootHillVampires >= 4 && storyState.bootHillRelics >= 2) {
         storyState.currentLevel = 7;
         playerState.gold += 60;
         advanced = true;
       }
 
-      if (
-        storyState.currentLevel === 7 &&
-        storyState.catacombGuardiansKilled >= 3 &&
-        storyState.hellfireCollected
-      ) {
+      if (storyState.currentLevel === 7 && storyState.catacombGuardiansKilled >= 3 && storyState.hellfireCollected) {
         storyState.currentLevel = 8;
         playerState.gold += 75;
         if (forceNightForBloodMoonHook) forceNightForBloodMoonHook();
@@ -813,14 +943,143 @@
       if (storyState.currentLevel === 8 && storyState.bossDefeated) {
         storyState.currentLevel = 9;
         hasLegendTitle = true;
-        playerState.gold += 150;
-        playerState.health = 100;
+        playerState.gold += 120;
+        playerState.health = playerState.maxHealth;
         advanced = true;
       }
 
-      storyState.currentAct = Math.min(4, Math.ceil(storyState.currentLevel / 2));
+      if (storyState.currentLevel === 9 && (storyState.bisonHunted || 0) >= 3 && (storyState.cougarsHunted || 0) >= 2) {
+        storyState.currentLevel = 10;
+        playerState.gold += 85;
+        playerState.food += 3;
+        advanced = true;
+      }
+
+      if (
+        storyState.currentLevel === 10 &&
+        (storyState.whiteStagsHunted || 0) >= 1 &&
+        (storyState.alphaWolvesKilled || 0) >= 3 &&
+        (storyState.moonstonesCollected || 0) >= 3
+      ) {
+        storyState.currentLevel = 11;
+        playerState.gold += 110;
+        playerState.pelt += 3;
+        advanced = true;
+      }
+
+      if (
+        storyState.currentLevel === 11 &&
+        (storyState.fortBanditsKilled || 0) >= 5 &&
+        (storyState.strongboxesRecovered || 0) >= 3
+      ) {
+        storyState.currentLevel = 12;
+        playerState.gold += 120;
+        playerState.dynamite += 3;
+        advanced = true;
+      }
+
+      if (storyState.currentLevel === 12 && storyState.cortezDefeated) {
+        storyState.currentLevel = 13;
+        playerState.gold += 140;
+        advanced = true;
+      }
+
+      if (
+        storyState.currentLevel === 13 &&
+        (storyState.brimstoneFoesKilled || 0) >= 5 &&
+        (storyState.brimstoneTotemsShattered || 0) >= 3
+      ) {
+        storyState.currentLevel = 14;
+        playerState.gold += 145;
+        advanced = true;
+      }
+
+      if (storyState.currentLevel === 14 && storyState.brimstoneMarshalDefeated) {
+        storyState.currentLevel = 15;
+        playerState.gold += 160;
+        advanced = true;
+      }
+
+      if (
+        storyState.currentLevel === 15 &&
+        (storyState.ancientRunesAttuned || 0) >= 3 &&
+        (storyState.wendigosKilled || 0) >= 4
+      ) {
+        storyState.currentLevel = 16;
+        playerState.gold += 170;
+        advanced = true;
+      }
+
+      if (storyState.currentLevel === 16 && storyState.wendigoBossDefeated) {
+        storyState.currentLevel = 17;
+        playerState.gold += 190;
+        advanced = true;
+      }
+
+      if (
+        storyState.currentLevel === 17 &&
+        (storyState.totalBountiesDone || 0) >= 5 &&
+        storyState.masterUpgradeBought
+      ) {
+        storyState.currentLevel = 18;
+        playerState.gold += 200;
+        advanced = true;
+      }
+
+      if (storyState.currentLevel === 18 && (storyState.eliteKills || 0) >= 12) {
+        storyState.currentLevel = 19;
+        playerState.gold += 220;
+        advanced = true;
+      }
+
+      if (storyState.currentLevel === 19 && (storyState.eclipseKills || 0) >= 10) {
+        storyState.currentLevel = 20;
+        storyState.ascendedMalakorDefeated = false;
+        playerState.gold += 240;
+        if (forceNightForBloodMoonHook) forceNightForBloodMoonHook();
+        advanced = true;
+      }
+
+      if (storyState.currentLevel === 20 && storyState.ascendedMalakorDefeated) {
+        storyState.currentLevel = 21;
+        storyState.prestigeRank = Math.max(1, storyState.prestigeRank || 1);
+        storyState.prestigeBeasts = 0;
+        storyState.prestigeFoes = 0;
+        storyState.prestigeBosses = 0;
+        storyState.prestigeGoalBeasts = 8;
+        storyState.prestigeGoalFoes = 10;
+        storyState.prestigeGoalBosses = 1;
+        hasLegendTitle = true;
+        playerState.gold += 350;
+        playerState.health = playerState.maxHealth;
+        advanced = true;
+      }
+
+      // Evige Prestisje-kapitler (Kapittel 21..999+ for 48+ timer uavbrutt progresjon!)
+      if (
+        storyState.currentLevel >= 21 &&
+        (storyState.prestigeBeasts || 0) >= (storyState.prestigeGoalBeasts || 8) &&
+        (storyState.prestigeFoes || 0) >= (storyState.prestigeGoalFoes || 10) &&
+        (storyState.prestigeBosses || 0) >= (storyState.prestigeGoalBosses || 1)
+      ) {
+        storyState.currentLevel += 1;
+        storyState.prestigeRank = (storyState.prestigeRank || 1) + 1;
+        storyState.prestigeBeasts = 0;
+        storyState.prestigeFoes = 0;
+        storyState.prestigeBosses = 0;
+        storyState.prestigeGoalBeasts = 8 + storyState.prestigeRank * 2;
+        storyState.prestigeGoalFoes = 10 + storyState.prestigeRank * 2;
+        storyState.prestigeGoalBosses = 1 + Math.floor(storyState.prestigeRank / 3);
+        playerState.gold += 220 + storyState.prestigeRank * 65;
+        playerState.dynamite += 3;
+        playerState.health = playerState.maxHealth;
+        advanced = true;
+      }
+
+      storyState.currentAct = Math.min(8, Math.ceil(storyState.currentLevel / 3));
 
       if (advanced) {
+        saveCareerProgress();
         if (playStoryFanfareHook) playStoryFanfareHook();
         updateStatusUI();
       }
@@ -878,7 +1137,7 @@
     }
     sheriffStarBadge.position.set(-0.018, 0.036, 0.045);
     sheriffStarBadge.rotation.set(0.2, 0, 0.28);
-    sheriffStarBadge.visible = false;
+    sheriffStarBadge.visible = hasSheriffStar;
     leftWristRig.add(sheriffStarBadge);
 
     function updateLeftSleeveAppearance(tier) {
@@ -891,11 +1150,15 @@
       } else if (tier === 3) {
         leftSleeveMat.color.setHex(0x5e1124);
         leftCuffMat.color.setHex(0xe8bd54);
+      } else if (tier >= 4) {
+        leftSleeveMat.color.setHex(0x1f2838);
+        leftCuffMat.color.setHex(0xffd65e);
       } else {
         leftSleeveMat.color.setHex(0xc8b28e);
         leftCuffMat.color.setHex(0x8c6d46);
       }
     }
+    updateLeftSleeveAppearance(currentOutfitTier);
 
     const wristCanvas = document.createElement('canvas');
     wristCanvas.width = 640;
@@ -1014,7 +1277,7 @@
 
     function updateEatWristButton() {
       const dict = L();
-      const canEat = playerState.food > 0 && playerState.health < 100;
+      const canEat = playerState.food > 0 && playerState.health < playerState.maxHealth;
       eatBtnCtx.clearRect(0, 0, eatBtnCanvas.width, eatBtnCanvas.height);
 
       drawRoundedRect(eatBtnCtx, 6, 6, eatBtnCanvas.width - 12, 84, 18);
@@ -1114,11 +1377,15 @@
       const storyLine = getStoryStatusLine();
       const questLine = getActiveQuestStatusLine();
       const horseHudSuffix = isRidingHorse ? `  |  ${dict.horseRidingHud}` : '';
+      const hpDisplay = playerState.maxHealth > 100
+        ? `${playerState.health}/${playerState.maxHealth}`
+        : `${playerState.health}`;
+      const careerSuffix = ` | ${dict.hudKills || 'Kills'}: ${storyState.totalKills || 0} | ⏱ ${formatPlaytimeShort(totalPlaySeconds)}`;
       const summaryText =
-        `${dict.hudHealth}: ${playerState.health} | ${dict.hudGold}: ${playerState.gold} | ` +
+        `${dict.hudHealth}: ${hpDisplay} | ${dict.hudGold}: ${playerState.gold} | ` +
         `${dict.hudWeapon}: ${playerState.weapon} | ${dict.hudDynamite}: ${playerState.dynamite} | ` +
         `${dict.hudFood}: ${playerState.food} ${dict.hudEatHint} | ${dict.hudPelts}: ${playerState.pelt} | ` +
-        `${dict.hudOutfit}: ${playerState.outfit} | ${dict.hudTime}: ${playerState.timeOfDay}${titleSuffix}${horseHudSuffix}\n` +
+        `${dict.hudOutfit}: ${playerState.outfit} | ${dict.hudTime}: ${playerState.timeOfDay}${titleSuffix}${horseHudSuffix}${careerSuffix}\n` +
         `${storyLine}  •  ${questLine}`;
       hudEl.textContent = playerHiddenStatus ? `${summaryText}\n${dict.hiddenStatus}` : summaryText;
 
@@ -1303,6 +1570,17 @@
       structureWallColliders,
       goldPickups,
       goldHitMeshes,
+      moonstoneTotems,
+      moonstoneHitMeshes,
+      fortStrongboxes,
+      fortStrongboxHitMeshes,
+      brimstoneTotems,
+      brimstoneTotemHitMeshes,
+      ancientRunes,
+      ancientRuneHitMeshes,
+      wendigoAltarHitMeshes,
+      wendigoObeliskOrb,
+      wendigoAltarWorldPos,
       mineBarricades,
       barricadeHitMeshes,
       mineMapPickup,
@@ -1442,12 +1720,23 @@
       wildlife: wildlifeGLTF
     };
 
-    // --- 5a. Saloon / Oppdragsbygg og «SHERIFF'S BOUNTY BOARD» (repeterbar for ekstra Gull!) ---
+    // --- 5a. Saloon / Oppdragsbygg og «SHERIFF'S BOUNTY BOARD» (eskalerende dusørnivåer 1 -> 100+!) ---
     const SALOON_QUESTS = [
-      { id: 'deer_hunt', goal: 2, targetType: 'deer' },
-      { id: 'bandit_clear', goal: 3, targetType: 'bandit' },
-      { id: 'night_guardian', goal: 4, targetType: 'night' }
+      { id: 'deer_hunt', baseGoal: 2, goal: 2, baseGold: 25, targetType: 'deer' },
+      { id: 'bandit_clear', baseGoal: 3, goal: 3, baseGold: 30, targetType: 'bandit' },
+      { id: 'night_guardian', baseGoal: 4, goal: 4, baseGold: 45, targetType: 'night' }
     ];
+
+    function getScaledQuestGoal(quest) {
+      const tier = Math.max(1, questTiers[quest.id] || 1);
+      return quest.baseGoal + (tier - 1) * 2;
+    }
+
+    function getScaledQuestGold(quest) {
+      const tier = Math.max(1, questTiers[quest.id] || 1);
+      const pMult = 1 + (storyState.prestigeRank || 0) * 0.35;
+      return Math.round((quest.baseGold + (tier - 1) * 18) * pMult);
+    }
 
     let saloonMainSignMesh = null;
     let tailorMainSignMesh = null;
@@ -1509,6 +1798,9 @@
       if (questBoardMessageKey === 'reward_deer') return dict.questMsgRewardDeer;
       if (questBoardMessageKey === 'reward_bandit') return dict.questMsgRewardBandit;
       if (questBoardMessageKey === 'reward_night') return dict.questMsgRewardNight;
+      if (questBoardMessageKey === 'reward_tier' && questBoardMessageArg && dict.questMsgRewardGeneric) {
+        return dict.questMsgRewardGeneric(questBoardMessageArg.gold, questBoardMessageArg.tier);
+      }
       return questBoardMessageKey;
     }
 
@@ -1565,7 +1857,7 @@
               activeQuest.goal,
               playerState.gold
             )
-          : dict.questBoardIdleSub(completedQuests.length, playerState.gold);
+          : dict.questBoardIdleSub(storyState.totalBountiesDone || completedQuests.length, playerState.gold);
         saloonQuestCtx.fillText(subText, 512, 116);
       }
 
@@ -1574,10 +1866,14 @@
       saloonQuestButtonEntries.forEach((entry) => {
         const { quest, canvas, ctx, texture } = entry;
         const qText = dict.quests[quest.id];
+        const tier = Math.max(1, questTiers[quest.id] || 1);
+        const dynGoal = getScaledQuestGoal(quest);
+        const dynGold = getScaledQuestGold(quest);
         const isDone = completedQuests.includes(quest.id);
         const isActive = activeQuest && activeQuest.id === quest.id;
         const savedProg = questProgressMap[quest.id] || 0;
         const shownProg = isActive ? questProgress : savedProg;
+        const shownGoal = isActive ? activeQuest.goal : dynGoal;
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -1600,15 +1896,15 @@
         let badgeBg = 'rgba(217, 160, 78, 0.22)';
         let badgeTextCol = '#ffe3a3';
         if (isActive) {
-          statusLabel = `${dict.badgeActive} (${shownProg}/${quest.goal})`;
+          statusLabel = `${dict.badgeActive} (${shownProg}/${shownGoal})`;
           badgeBg = 'rgba(255, 214, 90, 0.28)';
           badgeTextCol = '#fff3a6';
         } else if (isDone) {
-          statusLabel = dict.badgeDone;
+          statusLabel = `${dict.badgeDone} ${tier}`;
           badgeBg = 'rgba(90, 200, 95, 0.28)';
           badgeTextCol = '#b8ffaf';
         } else if (savedProg > 0) {
-          statusLabel = `${dict.badgeOpen} (${savedProg}/${quest.goal})`;
+          statusLabel = `${dict.badgeOpen} (${savedProg}/${shownGoal})`;
         }
 
         drawRoundedRect(ctx, 758, 18, 242, 44, 10);
@@ -1621,19 +1917,26 @@
         ctx.fillStyle = badgeTextCol;
         ctx.fillText(statusLabel, 879, 41);
 
+        const taskLine = qText.formatTask ? qText.formatTask(tier, shownGoal) : qText.taskText;
+        const foodBonus = 2 + Math.floor(tier / 2);
+        const peltBonus = 2 + Math.floor(tier / 3);
+        const rewardLine = qText.formatReward
+          ? qText.formatReward(dynGold, foodBonus, peltBonus, !isDone && tier === 1)
+          : qText.rewardText;
+
         ctx.textAlign = 'left';
-        let titleFont = 27;
+        let titleFont = 26;
         ctx.font = `bold ${titleFont}px sans-serif`;
-        while (titleFont > 19 && ctx.measureText(qText.taskText).width > 718) {
+        while (titleFont > 17 && ctx.measureText(taskLine).width > 718) {
           titleFont -= 1;
           ctx.font = `bold ${titleFont}px sans-serif`;
         }
         ctx.fillStyle = isDone && !isActive ? '#dcffd8' : '#fff7e5';
-        ctx.fillText(qText.taskText, 28, 41);
+        ctx.fillText(taskLine, 28, 41);
 
-        ctx.font = 'bold 22px sans-serif';
+        ctx.font = 'bold 21px sans-serif';
         ctx.fillStyle = isDone && !isActive ? '#a7e8a1' : '#f5c76e';
-        ctx.fillText(qText.rewardText, 28, 88);
+        ctx.fillText(rewardLine, 28, 88);
 
         texture.needsUpdate = true;
       });
@@ -1690,6 +1993,8 @@
       if (tailorStatusMessageKey === 'better') return dict.tailorMsgBetter;
       if (tailorStatusMessageKey === 'no_pelts') return dict.tailorMsgNoPelts;
       if (tailorStatusMessageKey === 'crafted') return dict.tailorMsgCrafted;
+      if (tailorStatusMessageKey === 'hp_up' && dict.tailorMsgHpUp) return dict.tailorMsgHpUp(playerState.maxHealth);
+      if (tailorStatusMessageKey === 'rations' && dict.tailorMsgRations) return dict.tailorMsgRations;
       return tailorStatusMessageKey;
     }
 
@@ -1735,7 +2040,7 @@
         workshopBoardCtx.font = 'bold 24px sans-serif';
         workshopBoardCtx.fillStyle = '#f2c16b';
         workshopBoardCtx.fillText(
-          dict.tailorInfo(playerState.pelt, playerState.outfit),
+          dict.tailorInfo(playerState.pelt, playerState.outfit, playerState.maxHealth),
           512,
           112
         );
@@ -1743,11 +2048,37 @@
 
       workshopBoardTexture.needsUpdate = true;
 
+      const endgameMode = currentOutfitTier >= 3;
+      const hpRanks = Math.round((playerState.maxHealth - 100) / 15);
+      const hpCost = 5 + hpRanks * 3;
+
       tailorButtonEntries.forEach((entry, idx) => {
         const { outfit, canvas, ctx, texture } = entry;
-        const isEquipped = currentOutfitTier === outfit.level;
-        const isLowerTier = currentOutfitTier > outfit.level;
-        const canAfford = playerState.pelt >= outfit.cost && !isEquipped && !isLowerTier;
+        let displayLabel = '';
+        let isEquipped = false;
+        let isLowerTier = false;
+        let canAfford = false;
+
+        if (!endgameMode) {
+          isEquipped = currentOutfitTier === outfit.level;
+          isLowerTier = currentOutfitTier > outfit.level;
+          canAfford = playerState.pelt >= outfit.cost && !isEquipped && !isLowerTier;
+          const baseLabel = dict.tailorButtons[idx] || '';
+          displayLabel = isEquipped ? `${baseLabel} ${dict.equippedTag}` : baseLabel;
+        } else if (idx === 0) {
+          isEquipped = currentOutfitTier >= 4;
+          canAfford = !isEquipped && playerState.pelt >= 12;
+          displayLabel = dict.tailorMythicBtn ? dict.tailorMythicBtn(isEquipped) : 'Mythic Frontier Duster (12 Pelts)';
+        } else if (idx === 1) {
+          isEquipped = playerState.maxHealth >= 300;
+          canAfford = !isEquipped && playerState.pelt >= hpCost;
+          displayLabel = dict.tailorReinforceBtn
+            ? dict.tailorReinforceBtn(hpCost, playerState.maxHealth)
+            : `Reinforce Armor (${hpCost} Pelts) -> +15 Max HP`;
+        } else {
+          canAfford = playerState.pelt >= 2;
+          displayLabel = dict.tailorRationsBtn || 'Smoked Venison Pack (2 Pelts) -> +4 Food & Heal';
+        }
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -1769,12 +2100,9 @@
         ctx.lineWidth = 5;
         ctx.stroke();
 
-        const baseLabel = dict.tailorButtons[idx] || '';
-        const displayLabel = isEquipped ? `${baseLabel} ${dict.equippedTag}` : baseLabel;
-
-        let fontSize = 29;
+        let fontSize = 28;
         ctx.font = `bold ${fontSize}px sans-serif`;
-        while (fontSize > 19 && ctx.measureText(displayLabel).width > 968) {
+        while (fontSize > 17 && ctx.measureText(displayLabel).width > 968) {
           fontSize -= 1;
           ctx.font = `bold ${fontSize}px sans-serif`;
         }
@@ -1849,6 +2177,9 @@
       if (gunsmithStatusKey === 'bought_dynamite') {
         return dict.gunsmithMsgBoughtDynamite(playerState.dynamite);
       }
+      if (gunsmithStatusKey === 'mastery_up' && dict.gunsmithMsgMasteryUp) {
+        return dict.gunsmithMsgMasteryUp(weaponMasteryRank, weaponMasteryRank * 20);
+      }
       return gunsmithStatusKey;
     }
 
@@ -1892,7 +2223,7 @@
         gunsmithBoardCtx.font = 'bold 23px sans-serif';
         gunsmithBoardCtx.fillStyle = '#ffd67a';
         gunsmithBoardCtx.fillText(
-          dict.gunsmithInfo(playerState.gold, playerState.pelt, playerState.dynamite),
+          dict.gunsmithInfo(playerState.gold, playerState.pelt, playerState.dynamite, weaponMasteryRank),
           512,
           106
         );
@@ -1900,13 +2231,16 @@
 
       gunsmithBoardTexture.needsUpdate = true;
 
+      const masteryCost = 90 + weaponMasteryRank * 45;
       gunsmithButtonEntries.forEach((entry, idx) => {
         const { item, canvas, ctx, texture } = entry;
-        const isWeapon = item.type === 'weapon';
+        const showMasterySlot = item.id === 'hellfire' && unlockedWeapons.hellfire;
+        const isWeapon = !showMasterySlot && item.type === 'weapon';
         const isOwned = isWeapon && !!unlockedWeapons[item.weaponId];
         const isEquipped = isWeapon && activeWeaponId === item.weaponId;
-        const canAfford =
-          playerState.gold >= item.goldCost && playerState.pelt >= item.peltCost;
+        const canAfford = showMasterySlot
+          ? playerState.gold >= masteryCost
+          : (playerState.gold >= item.goldCost && playerState.pelt >= item.peltCost);
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -1928,10 +2262,12 @@
         ctx.lineWidth = 4.5;
         ctx.stroke();
 
-        const baseLabel = dict.gunsmithButtons[idx] || '';
-        const tag = isEquipped
-          ? ` ${dict.equippedTag}`
-          : (isOwned ? ` ${dict.ownedTag}` : '');
+        const baseLabel = showMasterySlot && dict.gunsmithMasteryBtn
+          ? dict.gunsmithMasteryBtn(weaponMasteryRank + 1, masteryCost)
+          : (dict.gunsmithButtons[idx] || '');
+        const tag = showMasterySlot
+          ? ''
+          : (isEquipped ? ` ${dict.equippedTag}` : (isOwned ? ` ${dict.ownedTag}` : ''));
         const fullLabel = `${baseLabel}${tag}`;
 
         let fontSize = 26;
@@ -2133,7 +2469,9 @@
 
     refreshSheriffHook = () => {
       if (sheriffVanceGroup && sheriffVanceGroup.userData.updateSheriffDialogue) {
-        const quoteIdx = storyState.bossDefeated ? 8 : Math.max(0, Math.min(8, storyState.currentLevel - 1));
+        const quoteIdx = storyState.currentLevel > 20
+          ? 20
+          : Math.max(0, Math.min(20, storyState.currentLevel - 1));
         sheriffVanceGroup.userData.updateSheriffDialogue(quoteIdx);
       }
     };
@@ -2500,6 +2838,9 @@
       camera.add(wModel);
       pcWeapons[wId] = wModel;
     });
+    if (hasGoldenRevolver) {
+      upgradeRevolverToGold();
+    }
 
     function updateControllerRayStyle(controller, wId) {
       if (!controller) return;
@@ -3300,6 +3641,33 @@
     const altarBulletCheckPos = new THREE.Vector3();
     const goldBulletCheckPos = new THREE.Vector3();
     let summonBossFromAltarHook = null;
+    let summonWendigoFromObeliskHook = null;
+    let damageBrimstoneTotemHook = null;
+
+    function collectFrontierObjective(entry) {
+      if (!entry || entry.collected) return false;
+      entry.collected = true;
+      entry.group.visible = false;
+      entry.respawnTimer = 85;
+      if (entry.kind === 'moonstone') {
+        storyState.moonstonesCollected = (storyState.moonstonesCollected || 0) + 1;
+        playerState.gold += 25;
+        spawnSparkBurst(entry.worldPos, 16, 0x8ad8ff, 1.35);
+      } else if (entry.kind === 'strongbox') {
+        storyState.strongboxesRecovered = (storyState.strongboxesRecovered || 0) + 1;
+        playerState.gold += 35;
+        spawnSparkBurst(entry.worldPos, 18, 0xffd24c, 1.4);
+      } else if (entry.kind === 'sun_rune') {
+        storyState.ancientRunesAttuned = (storyState.ancientRunesAttuned || 0) + 1;
+        playerState.gold += 28;
+        spawnSparkBurst(entry.worldPos, 16, 0xffe26a, 1.35);
+      }
+      if (playRelicPickupSound) playRelicPickupSound();
+      else playGoldPickupSound();
+      checkStoryProgression();
+      updateStatusUI();
+      return true;
+    }
 
     function collectGoldPickup(gp) {
       if (!gp || gp.collected) return;
@@ -3340,6 +3708,52 @@
         bloodChaliceOrb.rotation.y += dt * 1.6;
         bloodChaliceOrb.position.y = 1.52 + Math.sin(worldTime * 2.8) * 0.06;
       }
+      if (wendigoObeliskOrb) {
+        wendigoObeliskOrb.rotation.y += dt * 1.5;
+        wendigoObeliskOrb.position.y = 1.62 + Math.sin(worldTime * 2.6) * 0.06;
+      }
+      // Rotasjon, nærhets-oppsamling og respawn for Månesteiner (NV), Pengekasser (NØ), Solruner (SV) og Svovel-totemer (SØ)
+      const frontierLists = [moonstoneTotems, fortStrongboxes, ancientRunes];
+      for (let l = 0; l < frontierLists.length; l++) {
+        const list = frontierLists[l];
+        if (!list) continue;
+        for (let i = 0; i < list.length; i++) {
+          const obj = list[i];
+          if (obj.collected) {
+            if (obj.respawnTimer > 0) {
+              obj.respawnTimer -= dt;
+              if (obj.respawnTimer <= 0) {
+                obj.collected = false;
+                obj.group.visible = true;
+              }
+            }
+            continue;
+          }
+          if (obj.hitMesh) obj.hitMesh.rotation.y += dt * 1.45;
+          const dx = playerRig.position.x - obj.worldPos.x;
+          const dz = playerRig.position.z - obj.worldPos.z;
+          if (dx * dx + dz * dz < 6.2) {
+            collectFrontierObjective(obj);
+          }
+        }
+      }
+      if (brimstoneTotems) {
+        for (let i = 0; i < brimstoneTotems.length; i++) {
+          const bt = brimstoneTotems[i];
+          if (bt.destroyed) {
+            if (bt.respawnTimer > 0) {
+              bt.respawnTimer -= dt;
+              if (bt.respawnTimer <= 0) {
+                bt.destroyed = false;
+                bt.hp = bt.maxHp || 3;
+                bt.group.visible = true;
+              }
+            }
+            continue;
+          }
+          if (bt.hitMesh) bt.hitMesh.rotation.y += dt * 1.8;
+        }
+      }
     }
 
     function updateBullets(dt) {
@@ -3363,7 +3777,7 @@
           }
         }
 
-        // Sjekk om kula treffer Blodalteret i Boot Hill-kapellet (fremkaller Natt & Lord Malakor!)
+        // Sjekk om kula treffer Blodalteret i Boot Hill-kapellet eller Obelisken i Steinringen (SV)
         if (bloodChaliceOrb) {
           bloodChaliceOrb.getWorldPosition(altarBulletCheckPos);
           if (segmentPointDistance(bullet.prev, bullet.mesh.position, altarBulletCheckPos) < 0.72) {
@@ -3372,6 +3786,46 @@
             removeBullet(i);
             continue;
           }
+        }
+        if (wendigoAltarWorldPos && segmentPointDistance(bullet.prev, bullet.mesh.position, wendigoAltarWorldPos) < 0.85) {
+          spawnSparkBurst(wendigoAltarWorldPos, 16, 0x4effa8, 1.45);
+          if (summonWendigoFromObeliskHook) summonWendigoFromObeliskHook();
+          removeBullet(i);
+          continue;
+        }
+        if (brimstoneTotems && brimstoneTotems.length > 0) {
+          let hitTotem = null;
+          for (let tIdx = 0; tIdx < brimstoneTotems.length; tIdx++) {
+            const bt = brimstoneTotems[tIdx];
+            if (bt.destroyed) continue;
+            if (segmentPointDistance(bullet.prev, bullet.mesh.position, bt.worldPos) < 0.88) {
+              hitTotem = bt;
+              break;
+            }
+          }
+          if (hitTotem) {
+            if (damageBrimstoneTotemHook) damageBrimstoneTotemHook(hitTotem, bullet.dmgMult || 1);
+            removeBullet(i);
+            continue;
+          }
+        }
+        const shootPickupLists = [moonstoneTotems, fortStrongboxes, ancientRunes];
+        let shotFrontierObj = null;
+        for (let l = 0; l < shootPickupLists.length && !shotFrontierObj; l++) {
+          const list = shootPickupLists[l];
+          if (!list) continue;
+          for (let k = 0; k < list.length; k++) {
+            const fo = list[k];
+            if (!fo.collected && segmentPointDistance(bullet.prev, bullet.mesh.position, fo.worldPos) < 0.78) {
+              shotFrontierObj = fo;
+              break;
+            }
+          }
+        }
+        if (shotFrontierObj) {
+          collectFrontierObjective(shotFrontierObj);
+          removeBullet(i);
+          continue;
         }
 
         // Sjekk om kula treffer en gullklump/gullkiste i Crimson Canyon
@@ -3450,7 +3904,7 @@
         const combatHit = findCombatHit(bullet.prev, bullet.mesh.position);
         if (combatHit) {
           spawnImpact(combatHit.point, bullet.isSilverBolt ? 0x8ad8ff : 0xffcf8a, 0.2);
-          if (bullet.isSilverBolt && (combatHit.type === 'night' || combatHit.type === 'boss')) {
+          if (bullet.isSilverBolt && (combatHit.type === 'night' || combatHit.type === 'boss' || combatHit.type === 'wendigo_boss')) {
             spawnSparkBurst(combatHit.point, 10, 0xff6a1f, 1.15);
           }
           damageCombatTarget(combatHit, bullet.dir, bullet);
@@ -3981,6 +4435,7 @@
       if (night) {
         for (const deer of deerList) deer.group.visible = false;
         for (const bandit of banditList) {
+          if (bandit.isForemanSlade || bandit.isGeneralCortez || bandit.isBrimstoneMarshal) continue;
           bandit.active = false;
           bandit.group.visible = false;
         }
@@ -4035,9 +4490,10 @@
 
     // --- Mat-spising (+35 HP), Skredder-, Våpensmed- og Sheriff-interaksjon (innenfor 6 meter) ---
     function tryEatFood() {
-      if (playerState.food <= 0 || playerState.health >= 100) return false;
+      if (playerState.food <= 0 || playerState.health >= playerState.maxHealth) return false;
       playerState.food -= 1;
-      playerState.health = Math.min(100, playerState.health + 35);
+      playerState.health = Math.min(playerState.maxHealth, playerState.health + 35);
+      saveCareerProgress();
       updateStatusUI();
       playHealSound();
       return true;
@@ -4180,6 +4636,7 @@
         questProgressMap[quest.id] = 0;
       }
 
+      quest.goal = getScaledQuestGoal(quest);
       activeQuest = quest;
       questProgress = questProgressMap[quest.id] || 0;
 
@@ -4199,37 +4656,66 @@
     function completeActiveQuest() {
       if (!activeQuest) return;
       const finished = activeQuest;
+      const currentTier = Math.max(1, questTiers[finished.id] || 1);
+      const firstClear = !completedQuests.includes(finished.id) && currentTier === 1;
       if (!completedQuests.includes(finished.id)) {
         completedQuests.push(finished.id);
       }
+      const earnedGold = getScaledQuestGold(finished);
+      const foodBonus = 2 + Math.floor(currentTier / 2);
+      const peltBonus = 2 + Math.floor(currentTier / 3);
+
+      questTiers[finished.id] = currentTier + 1;
+      finished.goal = getScaledQuestGoal(finished);
+      storyState.totalBountiesDone = (storyState.totalBountiesDone || 0) + 1;
+
       questProgressMap[finished.id] = 0;
       activeQuest = null;
       questProgress = 0;
 
       if (finished.id === 'deer_hunt') {
-        playerState.gold += 25;
-        playerState.food += 2;
-        playerState.pelt += 2;
+        playerState.gold += earnedGold;
+        playerState.food += foodBonus;
+        playerState.pelt += peltBonus;
         hasSheriffStar = true;
         sheriffStarBadge.visible = true;
-        setQuestBoardFeedback('reward_deer', true, 4.5);
+        if (firstClear) setQuestBoardFeedback('reward_deer', true, 4.5);
+        else setQuestBoardFeedback('reward_tier', true, 4.5, { gold: earnedGold, tier: currentTier });
       } else if (finished.id === 'bandit_clear') {
-        playerState.gold += 30;
-        weaponDamage = 2;
-        hasGoldenRevolver = true;
-        upgradeRevolverToGold();
-        setQuestBoardFeedback('reward_bandit', true, 4.5);
+        playerState.gold += earnedGold;
+        weaponDamage = Math.max(weaponDamage, 2);
+        if (!hasGoldenRevolver) {
+          hasGoldenRevolver = true;
+          upgradeRevolverToGold();
+        } else {
+          playerState.dynamite += 1;
+        }
+        if (firstClear) setQuestBoardFeedback('reward_bandit', true, 4.5);
+        else setQuestBoardFeedback('reward_tier', true, 4.5, { gold: earnedGold, tier: currentTier });
       } else if (finished.id === 'night_guardian') {
-        playerState.gold += 45;
-        playerState.health = 100;
-        setQuestBoardFeedback('reward_night', true, 4.5);
+        playerState.gold += earnedGold;
+        playerState.pelt += 1;
+        playerState.health = playerState.maxHealth;
+        if (firstClear) setQuestBoardFeedback('reward_night', true, 4.5);
+        else setQuestBoardFeedback('reward_tier', true, 4.5, { gold: earnedGold, tier: currentTier });
       }
 
+      checkStoryProgression();
+      saveCareerProgress();
       updateStatusUI();
       playQuestFanfare();
     }
 
     function recordQuestKill(targetType) {
+      // Oppdater også evige Prestisje-kapitler (Kapittel 21+) ved hvert nedlagte vilt/fiende!
+      if (storyState.currentLevel >= 21) {
+        if (targetType === 'deer') {
+          storyState.prestigeBeasts = (storyState.prestigeBeasts || 0) + 1;
+        } else if (targetType === 'bandit' || targetType === 'night') {
+          storyState.prestigeFoes = (storyState.prestigeFoes || 0) + 1;
+        }
+      }
+
       if (!activeQuest || activeQuest.targetType !== targetType) return;
       questProgress += 1;
       questProgressMap[activeQuest.id] = questProgress;
@@ -4250,6 +4736,74 @@
 
     function purchaseTailorOutfit(outfit) {
       if (!outfit) return;
+
+      // Sluttspill-modus hos Skredderen når Vampyrjeger-sett (Tier 3) allerede er sydd!
+      if (currentOutfitTier >= 3) {
+        if (outfit.level === 1) {
+          // Slot 1: Mytisk Grenselandsfrakk (Tier 4 -> 80 % rustning + 3x nattskade, pris 12 Skinn)
+          if (currentOutfitTier >= 4) {
+            setTailorFeedback('same', false, 3.0);
+            playShopDenySound();
+            return;
+          }
+          if (playerState.pelt < 12) {
+            setTailorFeedback('no_pelts', false, 3.0);
+            playShopDenySound();
+            return;
+          }
+          playerState.pelt -= 12;
+          currentOutfitTier = 4;
+          damageMultiplier = 0.20;
+          nightMonsterDamage = Math.max(nightMonsterDamage, 3);
+          storyState.masterUpgradeBought = true;
+          updateLeftSleeveAppearance(4);
+          setTailorFeedback('crafted', true, 3.2);
+          checkStoryProgression();
+          saveCareerProgress();
+          updateStatusUI();
+          playUpgradeSound();
+          return;
+        }
+        if (outfit.level === 2) {
+          // Slot 2: Forsterk Rustningsfôr (+15 Maks Helse opp til 300 HP!)
+          if (playerState.maxHealth >= 300) {
+            setTailorFeedback('same', false, 3.0);
+            playShopDenySound();
+            return;
+          }
+          const hpRanks = Math.round((playerState.maxHealth - 100) / 15);
+          const hpCost = 5 + hpRanks * 3;
+          if (playerState.pelt < hpCost) {
+            setTailorFeedback('no_pelts', false, 3.0);
+            playShopDenySound();
+            return;
+          }
+          playerState.pelt -= hpCost;
+          playerState.maxHealth = Math.min(300, playerState.maxHealth + 15);
+          playerState.health = playerState.maxHealth;
+          storyState.masterUpgradeBought = true;
+          setTailorFeedback('hp_up', true, 3.2);
+          checkStoryProgression();
+          saveCareerProgress();
+          updateStatusUI();
+          playUpgradeSound();
+          return;
+        }
+        // Slot 3: Røkt Viltproviant (2 Skinn -> +4 Mat & Full Helse)
+        if (playerState.pelt < 2) {
+          setTailorFeedback('no_pelts', false, 3.0);
+          playShopDenySound();
+          return;
+        }
+        playerState.pelt -= 2;
+        playerState.food += 4;
+        playerState.health = playerState.maxHealth;
+        setTailorFeedback('rations', true, 3.0);
+        saveCareerProgress();
+        updateStatusUI();
+        playHealSound();
+        return;
+      }
 
       if (currentOutfitTier >= outfit.level) {
         const key = currentOutfitTier === outfit.level ? 'same' : 'better';
@@ -4277,6 +4831,7 @@
       updateLeftSleeveAppearance(currentOutfitTier);
       setTailorFeedback('crafted', true, 3.0);
       checkStoryProgression();
+      saveCareerProgress();
       updateStatusUI();
       playUpgradeSound();
     }
@@ -4291,6 +4846,25 @@
 
     function purchaseGunsmithItem(item) {
       if (!item) return;
+
+      // Når Hellfire Repeater er låst opp, fungerer Slot 5 som repeterbar Våpenmestring (+20 % skade per nivå!)
+      if (item.id === 'hellfire' && unlockedWeapons.hellfire) {
+        const masteryCost = 90 + weaponMasteryRank * 45;
+        if (playerState.gold < masteryCost) {
+          setGunsmithFeedback('no_gold', false, 3.2);
+          playShopDenySound();
+          return;
+        }
+        playerState.gold -= masteryCost;
+        weaponMasteryRank += 1;
+        storyState.masterUpgradeBought = true;
+        setGunsmithFeedback('mastery_up', true, 3.5);
+        checkStoryProgression();
+        saveCareerProgress();
+        updateStatusUI();
+        playUpgradeSound();
+        return;
+      }
 
       if (item.type === 'weapon') {
         if (unlockedWeapons[item.weaponId]) {
@@ -4330,6 +4904,7 @@
         equipWeapon(item.weaponId, true);
         setGunsmithFeedback('bought_weapon', true, 3.5, item.weaponId);
         checkStoryProgression();
+        saveCareerProgress();
         updateStatusUI();
         playUpgradeSound();
         return;
@@ -4346,6 +4921,7 @@
       storyState.boughtGear = true;
       setGunsmithFeedback('bought_dynamite', true, 3.2);
       checkStoryProgression();
+      saveCareerProgress();
       updateStatusUI();
       playUpgradeSound();
     }
@@ -4530,12 +5106,32 @@
         }
       }
 
-      // 8. Klikk på Blodalteret i Boot Hill-kapellet (innenfor 7m -> fremkall Natt & Lord Malakor)
+      // 8. Klikk på Blodalteret i Boot Hill-kapellet eller Ur-Obelisken i Steinringen (SV)
       if (chapelAltarHitMeshes && chapelAltarHitMeshes.length > 0) {
         const altarHits = uiRaycaster.intersectObjects(chapelAltarHitMeshes, false);
         if (altarHits.length > 0 && altarHits[0].distance <= 7.5) {
           if (summonBossFromAltarHook) summonBossFromAltarHook();
           return true;
+        }
+      }
+      if (wendigoAltarHitMeshes && wendigoAltarHitMeshes.length > 0) {
+        const wHits = uiRaycaster.intersectObjects(wendigoAltarHitMeshes, false);
+        if (wHits.length > 0 && wHits[0].distance <= 7.5) {
+          if (summonWendigoFromObeliskHook) summonWendigoFromObeliskHook();
+          return true;
+        }
+      }
+      const frontierHitArrays = [moonstoneHitMeshes, fortStrongboxHitMeshes, ancientRuneHitMeshes];
+      for (let fIdx = 0; fIdx < frontierHitArrays.length; fIdx++) {
+        const arr = frontierHitArrays[fIdx];
+        if (!arr || arr.length === 0) continue;
+        const fHits = uiRaycaster.intersectObjects(arr, false);
+        if (fHits.length > 0 && fHits[0].distance <= 6.2) {
+          const fo = fHits[0].object.userData.frontierObjective;
+          if (fo && !fo.collected) {
+            collectFrontierObjective(fo);
+            return true;
+          }
         }
       }
 
@@ -4649,7 +5245,7 @@
       playPlayerDeathSound();
       flashDamageVignette(0.65);
 
-      playerState.health = 100;
+      playerState.health = playerState.maxHealth;
       playerState.food = Math.floor(playerState.food / 2);
       playerState.pelt = Math.floor(playerState.pelt / 2);
 
@@ -4658,6 +5254,7 @@
       resetPCCameraPitch();
 
       playerInvulnerableTimer = 2;
+      saveCareerProgress();
       updateStatusUI();
     }
 
@@ -4679,7 +5276,7 @@
       storyState,
       S: {
         get nightMonsterDamage() { return nightMonsterDamage; },
-        get weaponDamage() { return weaponDamage; },
+        get weaponDamage() { return weaponDamage * (1 + weaponMasteryRank * 0.20); },
         get playerHiddenStatus() { return playerHiddenStatus; },
         get safeHouseDoorOpen() { return safeHouseDoorOpen; },
         get isNight() { return isNight; },
@@ -4744,7 +5341,8 @@
       tailorNPCGroup,
       gunsmithNPCGroup,
       sheriffVanceGroup,
-      mineBarricades
+      mineBarricades,
+      brimstoneTotems
     });
 
     const {
@@ -4754,11 +5352,13 @@
       banditList,
       nightEnemies,
       bossEnemy,
+      wendigoBossEnemy,
       horseEntity,
       silverRelicHitMeshes,
       collectSilverRelic,
       callHorseToPlayer,
       damageBarricade,
+      damageBrimstoneTotem,
       resetBanditsForDay,
       spawnNightEnemies,
       startNightEnemiesBurning,
@@ -4768,6 +5368,7 @@
       updateBandits,
       updateNightEnemies,
       updateBossEnemy,
+      updateWendigoBoss,
       updateHorseAndRelics,
       updateAnimationMixers,
       updateEnemyBullets,
@@ -4782,8 +5383,10 @@
       if (callHorseToPlayer) callHorseToPlayer();
     };
     damageBarricadeHook = damageBarricade;
+    damageBrimstoneTotemHook = damageBrimstoneTotem;
     refreshBossBarHook = E.syncBossHealthBarUI;
     summonBossFromAltarHook = E.summonBossFromAltar;
+    summonWendigoFromObeliskHook = E.summonWendigoFromObelisk;
     onNightStateChangedBossHook = E.onNightStateChangedBoss;
     applyDynamiteBlastHook = E.applyDynamiteBlast;
     // --- 8o. VR-kontrollerknapper: høyre grip = spis mat, venstre grip = sitt opp/av hest nær hest (ellers dag/natt) ---
@@ -4927,6 +5530,29 @@
         applyQualityPixelRatio();
         saveControlSettings();
         syncControlsLocalizationUI();
+      });
+    }
+    if (sensCareerResetBtnEl) {
+      let careerConfirmTimeout = null;
+      sensCareerResetBtnEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const dict = L();
+        if (!sensCareerResetBtnEl.dataset.confirming) {
+          sensCareerResetBtnEl.dataset.confirming = '1';
+          sensCareerResetBtnEl.textContent = dict.careerResetConfirmBtn || 'Confirm Reset?';
+          sensCareerResetBtnEl.classList.add('active');
+          careerConfirmTimeout = setTimeout(() => {
+            delete sensCareerResetBtnEl.dataset.confirming;
+            sensCareerResetBtnEl.classList.remove('active');
+            syncControlsLocalizationUI();
+          }, 3500);
+          return;
+        }
+        if (careerConfirmTimeout) clearTimeout(careerConfirmTimeout);
+        try {
+          localStorage.removeItem(CAREER_SAVE_KEY);
+        } catch (_) {}
+        location.reload();
       });
     }
     if (sensResetBtnEl) {
@@ -5383,6 +6009,12 @@
     renderer.setAnimationLoop(() => {
       const dt = Math.min(clock.getDelta(), 0.05);
       worldTime += dt;
+      totalPlaySeconds += dt;
+      autoSaveAccum += dt;
+      if (autoSaveAccum >= 8.0) {
+        autoSaveAccum = 0;
+        saveCareerProgress();
+      }
       if (windUniforms) windUniforms.uWindTime.value = worldTime;
       if (shotCooldownTimer > 0) shotCooldownTimer = Math.max(0, shotCooldownTimer - dt);
       currentMoveSpeed = 0;
@@ -5457,6 +6089,7 @@
       updateBandits(dt);
       updateNightEnemies(dt);
       updateBossEnemy(dt);
+      if (updateWendigoBoss) updateWendigoBoss(dt);
       if (updateHorseAndRelics) {
         updateHorseAndRelics(dt, worldTime, currentMoveSpeed, currentMoveDirX, currentMoveDirZ);
       }
