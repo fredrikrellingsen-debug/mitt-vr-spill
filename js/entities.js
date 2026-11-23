@@ -1245,9 +1245,14 @@ export function initWorldEntities(ctx) {
       }
       storyState.act1Deer += 1;
       storyState.totalKills = (storyState.totalKills || 0) + 1;
-      recordQuestKill('deer');
+      recordQuestKill(
+        deer.isWhiteStag
+          ? ['wild_beast', 'deer_any', 'white_stag', 'deer']
+          : ['wild_beast', 'deer_any', 'deer']
+      );
       checkStoryProgression();
       updateStatusUI();
+      return;
     }
 
     function damageWolf(wolf, _dir, bulletInfo, rawOverride = 0) {
@@ -1283,7 +1288,13 @@ export function initWorldEntities(ctx) {
       }
       storyState.level2Wolves += 1;
       storyState.totalKills = (storyState.totalKills || 0) + 1;
-      recordQuestKill('deer');
+      if (wolf.isAlphaWolf) {
+        recordQuestKill(['wild_beast', 'wolf', 'alpha_wolf', 'apex_predator', 'deer']);
+      } else if (wolf.isCougar) {
+        recordQuestKill(['wild_beast', 'cougar', 'apex_predator', 'deer']);
+      } else {
+        recordQuestKill(['wild_beast', 'wolf', 'deer']);
+      }
       checkStoryProgression();
       updateStatusUI();
       playCollectSound();
@@ -1325,7 +1336,11 @@ export function initWorldEntities(ctx) {
       storyState.act1Deer += 1;
       storyState.totalKills = (storyState.totalKills || 0) + 1;
       playGoldPickupSound();
-      recordQuestKill('deer');
+      recordQuestKill(
+        bear.isBison
+          ? ['wild_beast', 'bison', 'deer']
+          : ['wild_beast', 'grizzly', 'apex_predator', 'deer']
+      );
       checkStoryProgression();
       updateStatusUI();
     }
@@ -1351,47 +1366,58 @@ export function initWorldEntities(ctx) {
       bandit.group.rotation.z = 0;
       setEntityAnimation(bandit, bandit.hasDeathClip ? 'Death' : 'Idle');
 
+      const banditQuestTags = ['bandit_any', 'combat_any', 'bandit'];
       if (bandit.isGeneralCortez) {
         playerState.gold += scaleGoldReward(75);
         storyState.cortezDefeated = true;
         storyState.eliteKills = (storyState.eliteKills || 0) + 1;
         if (storyState.currentLevel >= 21) storyState.prestigeBosses = (storyState.prestigeBosses || 0) + 1;
+        banditQuestTags.push('cortez', 'fort_bandit', 'elite_foe', 'any_boss');
         playBossVictoryFanfare();
       } else if (bandit.isBrimstoneMarshal) {
         playerState.gold += scaleGoldReward(90);
         storyState.brimstoneMarshalDefeated = true;
         storyState.eliteKills = (storyState.eliteKills || 0) + 1;
         if (storyState.currentLevel >= 21) storyState.prestigeBosses = (storyState.prestigeBosses || 0) + 1;
+        banditQuestTags.push('marshal', 'brimstone_foe', 'elite_foe', 'any_boss');
         playBossVictoryFanfare();
       } else if (bandit.isForemanSlade) {
         playerState.gold += scaleGoldReward(50);
         storyState.sladeDefeated = true;
         storyState.eliteKills = (storyState.eliteKills || 0) + 1;
         if (storyState.currentLevel >= 21) storyState.prestigeBosses = (storyState.prestigeBosses || 0) + 1;
+        banditQuestTags.push('mine_action', 'elite_foe', 'any_boss');
         playGoldPickupSound();
       } else if (bandit.isFortDesperado) {
         playerState.gold += scaleGoldReward(18);
         storyState.fortBanditsKilled = (storyState.fortBanditsKilled || 0) + 1;
         storyState.eliteKills = (storyState.eliteKills || 0) + 1;
+        banditQuestTags.push('fort_bandit', 'elite_foe');
       } else if (bandit.isBrimstoneRaider) {
         playerState.gold += scaleGoldReward(22);
         storyState.brimstoneFoesKilled = (storyState.brimstoneFoesKilled || 0) + 1;
         storyState.eliteKills = (storyState.eliteKills || 0) + 1;
+        banditQuestTags.push('brimstone_foe', 'elite_foe');
       } else if (bandit.isTrainSniper) {
         playerState.gold += scaleGoldReward(15);
         storyState.trainSnipersKilled += 1;
+        banditQuestTags.push('train_sniper', 'elite_foe');
       } else if (bandit.isCaptain) {
         playerState.gold += scaleGoldReward(35);
         storyState.captainDefeated = true;
         storyState.act2Bandits += 1;
         storyState.eliteKills = (storyState.eliteKills || 0) + 1;
+        banditQuestTags.push('elite_foe', 'any_boss');
         playGoldPickupSound();
       } else {
         playerState.gold += scaleGoldReward(10);
         storyState.act2Bandits += 1;
+        if (bandit.group.position.x > 65 && !banditQuestTags.includes('mine_action')) {
+          banditQuestTags.push('mine_action');
+        }
       }
       storyState.totalKills = (storyState.totalKills || 0) + 1;
-      recordQuestKill('bandit');
+      recordQuestKill(banditQuestTags);
       checkStoryProgression();
       updateStatusUI();
     }
@@ -1409,25 +1435,30 @@ export function initWorldEntities(ctx) {
       spawnImpact(nightDeathImpactPosition, enemy.isWendigoStalker ? 0x4effa8 : (enemy.isCatacombGuardian ? 0x62ccff : 0xff3a1f), 0.38);
       spawnVampireAshDissolution(enemy.group.position, 1.0);
 
+      const nightQuestTags = ['night_any', 'combat_any', 'night'];
       if (enemy.isWendigoStalker) {
         playerState.gold += scaleGoldReward(28);
         playerState.pelt += 2;
         storyState.wendigosKilled = (storyState.wendigosKilled || 0) + 1;
         storyState.eclipseKills = (storyState.eclipseKills || 0) + 1;
         storyState.eliteKills = (storyState.eliteKills || 0) + 1;
+        nightQuestTags.push('wendigo', 'elite_foe');
       } else if (enemy.isBrimstoneRevenant) {
         playerState.gold += scaleGoldReward(24);
         storyState.brimstoneFoesKilled = (storyState.brimstoneFoesKilled || 0) + 1;
         storyState.eclipseKills = (storyState.eclipseKills || 0) + 1;
         storyState.eliteKills = (storyState.eliteKills || 0) + 1;
+        nightQuestTags.push('brimstone_foe', 'elite_foe');
       } else if (enemy.isCatacombGuardian) {
         playerState.gold += scaleGoldReward(18);
         storyState.catacombGuardiansKilled += 1;
         storyState.eclipseKills = (storyState.eclipseKills || 0) + 1;
+        nightQuestTags.push('catacomb_guardian', 'vampire_or_catacomb', 'elite_foe');
       } else {
         playerState.gold += scaleGoldReward(8);
         storyState.act3NightKills += 1;
         storyState.eclipseKills = (storyState.eclipseKills || 0) + 1;
+        nightQuestTags.push('vampire_or_catacomb');
         if (enemy.group.position.x < -45 || storyState.currentLevel >= 6) {
           storyState.bootHillVampires += 1;
         }
@@ -1436,7 +1467,7 @@ export function initWorldEntities(ctx) {
         }
       }
       storyState.totalKills = (storyState.totalKills || 0) + 1;
-      recordQuestKill('night');
+      recordQuestKill(nightQuestTags);
       checkStoryProgression();
       updateStatusUI();
     }
@@ -1482,7 +1513,7 @@ export function initWorldEntities(ctx) {
       playerState.gold += scaleGoldReward(120);
       playerState.health = playerState.maxHealth || 100;
 
-      recordQuestKill('night');
+      recordQuestKill(['night_any', 'vampire_or_catacomb', 'malakor', 'any_boss', 'elite_foe', 'combat_any', 'night']);
       playBossVictoryFanfare();
       checkStoryProgression();
       updateStatusUI();
@@ -1518,7 +1549,7 @@ export function initWorldEntities(ctx) {
         if (storyState.currentLevel >= 21) storyState.prestigeBosses = (storyState.prestigeBosses || 0) + 1;
         playerState.gold += scaleGoldReward(110);
         playerState.pelt += 4;
-        recordQuestKill('night');
+        recordQuestKill(['night_any', 'wendigo', 'wendigo_boss', 'any_boss', 'elite_foe', 'combat_any', 'night']);
         playBossVictoryFanfare();
         checkStoryProgression();
         updateStatusUI();
@@ -1538,6 +1569,7 @@ export function initWorldEntities(ctx) {
         if (playBarricadeBlastSound) playBarricadeBlastSound();
         storyState.brimstoneTotemsShattered = (storyState.brimstoneTotemsShattered || 0) + 1;
         playerState.gold += scaleGoldReward(22);
+        recordQuestKill(['brimstone_totem']);
         checkStoryProgression();
         updateStatusUI();
       }
@@ -1600,6 +1632,7 @@ export function initWorldEntities(ctx) {
       spawnSparkBurst(barEntry.worldPos, 8, 0xff9a38, 1.0);
       if (barEntry.hp <= 0) {
         barEntry.destroyed = true;
+        barEntry.respawnTimer = 80;
         barEntry.group.visible = false;
         if (barEntry.colliderRef) barEntry.colliderRef.disabled = true;
         spawnImpact(barEntry.worldPos, 0xff6622, 1.6);
@@ -1607,6 +1640,7 @@ export function initWorldEntities(ctx) {
         if (playBarricadeBlastSound) playBarricadeBlastSound();
         storyState.barricadesCleared += 1;
         playerState.gold += 15;
+        recordQuestKill(['mine_action']);
         checkStoryProgression();
         updateStatusUI();
       }
@@ -2708,27 +2742,78 @@ export function initWorldEntities(ctx) {
     function collectSilverRelic(relicEntry) {
       if (!relicEntry || relicEntry.collected) return false;
       relicEntry.collected = true;
+      relicEntry.respawnTimer = 65;
       relicEntry.group.visible = false;
       storyState.bootHillRelics += 1;
       playerState.gold += 25;
       if (playRelicPickupSound) playRelicPickupSound();
       spawnSparkBurst(relicEntry.group.position, 14, 0x8ad8ff, 1.3);
+      recordQuestKill(['silver_relic', 'treasure_any']);
       checkStoryProgression();
       updateStatusUI();
       return true;
     }
 
-    function updateHorseAndRelics(dt, worldTime, playerMovingSpeed = 0, moveDirX = 0, moveDirZ = 0) {
-      // Roter og sjekk automatisk oppsamling av Sølvrelikvier ved nærkontakt
+    function respawnSilverRelicsNow() {
       for (let i = 0; i < silverRelics.length; i++) {
         const rel = silverRelics[i];
-        if (rel.collected) continue;
+        if (rel.collected) {
+          rel.collected = false;
+          rel.respawnTimer = 0;
+          rel.group.visible = true;
+        }
+      }
+    }
+
+    function respawnMineBarricadesNow() {
+      for (let i = 0; i < mineBarricades.length; i++) {
+        const bar = mineBarricades[i];
+        if (bar.destroyed && Math.hypot(playerRig.position.x - bar.worldPos.x, playerRig.position.z - bar.worldPos.z) > 8.0) {
+          bar.destroyed = false;
+          bar.hp = bar.maxHp || 6;
+          bar.respawnTimer = 0;
+          bar.group.visible = true;
+          if (bar.colliderRef) bar.colliderRef.disabled = false;
+        }
+      }
+    }
+
+    function updateHorseAndRelics(dt, worldTime, playerMovingSpeed = 0, moveDirX = 0, moveDirZ = 0) {
+      // Roter, respawn og sjekk automatisk oppsamling av Sølvrelikvier ved nærkontakt
+      for (let i = 0; i < silverRelics.length; i++) {
+        const rel = silverRelics[i];
+        if (rel.collected) {
+          if (rel.respawnTimer > 0) {
+            rel.respawnTimer -= dt;
+            if (rel.respawnTimer <= 0) {
+              rel.collected = false;
+              rel.group.visible = true;
+            }
+          }
+          continue;
+        }
         rel.group.rotation.y += dt * 1.4;
         if (
           Math.hypot(playerRig.position.x - rel.group.position.x, playerRig.position.z - rel.group.position.z) < 2.25 &&
           Math.abs(playerRig.position.y - rel.group.position.y) < 2.2
         ) {
           collectSilverRelic(rel);
+        }
+      }
+
+      // Regenerer sprengte gruvebarrikader når spilleren har forlatt gruven slik at nye gruve-quests alltid kan fullføres
+      for (let i = 0; i < mineBarricades.length; i++) {
+        const bar = mineBarricades[i];
+        if (bar.destroyed && bar.respawnTimer > 0) {
+          if (Math.hypot(playerRig.position.x - bar.worldPos.x, playerRig.position.z - bar.worldPos.z) > 15.0) {
+            bar.respawnTimer -= dt;
+            if (bar.respawnTimer <= 0) {
+              bar.destroyed = false;
+              bar.hp = bar.maxHp || 6;
+              bar.group.visible = true;
+              if (bar.colliderRef) bar.colliderRef.disabled = false;
+            }
+          }
         }
       }
 
@@ -2798,6 +2883,8 @@ export function initWorldEntities(ctx) {
     silverRelics,
     silverRelicHitMeshes,
     collectSilverRelic,
+    respawnSilverRelicsNow,
+    respawnMineBarricadesNow,
     callHorseToPlayer,
     damageBarricade,
     damageBrimstoneTotem,
