@@ -46,23 +46,42 @@ export function initWorldEntities(ctx) {
     tailorNPCGroup,
     gunsmithNPCGroup,
     sheriffVanceGroup,
-    mineBarricades = []
+    mineBarricades = [],
+    brimstoneTotems = []
   } = ctx;
 
   const {
     createDeerModel,
+    createWhiteStagModel,
     createWolfModel,
+    createCougarModel,
+    createAlphaDirewolfModel,
     createBearModel,
+    createBisonModel,
     createHorseModel,
     createBanditModel,
+    createFortDesperadoModel,
+    createBrimstoneRaiderModel,
     createBanditCaptainModel,
+    createGeneralCortezModel,
+    createBrimstoneMarshalModel,
     createForemanSladeModel,
     createNightEnemyModel,
+    createBrimstoneRevenantModel,
+    createWendigoStalkerModel,
     createCatacombGuardianModel,
     createBossVampireModel,
+    createAncientWendigoBossModel,
     createSilverRelicMesh,
     animateQuadrupedLegs
   } = C;
+
+  function getPrestigeHpMult() {
+    return 1 + (storyState.prestigeRank || 0) * 0.22;
+  }
+  function scaleGoldReward(baseGold) {
+    return Math.max(1, Math.round(baseGold * (1 + (storyState.prestigeRank || 0) * 0.35)));
+  }
 
   const {
     playFleshHitSound,
@@ -426,42 +445,55 @@ export function initWorldEntities(ctx) {
       }
     }
 
-    // --- 8h. Opprett og plasser skapninger i alle 4 regioner (følger terrenghøyden) ---
+    // --- 8h. Opprett og plasser skapninger i alle 8 regioner (følger terrenghøyden) ---
     const deerList = [];
     const wolfList = [];
     const bearList = [];
     const banditList = [];
     const nightEnemies = [];
 
+    const SILVERPINE_BOUNDS = { minX: -195, maxX: -90, minZ: -192, maxZ: -90 };
+    const PLAINS_BOUNDS = { minX: -195, maxX: -82, minZ: 82, maxZ: 192 };
+    const WIDE_NORTH_BOUNDS = { minX: -195, maxX: 185, minZ: -192, maxZ: -26 };
+
     const deerHomes = [
-      new THREE.Vector3(-12, 0, -34),
-      new THREE.Vector3(10, 0, -46),
-      new THREE.Vector3(-8, 0, -60),
-      new THREE.Vector3(18, 0, -66),
-      new THREE.Vector3(-16, 0, -96),
-      new THREE.Vector3(12, 0, -116)
+      { x: -12, z: -34, whiteStag: false },
+      { x: 10, z: -46, whiteStag: false },
+      { x: -8, z: -60, whiteStag: false },
+      { x: 18, z: -66, whiteStag: false },
+      { x: -16, z: -96, whiteStag: false },
+      { x: 12, z: -116, whiteStag: false },
+      // 2 Legendariske Hvite Kronhjorter på NV Silverpine Peak
+      { x: -136, z: -146, whiteStag: true, bounds: SILVERPINE_BOUNDS },
+      { x: -156, z: -128, whiteStag: true, bounds: SILVERPINE_BOUNDS }
     ];
 
     function chooseDeerTarget(deer) {
       const home = deer.home;
+      const b = deer.bounds || FOREST_BOUNDS;
       deer.wanderTarget.set(
-        THREE.MathUtils.clamp(home.x + (Math.random() - 0.5) * 22, FOREST_BOUNDS.minX, FOREST_BOUNDS.maxX),
+        THREE.MathUtils.clamp(home.x + (Math.random() - 0.5) * 22, b.minX, b.maxX),
         0,
-        THREE.MathUtils.clamp(home.z + (Math.random() - 0.5) * 22, FOREST_BOUNDS.minZ, FOREST_BOUNDS.maxZ)
+        THREE.MathUtils.clamp(home.z + (Math.random() - 0.5) * 22, b.minZ, b.maxZ)
       );
     }
 
-    function createDeerAt(x, z) {
-      const group = createDeerModel();
+    function createDeerAt(x, z, opts = {}) {
+      const isWhiteStag = !!opts.whiteStag;
+      const group = (isWhiteStag && createWhiteStagModel) ? createWhiteStagModel() : createDeerModel();
       group.position.set(x, getTerrainHeight(x, z), z);
       group.rotation.y = Math.random() * Math.PI * 2;
       scene.add(group);
 
+      const maxHp = isWhiteStag ? 5 : 2;
       const deer = {
         kind: 'deer',
+        isWhiteStag,
+        bounds: opts.bounds || FOREST_BOUNDS,
         group,
         alive: true,
-        hp: 2,
+        hp: maxHp,
+        maxHp,
         state: 'wander',
         home: new THREE.Vector3(x, 0, z),
         wanderTarget: new THREE.Vector3(),
@@ -478,32 +510,49 @@ export function initWorldEntities(ctx) {
     }
 
     const wolfHomes = [
-      new THREE.Vector3(-18, 0, -48),
-      new THREE.Vector3(15, 0, -36),
-      new THREE.Vector3(-22, 0, -92),
-      new THREE.Vector3(20, 0, -108)
+      { x: -18, z: -48, bounds: FOREST_BOUNDS },
+      { x: 15, z: -36, bounds: FOREST_BOUNDS },
+      { x: -22, z: -92, bounds: FOREST_BOUNDS },
+      { x: 20, z: -108, bounds: FOREST_BOUNDS },
+      // Fjellpumaer (Mountain Cougars) & Alfa-ulver (Alpha Direwolves)
+      { x: -126, z: -118, isCougar: true, bounds: SILVERPINE_BOUNDS },
+      { x: -158, z: -148, isCougar: true, bounds: SILVERPINE_BOUNDS },
+      { x: 66, z: -98, isCougar: true, bounds: WIDE_NORTH_BOUNDS },
+      { x: -148, z: -124, isAlphaWolf: true, bounds: SILVERPINE_BOUNDS },
+      { x: -132, z: -160, isAlphaWolf: true, bounds: SILVERPINE_BOUNDS },
+      { x: -28, z: -128, isAlphaWolf: true, bounds: WIDE_NORTH_BOUNDS }
     ];
 
     function chooseWolfTarget(wolf) {
       const home = wolf.home;
+      const b = wolf.bounds || FOREST_BOUNDS;
       wolf.wanderTarget.set(
-        THREE.MathUtils.clamp(home.x + (Math.random() - 0.5) * 16, FOREST_BOUNDS.minX, FOREST_BOUNDS.maxX),
+        THREE.MathUtils.clamp(home.x + (Math.random() - 0.5) * 18, b.minX, b.maxX),
         0,
-        THREE.MathUtils.clamp(home.z + (Math.random() - 0.5) * 16, FOREST_BOUNDS.minZ, FOREST_BOUNDS.maxZ)
+        THREE.MathUtils.clamp(home.z + (Math.random() - 0.5) * 18, b.minZ, b.maxZ)
       );
     }
 
-    function createWolfAt(x, z) {
-      const group = createWolfModel();
+    function createWolfAt(x, z, opts = {}) {
+      const isCougar = !!opts.isCougar;
+      const isAlphaWolf = !!opts.isAlphaWolf;
+      const group = (isCougar && createCougarModel)
+        ? createCougarModel()
+        : ((isAlphaWolf && createAlphaDirewolfModel) ? createAlphaDirewolfModel() : createWolfModel());
       group.position.set(x, getTerrainHeight(x, z), z);
       group.rotation.y = Math.random() * Math.PI * 2;
       scene.add(group);
 
+      const maxHp = isAlphaWolf ? 5 : (isCougar ? 4 : 2);
       const wolf = {
         kind: 'wolf',
+        isCougar,
+        isAlphaWolf,
+        bounds: opts.bounds || FOREST_BOUNDS,
         group,
         alive: true,
-        hp: 2,
+        hp: maxHp,
+        maxHp,
         state: 'patrol',
         home: new THREE.Vector3(x, 0, z),
         wanderTarget: new THREE.Vector3(),
@@ -521,33 +570,42 @@ export function initWorldEntities(ctx) {
       wolfList.push(wolf);
     }
 
-    // --- Tungt rovdyr i Whispering Woods: Grizzlybjørn (hp = 6 -> +3 Mat, +3 Skinn, +15 Gull) ---
+    // --- Tungt vilt: Grizzlybjørn i Whispering Woods + Præriebison på SV Thunder Plains ---
     const bearHomes = [
-      new THREE.Vector3(-14, 0, -96),
-      new THREE.Vector3(16, 0, -122)
+      { x: -14, z: -96, isBison: false, bounds: { minX: FOREST_BOUNDS.minX, maxX: FOREST_BOUNDS.maxX, minZ: -142, maxZ: -62 } },
+      { x: 16, z: -122, isBison: false, bounds: { minX: FOREST_BOUNDS.minX, maxX: FOREST_BOUNDS.maxX, minZ: -142, maxZ: -62 } },
+      { x: -122, z: 118, isBison: true, bounds: PLAINS_BOUNDS },
+      { x: -152, z: 122, isBison: true, bounds: PLAINS_BOUNDS },
+      { x: -128, z: 152, isBison: true, bounds: PLAINS_BOUNDS },
+      { x: -158, z: 148, isBison: true, bounds: PLAINS_BOUNDS }
     ];
 
     function chooseBearTarget(bear) {
       const home = bear.home;
+      const b = bear.bounds || FOREST_BOUNDS;
       bear.wanderTarget.set(
-        THREE.MathUtils.clamp(home.x + (Math.random() - 0.5) * 18, FOREST_BOUNDS.minX, FOREST_BOUNDS.maxX),
+        THREE.MathUtils.clamp(home.x + (Math.random() - 0.5) * 20, b.minX, b.maxX),
         0,
-        THREE.MathUtils.clamp(home.z + (Math.random() - 0.5) * 18, -142, -62)
+        THREE.MathUtils.clamp(home.z + (Math.random() - 0.5) * 20, b.minZ, b.maxZ)
       );
     }
 
-    function createBearAt(x, z) {
-      const group = createBearModel();
+    function createBearAt(x, z, opts = {}) {
+      const isBison = !!opts.isBison;
+      const group = (isBison && createBisonModel) ? createBisonModel() : createBearModel();
       group.position.set(x, getTerrainHeight(x, z), z);
       group.rotation.y = Math.random() * Math.PI * 2;
       scene.add(group);
 
+      const maxHp = isBison ? 9 : 6;
       const bear = {
         kind: 'bear',
+        isBison,
+        bounds: opts.bounds || { minX: -148, maxX: 148, minZ: -148, maxZ: -26 },
         group,
         alive: true,
-        hp: 6,
-        maxHp: 6,
+        hp: maxHp,
+        maxHp,
         state: 'patrol',
         roared: false,
         home: new THREE.Vector3(x, 0, z),
@@ -566,7 +624,7 @@ export function initWorldEntities(ctx) {
       bearList.push(bear);
     }
 
-    // --- Banditter i byen, Crimson Canyon, Formann Slade (Gruven) og 4 Tog-skarpskyttere ---
+    // --- Banditter i byen, Crimson Canyon, Formann Slade, Tog-skarpskyttere, Fort Rattlesnake & Brimstone Ghost Town ---
     const banditDefs = [
       { pos: new THREE.Vector3(-28, 0, 4), isCaptain: false, faceX: 0, faceZ: 8 },
       { pos: new THREE.Vector3(32, 0, -16), isCaptain: false, faceX: 0, faceZ: 0 },
@@ -581,15 +639,36 @@ export function initWorldEntities(ctx) {
       { pos: new THREE.Vector3(-15.5, 0, 72.0), isCaptain: false, isTrainSniper: true, faceX: 0, faceZ: 45 },
       { pos: new THREE.Vector3(-3.0, 0, 78.2), isCaptain: false, isTrainSniper: true, faceX: 0, faceZ: 55 },
       { pos: new THREE.Vector3(7.5, 0, 71.8), isCaptain: false, isTrainSniper: true, faceX: 4, faceZ: 45 },
-      { pos: new THREE.Vector3(17.4, 0, 74.8), isCaptain: false, isTrainSniper: true, customGroundY: 1.46, faceX: 12, faceZ: 60 }
+      { pos: new THREE.Vector3(17.4, 0, 74.8), isCaptain: false, isTrainSniper: true, customGroundY: 1.46, faceX: 12, faceZ: 60 },
+      // Level 11–12: Fort Rattlesnake i Sunscorch Badlands (NØ: 5 Fort-desperadoer + General Cortez Boss!)
+      { pos: new THREE.Vector3(132.5, 0, -121.0), isFortDesperado: true, faceX: 120, faceZ: -105 },
+      { pos: new THREE.Vector3(147.5, 0, -121.0), isFortDesperado: true, faceX: 125, faceZ: -105 },
+      { pos: new THREE.Vector3(134.5, 0, -130.5), isFortDesperado: true, faceX: 140, faceZ: -120 },
+      { pos: new THREE.Vector3(145.5, 0, -130.5), isFortDesperado: true, faceX: 140, faceZ: -120 },
+      { pos: new THREE.Vector3(135.0, 0, -138.0), isFortDesperado: true, faceX: 140, faceZ: -126 },
+      { pos: new THREE.Vector3(140.0, 0, -136.2), isGeneralCortez: true, faceX: 140, faceZ: -120 },
+      // Level 13–14: Brimstone Ghost Town i Devil's Basin (SØ: 4 Brimstone-plyndrere + The Brimstone Marshal Boss!)
+      { pos: new THREE.Vector3(128.0, 0, 133.5), isBrimstoneRaider: true, faceX: 112, faceZ: 125 },
+      { pos: new THREE.Vector3(135.5, 0, 139.5), isBrimstoneRaider: true, faceX: 125, faceZ: 136 },
+      { pos: new THREE.Vector3(146.0, 0, 132.5), isBrimstoneRaider: true, faceX: 135, faceZ: 136 },
+      { pos: new THREE.Vector3(151.5, 0, 139.0), isBrimstoneRaider: true, faceX: 138, faceZ: 136 },
+      { pos: new THREE.Vector3(142.5, 0, 136.0), isBrimstoneMarshal: true, faceX: 125, faceZ: 136 }
     ];
 
     function createBanditFromDef(def, index) {
       let group;
-      if (def.isForemanSlade && createForemanSladeModel) {
+      if (def.isGeneralCortez && createGeneralCortezModel) {
+        group = createGeneralCortezModel();
+      } else if (def.isBrimstoneMarshal && createBrimstoneMarshalModel) {
+        group = createBrimstoneMarshalModel();
+      } else if (def.isForemanSlade && createForemanSladeModel) {
         group = createForemanSladeModel();
       } else if (def.isCaptain) {
         group = createBanditCaptainModel();
+      } else if (def.isFortDesperado && createFortDesperadoModel) {
+        group = createFortDesperadoModel();
+      } else if (def.isBrimstoneRaider && createBrimstoneRaiderModel) {
+        group = createBrimstoneRaiderModel();
       } else {
         group = createBanditModel();
       }
@@ -601,12 +680,26 @@ export function initWorldEntities(ctx) {
       faceToward(group, def.faceX, def.faceZ);
       scene.add(group);
 
-      const maxHp = def.isForemanSlade ? 12 : (def.isCaptain ? 8 : (def.isTrainSniper ? 4 : 3));
+      const baseHp = def.isBrimstoneMarshal
+        ? 34
+        : (def.isGeneralCortez
+          ? 26
+          : (def.isForemanSlade
+            ? 12
+            : (def.isCaptain
+              ? 8
+              : (def.isBrimstoneRaider ? 6 : (def.isFortDesperado ? 5 : (def.isTrainSniper ? 4 : 3))))));
+      const maxHp = Math.round(baseHp * getPrestigeHpMult());
       const bandit = {
         kind: 'bandit',
         isCaptain: !!def.isCaptain,
         isForemanSlade: !!def.isForemanSlade,
         isTrainSniper: !!def.isTrainSniper,
+        isFortDesperado: !!def.isFortDesperado,
+        isGeneralCortez: !!def.isGeneralCortez,
+        isBrimstoneRaider: !!def.isBrimstoneRaider,
+        isBrimstoneMarshal: !!def.isBrimstoneMarshal,
+        baseHp,
         customGroundY: def.customGroundY,
         group,
         muzzle: group.userData.muzzle,
@@ -627,7 +720,7 @@ export function initWorldEntities(ctx) {
       banditList.push(bandit);
     }
 
-    // --- 8 Nattmonstre + 3 Underjordiske Katakombe-voktere ---
+    // --- 8 Nattmonstre + 3 Katakombe-voktere + 3 Brimstone-gjengangere + 4 Wendigo-skyggerovdyr ---
     const nightSpawnPoints = [
       new THREE.Vector3(-30, 0, -8),
       new THREE.Vector3(30, 0, -4),
@@ -639,7 +732,16 @@ export function initWorldEntities(ctx) {
       new THREE.Vector3(-108, 0, 6),
       new THREE.Vector3(-146, -6.5, -5.5),
       new THREE.Vector3(-154, -6.5, 3.5),
-      new THREE.Vector3(-162, -6.5, -1.5)
+      new THREE.Vector3(-162, -6.5, -1.5),
+      // Index 11..13: Brimstone Revenants (aktive dag & natt i SØ Brimstone Ghost Town!)
+      new THREE.Vector3(132, 0, 143),
+      new THREE.Vector3(148, 0, 128),
+      new THREE.Vector3(154, 0, 144),
+      // Index 14..17: Wendigo Stalkers (aktive dag & natt ved SV Steinringen / dyp skog!)
+      new THREE.Vector3(-128, 0, 142),
+      new THREE.Vector3(-152, 0, 130),
+      new THREE.Vector3(-142, 0, 152),
+      new THREE.Vector3(-145, 0, -148)
     ];
 
     function chooseNightWanderAwayTarget(enemy) {
@@ -656,22 +758,38 @@ export function initWorldEntities(ctx) {
     }
 
     function createNightEnemyAt(index) {
-      const isCatacomb = index >= 8;
-      const group = (isCatacomb && createCatacombGuardianModel)
-        ? createCatacombGuardianModel()
-        : createNightEnemyModel();
+      const isCatacomb = index >= 8 && index <= 10;
+      const isBrimstoneRevenant = index >= 11 && index <= 13;
+      const isWendigoStalker = index >= 14;
+      const isAlwaysActiveSurface = isBrimstoneRevenant || isWendigoStalker;
+
+      let group;
+      if (isCatacomb && createCatacombGuardianModel) {
+        group = createCatacombGuardianModel();
+      } else if (isBrimstoneRevenant && createBrimstoneRevenantModel) {
+        group = createBrimstoneRevenantModel();
+      } else if (isWendigoStalker && createWendigoStalkerModel) {
+        group = createWendigoStalkerModel();
+      } else {
+        group = createNightEnemyModel();
+      }
       const sp = nightSpawnPoints[index];
       const spawnY = isCatacomb ? -6.5 : getTerrainHeight(sp.x, sp.z);
       group.position.set(sp.x, spawnY, sp.z);
-      group.visible = isCatacomb;
+      group.visible = isCatacomb || isAlwaysActiveSurface;
       scene.add(group);
 
-      const maxHp = isCatacomb ? 5 : 3;
+      const baseHp = isWendigoStalker ? 9 : (isBrimstoneRevenant ? 7 : (isCatacomb ? 5 : 3));
+      const maxHp = Math.round(baseHp * getPrestigeHpMult());
       const enemy = {
         kind: 'night',
         isCatacombGuardian: isCatacomb,
+        isBrimstoneRevenant,
+        isWendigoStalker,
+        isAlwaysActiveSurface,
+        baseHp,
         group,
-        alive: isCatacomb,
+        alive: isCatacomb || isAlwaysActiveSurface,
         hp: maxHp,
         maxHp,
         burning: false,
@@ -768,6 +886,70 @@ export function initWorldEntities(ctx) {
     };
     registerEntityAnimations(bossEnemy, nightAnimationClips);
 
+    // --- Ur-Boss i SV Steinringen (Level 16+ / Prestisje): The Ancient Wendigo (-140, 136) ---
+    const wendigoBossHomePos = new THREE.Vector3(-135.5, getTerrainHeight(-135.5, 136.0), 136.0);
+    const wendigoBossGroup = createAncientWendigoBossModel ? createAncientWendigoBossModel() : createBossVampireModel();
+    wendigoBossGroup.position.copy(wendigoBossHomePos);
+    faceToward(wendigoBossGroup, -110, 110);
+    wendigoBossGroup.visible = false;
+    scene.add(wendigoBossGroup);
+
+    const wendigoBossEnemy = {
+      kind: 'boss',
+      isWendigoBoss: true,
+      group: wendigoBossGroup,
+      alive: false,
+      active: false,
+      hp: 42,
+      maxHp: 42,
+      igniteTimer: 0,
+      igniteTick: 0,
+      attackCooldown: 1.2,
+      waveCooldown: 3.4,
+      attackAnimTimer: 0
+    };
+    registerEntityAnimations(wendigoBossEnemy, nightAnimationClips);
+
+    function syncWendigoBossHealthBarUI() {
+      storyState.wendigoBossHp = wendigoBossEnemy.hp;
+      storyState.wendigoBossMaxHp = wendigoBossEnemy.maxHp;
+      if (wendigoBossEnemy.group.userData.updateBossHealthBar) {
+        wendigoBossEnemy.group.userData.updateBossHealthBar(
+          wendigoBossEnemy.hp,
+          wendigoBossEnemy.maxHp,
+          L().wendigoBossBarTitle || 'ANCIENT WENDIGO'
+        );
+      }
+    }
+
+    function awakenAncientWendigo(forceSummon = false) {
+      if (storyState.wendigoBossDefeated && !forceSummon) return;
+      if (wendigoBossEnemy.alive && wendigoBossEnemy.group.visible) return;
+      storyState.wendigoBossDefeated = false;
+      wendigoBossEnemy.maxHp = Math.round(42 * getPrestigeHpMult());
+      wendigoBossEnemy.hp = wendigoBossEnemy.maxHp;
+      wendigoBossEnemy.alive = true;
+      wendigoBossEnemy.active = true;
+      wendigoBossEnemy.igniteTimer = 0;
+      wendigoBossEnemy.attackCooldown = 1.1;
+      wendigoBossEnemy.waveCooldown = 3.2;
+      wendigoBossEnemy.group.position.copy(wendigoBossHomePos);
+      resolveWallCollisions(wendigoBossEnemy.group.position, BOSS_RADIUS, true);
+      wendigoBossEnemy.group.position.y = getTerrainHeight(wendigoBossEnemy.group.position.x, wendigoBossEnemy.group.position.z);
+      wendigoBossEnemy.group.scale.setScalar(1);
+      wendigoBossEnemy.group.visible = true;
+      faceToward(wendigoBossEnemy.group, playerRig.position.x, playerRig.position.z);
+      setEntityAnimation(wendigoBossEnemy, 'Idle');
+      storyState.wendigoBossActive = true;
+      syncWendigoBossHealthBarUI();
+      updateStatusUI();
+      playBearRoarSound();
+    }
+
+    const summonWendigoFromObelisk = () => {
+      awakenAncientWendigo(true);
+    };
+
     function syncBossHealthBarUI() {
       storyState.bossHp = bossEnemy.hp;
       storyState.bossMaxHp = bossEnemy.maxHp;
@@ -778,13 +960,26 @@ export function initWorldEntities(ctx) {
           L().bossBarTitle || 'LORD MALAKOR'
         );
       }
+      syncWendigoBossHealthBarUI();
+      // Oppdater 3D-helsemålere på General Cortez og Brimstone Marshal ved språkbytte
+      for (let i = 0; i < banditList.length; i++) {
+        const b = banditList[i];
+        if (b.group && b.group.userData.updateBossHealthBar) {
+          const lbl = b.isGeneralCortez
+            ? (L().cortezBarTitle || 'GENERAL CORTEZ')
+            : (L().marshalBarTitle || 'BRIMSTONE MARSHAL');
+          b.group.userData.updateBossHealthBar(b.hp, b.maxHp, lbl);
+        }
+      }
     }
-    
 
     function awakenBossMalakor(fromAltar = false) {
-      if (storyState.bossDefeated) return;
+      const needFinalMalakor = storyState.currentLevel === 20 && !storyState.ascendedMalakorDefeated;
+      if (storyState.bossDefeated && !needFinalMalakor && !fromAltar) return;
       if (bossEnemy.alive && bossEnemy.group.visible) return;
 
+      const baseMalakorHp = (storyState.currentLevel >= 20 || storyState.bossDefeated) ? 60 : 30;
+      bossEnemy.maxHp = Math.round(baseMalakorHp * getPrestigeHpMult());
       bossEnemy.alive = true;
       bossEnemy.active = true;
       bossEnemy.summonedByAltar = fromAltar || bossEnemy.summonedByAltar;
@@ -821,7 +1016,10 @@ export function initWorldEntities(ctx) {
 
     const onNightStateChangedBoss = (night) => {
       if (night) {
-        if (!storyState.bossDefeated && (storyState.currentLevel >= 8 || storyState.currentAct >= 4 || playerRig.position.x < -60)) {
+        const shouldWakeMalakor =
+          (!storyState.bossDefeated && (storyState.currentLevel === 8 || playerRig.position.x < -60)) ||
+          (storyState.currentLevel === 20 && !storyState.ascendedMalakorDefeated);
+        if (shouldWakeMalakor) {
           awakenBossMalakor(false);
         }
       } else if (bossEnemy.alive && !bossEnemy.summonedByAltar) {
@@ -835,17 +1033,18 @@ export function initWorldEntities(ctx) {
 
     // --- 8i. Respawn, dagsreset og nattspawn ---
     function respawnDeer(deer) {
+      const b = deer.bounds || FOREST_BOUNDS;
       let x = 0;
       let z = 0;
       for (let attempt = 0; attempt < 10; attempt++) {
-        x = THREE.MathUtils.randFloat(FOREST_BOUNDS.minX + 3, FOREST_BOUNDS.maxX - 3);
-        z = THREE.MathUtils.randFloat(FOREST_BOUNDS.minZ + 3, FOREST_BOUNDS.maxZ - 3);
+        x = THREE.MathUtils.randFloat(b.minX + 3, b.maxX - 3);
+        z = THREE.MathUtils.randFloat(b.minZ + 3, b.maxZ - 3);
         const distance = Math.hypot(x - playerRig.position.x, z - playerRig.position.z);
         if (distance > 15) break;
       }
 
       deer.alive = true;
-      deer.hp = 2;
+      deer.hp = deer.maxHp || 2;
       deer.state = 'wander';
       deer.deathTimer = 0;
       deer.respawnTimer = 0;
@@ -854,7 +1053,7 @@ export function initWorldEntities(ctx) {
       deer.home.set(x, 0, z);
       deer.group.position.set(x, getTerrainHeight(x, z), z);
       deer.group.rotation.set(0, Math.random() * Math.PI * 2, 0);
-      deer.group.scale.setScalar(1);
+      deer.group.scale.setScalar(deer.isWhiteStag ? 1.18 : 1);
       deer.group.visible = !S.isNight;
       deer.attackAnimTimer = 0;
       if (!deer.animationMixer) animateQuadrupedLegs(deer.group, 0, 0);
@@ -863,8 +1062,9 @@ export function initWorldEntities(ctx) {
     }
 
     function respawnWolf(wolf) {
+      const b = wolf.bounds || FOREST_BOUNDS;
       wolf.alive = true;
-      wolf.hp = 2;
+      wolf.hp = Math.round((wolf.maxHp || 2) * getPrestigeHpMult());
       wolf.state = 'patrol';
       wolf.deathTimer = 0;
       wolf.respawnTimer = 0;
@@ -873,11 +1073,13 @@ export function initWorldEntities(ctx) {
       wolf.hidingTimer = 0;
       wolf.lostTrail = false;
       wolf.wanderPause = 0.5 + Math.random() * 2;
-      const wx = THREE.MathUtils.clamp(wolf.home.x + (Math.random() - 0.5) * 14, FOREST_BOUNDS.minX, FOREST_BOUNDS.maxX);
-      const wz = THREE.MathUtils.clamp(wolf.home.z + (Math.random() - 0.5) * 14, FOREST_BOUNDS.minZ, FOREST_BOUNDS.maxZ);
+      const wx = THREE.MathUtils.clamp(wolf.home.x + (Math.random() - 0.5) * 14, b.minX, b.maxX);
+      const wz = THREE.MathUtils.clamp(wolf.home.z + (Math.random() - 0.5) * 14, b.minZ, b.maxZ);
       wolf.group.position.set(wx, getTerrainHeight(wx, wz), wz);
       wolf.group.rotation.set(0, Math.random() * Math.PI * 2, 0);
-      wolf.group.scale.setScalar(1);
+      if (wolf.isAlphaWolf) wolf.group.scale.setScalar(1.28);
+      else if (wolf.isCougar) wolf.group.scale.set(1.06, 1.04, 1.12);
+      else wolf.group.scale.setScalar(1);
       wolf.group.visible = true;
       if (!wolf.animationMixer) animateQuadrupedLegs(wolf.group, 0, 0);
       setEntityAnimation(wolf, 'Idle');
@@ -885,8 +1087,9 @@ export function initWorldEntities(ctx) {
     }
 
     function respawnBear(bear) {
+      const b = bear.bounds || { minX: FOREST_BOUNDS.minX, maxX: FOREST_BOUNDS.maxX, minZ: -142, maxZ: -62 };
       bear.alive = true;
-      bear.hp = bear.maxHp;
+      bear.hp = Math.round((bear.maxHp || 6) * getPrestigeHpMult());
       bear.state = 'patrol';
       bear.roared = false;
       bear.deathTimer = 0;
@@ -896,11 +1099,12 @@ export function initWorldEntities(ctx) {
       bear.hidingTimer = 0;
       bear.lostTrail = false;
       bear.wanderPause = 0.8 + Math.random() * 2;
-      const bx = THREE.MathUtils.clamp(bear.home.x + (Math.random() - 0.5) * 12, FOREST_BOUNDS.minX, FOREST_BOUNDS.maxX);
-      const bz = THREE.MathUtils.clamp(bear.home.z + (Math.random() - 0.5) * 12, -142, -62);
+      const bx = THREE.MathUtils.clamp(bear.home.x + (Math.random() - 0.5) * 14, b.minX, b.maxX);
+      const bz = THREE.MathUtils.clamp(bear.home.z + (Math.random() - 0.5) * 14, b.minZ, b.maxZ);
       bear.group.position.set(bx, getTerrainHeight(bx, bz), bz);
       bear.group.rotation.set(0, Math.random() * Math.PI * 2, 0);
-      bear.group.scale.setScalar(1);
+      if (bear.isBison) bear.group.scale.set(1.14, 1.12, 1.18);
+      else bear.group.scale.setScalar(1);
       bear.group.visible = true;
       if (!bear.animationMixer) animateQuadrupedLegs(bear.group, 0, 0);
       setEntityAnimation(bear, 'Idle');
@@ -909,15 +1113,17 @@ export function initWorldEntities(ctx) {
 
     function resetBanditsForDay() {
       banditList.forEach((bandit, index) => {
-        if (bandit.isCaptain && storyState.captainDefeated) {
+        if (bandit.isCaptain && storyState.captainDefeated && (storyState.prestigeRank || 0) === 0 && storyState.currentLevel < 18) {
           bandit.alive = false;
           bandit.active = false;
           bandit.group.visible = false;
           return;
         }
+        bandit.maxHp = Math.round((bandit.baseHp || 3) * getPrestigeHpMult());
         bandit.alive = true;
         bandit.hp = bandit.maxHp;
-        bandit.active = !S.isNight;
+        const activeAtNightToo = bandit.isForemanSlade || bandit.isBrimstoneMarshal || bandit.isGeneralCortez;
+        bandit.active = !S.isNight || activeAtNightToo;
         bandit.deathTimer = 0;
         bandit.attackAnimTimer = 0;
         bandit.cooldown = 1.0 + (index % 4) * 0.38;
@@ -927,15 +1133,22 @@ export function initWorldEntities(ctx) {
           ? bandit.customGroundY
           : getTerrainHeight(bandit.group.position.x, bandit.group.position.z);
         bandit.group.rotation.set(0, bandit.baseYaw, 0);
-        bandit.group.scale.setScalar(1);
-        bandit.group.visible = !S.isNight || bandit.isForemanSlade;
+        const sc = bandit.isBrimstoneMarshal ? 1.34 : (bandit.isGeneralCortez ? 1.26 : (bandit.isForemanSlade ? 1.22 : (bandit.isCaptain ? 1.14 : 1)));
+        bandit.group.scale.setScalar(sc);
+        bandit.group.visible = !S.isNight || activeAtNightToo;
+        if (bandit.group.userData.updateBossHealthBar) {
+          const lbl = bandit.isGeneralCortez
+            ? (L().cortezBarTitle || 'GENERAL CORTEZ')
+            : (L().marshalBarTitle || 'BRIMSTONE MARSHAL');
+          bandit.group.userData.updateBossHealthBar(bandit.hp, bandit.maxHp, lbl);
+        }
         setEntityAnimation(bandit, 'Idle');
       });
     }
 
     function spawnNightEnemies() {
       nightEnemies.forEach((enemy, index) => {
-        if (enemy.isCatacombGuardian) return;
+        if (enemy.isCatacombGuardian || enemy.isAlwaysActiveSurface) return;
         const point = nightSpawnPosition.copy(nightSpawnPoints[index]);
         point.x += (Math.random() - 0.5) * 4;
         point.z += (Math.random() - 0.5) * 4;
@@ -953,8 +1166,9 @@ export function initWorldEntities(ctx) {
         point.z = THREE.MathUtils.clamp(point.z, -205, 205);
         point.y = getTerrainHeight(point.x, point.z);
 
+        enemy.maxHp = Math.round((enemy.baseHp || 3) * getPrestigeHpMult());
         enemy.alive = true;
-        enemy.hp = 3;
+        enemy.hp = enemy.maxHp;
         enemy.burning = false;
         enemy.burnTimer = 0;
         enemy.igniteTimer = 0;
@@ -978,7 +1192,7 @@ export function initWorldEntities(ctx) {
 
     function startNightEnemiesBurning() {
       nightEnemies.forEach((enemy) => {
-        if (!enemy.group.visible || enemy.isCatacombGuardian) return;
+        if (!enemy.group.visible || enemy.isCatacombGuardian || enemy.isAlwaysActiveSurface) return;
         enemy.burning = true;
         enemy.burnTimer = 1.0;
         enemy.igniteTimer = 0;
@@ -1006,22 +1220,31 @@ export function initWorldEntities(ctx) {
 
       if (deer.hp > 0) {
         deer.state = 'flee';
-        deer.fleeTimer = 5;
+        deer.fleeTimer = 5.5;
         return;
       }
 
       deer.alive = false;
       deer.state = 'dead';
       deer.deathTimer = 1.25;
-      deer.respawnTimer = 20;
+      deer.respawnTimer = deer.isWhiteStag ? 45 : 20;
       deer.group.rotation.z = 0;
       setEntityAnimation(deer, deer.hasDeathClip ? 'Death' : 'Idle');
 
-      playerState.food += 1;
-      playerState.pelt += 1;
-      playerState.gold += 5;
+      if (deer.isWhiteStag) {
+        playerState.food += 3;
+        playerState.pelt += 4;
+        playerState.gold += scaleGoldReward(35);
+        storyState.whiteStagsHunted = (storyState.whiteStagsHunted || 0) + 1;
+        playGoldPickupSound();
+      } else {
+        playerState.food += 1;
+        playerState.pelt += 1;
+        playerState.gold += scaleGoldReward(5);
+        playCollectSound();
+      }
       storyState.act1Deer += 1;
-      playCollectSound();
+      storyState.totalKills = (storyState.totalKills || 0) + 1;
       recordQuestKill('deer');
       checkStoryProgression();
       updateStatusUI();
@@ -1041,13 +1264,26 @@ export function initWorldEntities(ctx) {
 
       wolf.alive = false;
       wolf.deathTimer = 1.25;
-      wolf.respawnTimer = 20;
+      wolf.respawnTimer = wolf.isAlphaWolf ? 30 : 20;
       wolf.group.rotation.z = 0;
       setEntityAnimation(wolf, wolf.hasDeathClip ? 'Death' : 'Idle');
 
-      playerState.pelt += 1;
-      playerState.gold += 6;
+      if (wolf.isAlphaWolf) {
+        playerState.pelt += 2;
+        playerState.gold += scaleGoldReward(14);
+        storyState.alphaWolvesKilled = (storyState.alphaWolvesKilled || 0) + 1;
+      } else if (wolf.isCougar) {
+        playerState.food += 1;
+        playerState.pelt += 2;
+        playerState.gold += scaleGoldReward(12);
+        storyState.cougarsHunted = (storyState.cougarsHunted || 0) + 1;
+      } else {
+        playerState.pelt += 1;
+        playerState.gold += scaleGoldReward(6);
+      }
       storyState.level2Wolves += 1;
+      storyState.totalKills = (storyState.totalKills || 0) + 1;
+      recordQuestKill('deer');
       checkStoryProgression();
       updateStatusUI();
       playCollectSound();
@@ -1075,11 +1311,19 @@ export function initWorldEntities(ctx) {
       bear.group.rotation.z = 0;
       setEntityAnimation(bear, bear.hasDeathClip ? 'Death' : 'Idle');
 
-      playerState.food += 3;
-      playerState.pelt += 3;
-      playerState.gold += 15;
+      if (bear.isBison) {
+        playerState.food += 4;
+        playerState.pelt += 3;
+        playerState.gold += scaleGoldReward(18);
+        storyState.bisonHunted = (storyState.bisonHunted || 0) + 1;
+      } else {
+        playerState.food += 3;
+        playerState.pelt += 3;
+        playerState.gold += scaleGoldReward(15);
+        storyState.grizzlyDefeated = true;
+      }
       storyState.act1Deer += 1;
-      storyState.grizzlyDefeated = true;
+      storyState.totalKills = (storyState.totalKills || 0) + 1;
       playGoldPickupSound();
       recordQuestKill('deer');
       checkStoryProgression();
@@ -1089,34 +1333,64 @@ export function initWorldEntities(ctx) {
     function damageBandit(bandit, _dir, bulletInfo, rawOverride = 0) {
       if (!bandit.alive) return;
       const dmg = rawOverride > 0 ? rawOverride : computeShotBaseDamage(bulletInfo);
-      bandit.hp -= dmg;
+      bandit.hp = Math.max(0, bandit.hp - dmg);
       playFleshHitSound();
+      if (bandit.group.userData.updateBossHealthBar) {
+        const lbl = bandit.isGeneralCortez
+          ? (L().cortezBarTitle || 'GENERAL CORTEZ')
+          : (L().marshalBarTitle || 'BRIMSTONE MARSHAL');
+        bandit.group.userData.updateBossHealthBar(bandit.hp, bandit.maxHp, lbl);
+      }
 
       if (bandit.hp > 0) return;
 
       bandit.alive = false;
       bandit.active = false;
       bandit.deathTimer = 1.2;
-      bandit.respawnTimer = (bandit.isCaptain || bandit.isForemanSlade) ? 65 : 24;
+      bandit.respawnTimer = (bandit.isGeneralCortez || bandit.isBrimstoneMarshal || bandit.isCaptain || bandit.isForemanSlade) ? 75 : 24;
       bandit.group.rotation.z = 0;
       setEntityAnimation(bandit, bandit.hasDeathClip ? 'Death' : 'Idle');
 
-      if (bandit.isForemanSlade) {
-        playerState.gold += 50;
+      if (bandit.isGeneralCortez) {
+        playerState.gold += scaleGoldReward(75);
+        storyState.cortezDefeated = true;
+        storyState.eliteKills = (storyState.eliteKills || 0) + 1;
+        if (storyState.currentLevel >= 21) storyState.prestigeBosses = (storyState.prestigeBosses || 0) + 1;
+        playBossVictoryFanfare();
+      } else if (bandit.isBrimstoneMarshal) {
+        playerState.gold += scaleGoldReward(90);
+        storyState.brimstoneMarshalDefeated = true;
+        storyState.eliteKills = (storyState.eliteKills || 0) + 1;
+        if (storyState.currentLevel >= 21) storyState.prestigeBosses = (storyState.prestigeBosses || 0) + 1;
+        playBossVictoryFanfare();
+      } else if (bandit.isForemanSlade) {
+        playerState.gold += scaleGoldReward(50);
         storyState.sladeDefeated = true;
+        storyState.eliteKills = (storyState.eliteKills || 0) + 1;
+        if (storyState.currentLevel >= 21) storyState.prestigeBosses = (storyState.prestigeBosses || 0) + 1;
         playGoldPickupSound();
+      } else if (bandit.isFortDesperado) {
+        playerState.gold += scaleGoldReward(18);
+        storyState.fortBanditsKilled = (storyState.fortBanditsKilled || 0) + 1;
+        storyState.eliteKills = (storyState.eliteKills || 0) + 1;
+      } else if (bandit.isBrimstoneRaider) {
+        playerState.gold += scaleGoldReward(22);
+        storyState.brimstoneFoesKilled = (storyState.brimstoneFoesKilled || 0) + 1;
+        storyState.eliteKills = (storyState.eliteKills || 0) + 1;
       } else if (bandit.isTrainSniper) {
-        playerState.gold += 15;
+        playerState.gold += scaleGoldReward(15);
         storyState.trainSnipersKilled += 1;
       } else if (bandit.isCaptain) {
-        playerState.gold += 35;
+        playerState.gold += scaleGoldReward(35);
         storyState.captainDefeated = true;
         storyState.act2Bandits += 1;
+        storyState.eliteKills = (storyState.eliteKills || 0) + 1;
         playGoldPickupSound();
       } else {
-        playerState.gold += 10;
+        playerState.gold += scaleGoldReward(10);
         storyState.act2Bandits += 1;
       }
+      storyState.totalKills = (storyState.totalKills || 0) + 1;
       recordQuestKill('bandit');
       checkStoryProgression();
       updateStatusUI();
@@ -1127,20 +1401,33 @@ export function initWorldEntities(ctx) {
       enemy.igniteTimer = 0;
       enemy.group.visible = false;
       enemy.group.scale.setScalar(1);
-      enemy.respawnTimer = enemy.isCatacombGuardian ? 42 : 15;
+      enemy.respawnTimer = (enemy.isCatacombGuardian || enemy.isAlwaysActiveSurface) ? 36 : 15;
       setEntityAnimation(enemy, 'Idle');
 
       nightDeathImpactPosition.copy(enemy.group.position);
       nightDeathImpactPosition.y += 1.0;
-      spawnImpact(nightDeathImpactPosition, enemy.isCatacombGuardian ? 0x62ccff : 0xff3a1f, 0.36);
+      spawnImpact(nightDeathImpactPosition, enemy.isWendigoStalker ? 0x4effa8 : (enemy.isCatacombGuardian ? 0x62ccff : 0xff3a1f), 0.38);
       spawnVampireAshDissolution(enemy.group.position, 1.0);
 
-      if (enemy.isCatacombGuardian) {
-        playerState.gold += 18;
+      if (enemy.isWendigoStalker) {
+        playerState.gold += scaleGoldReward(28);
+        playerState.pelt += 2;
+        storyState.wendigosKilled = (storyState.wendigosKilled || 0) + 1;
+        storyState.eclipseKills = (storyState.eclipseKills || 0) + 1;
+        storyState.eliteKills = (storyState.eliteKills || 0) + 1;
+      } else if (enemy.isBrimstoneRevenant) {
+        playerState.gold += scaleGoldReward(24);
+        storyState.brimstoneFoesKilled = (storyState.brimstoneFoesKilled || 0) + 1;
+        storyState.eclipseKills = (storyState.eclipseKills || 0) + 1;
+        storyState.eliteKills = (storyState.eliteKills || 0) + 1;
+      } else if (enemy.isCatacombGuardian) {
+        playerState.gold += scaleGoldReward(18);
         storyState.catacombGuardiansKilled += 1;
+        storyState.eclipseKills = (storyState.eclipseKills || 0) + 1;
       } else {
-        playerState.gold += 8;
+        playerState.gold += scaleGoldReward(8);
         storyState.act3NightKills += 1;
+        storyState.eclipseKills = (storyState.eclipseKills || 0) + 1;
         if (enemy.group.position.x < -45 || storyState.currentLevel >= 6) {
           storyState.bootHillVampires += 1;
         }
@@ -1148,6 +1435,7 @@ export function initWorldEntities(ctx) {
           storyState.act3NightSurvived = true;
         }
       }
+      storyState.totalKills = (storyState.totalKills || 0) + 1;
       recordQuestKill('night');
       checkStoryProgression();
       updateStatusUI();
@@ -1183,14 +1471,76 @@ export function initWorldEntities(ctx) {
 
       storyState.bossActive = false;
       storyState.bossHp = 0;
+      if (storyState.currentLevel >= 20 || storyState.bossDefeated) {
+        storyState.ascendedMalakorDefeated = true;
+      }
       storyState.bossDefeated = true;
+      storyState.totalKills = (storyState.totalKills || 0) + 1;
+      storyState.eliteKills = (storyState.eliteKills || 0) + 1;
+      if (storyState.currentLevel >= 21) storyState.prestigeBosses = (storyState.prestigeBosses || 0) + 1;
       S.grantLegendTitle();
-      playerState.gold += 80;
-      playerState.health = 100;
+      playerState.gold += scaleGoldReward(120);
+      playerState.health = playerState.maxHealth || 100;
 
+      recordQuestKill('night');
       playBossVictoryFanfare();
       checkStoryProgression();
       updateStatusUI();
+    }
+
+    function damageWendigoBoss(_dir, bulletInfo, rawOverride = 0) {
+      if (!wendigoBossEnemy.alive) return;
+      const isSilver = !!(bulletInfo && bulletInfo.isSilverBolt);
+      const mult = isSilver ? 3 : S.nightMonsterDamage;
+      const dmg = rawOverride > 0 ? rawOverride : computeShotBaseDamage(bulletInfo) * mult;
+      wendigoBossEnemy.hp = Math.max(0, wendigoBossEnemy.hp - dmg);
+      if (isSilver) {
+        wendigoBossEnemy.igniteTimer = 3.2;
+        wendigoBossEnemy.igniteTick = 0.4;
+      }
+      playFleshHitSound();
+      syncWendigoBossHealthBarUI();
+      updateStatusUI();
+
+      if (wendigoBossEnemy.hp <= 0) {
+        wendigoBossEnemy.alive = false;
+        wendigoBossEnemy.active = false;
+        wendigoBossEnemy.group.visible = false;
+        nightDeathImpactPosition.copy(wendigoBossEnemy.group.position);
+        nightDeathImpactPosition.y += 1.5;
+        spawnImpact(nightDeathImpactPosition, 0x4effa8, 1.9);
+        spawnVampireAshDissolution(wendigoBossEnemy.group.position, 2.5);
+        spawnSparkBurst(nightDeathImpactPosition, 26, 0x7affc8, 1.85);
+        storyState.wendigoBossActive = false;
+        storyState.wendigoBossDefeated = true;
+        storyState.totalKills = (storyState.totalKills || 0) + 1;
+        storyState.eliteKills = (storyState.eliteKills || 0) + 1;
+        if (storyState.currentLevel >= 21) storyState.prestigeBosses = (storyState.prestigeBosses || 0) + 1;
+        playerState.gold += scaleGoldReward(110);
+        playerState.pelt += 4;
+        recordQuestKill('night');
+        playBossVictoryFanfare();
+        checkStoryProgression();
+        updateStatusUI();
+      }
+    }
+
+    function damageBrimstoneTotem(totem, rawDmg = 1) {
+      if (!totem || totem.destroyed) return;
+      totem.hp -= rawDmg;
+      spawnSparkBurst(totem.worldPos, 8, 0xff7028, 1.0);
+      if (totem.hp <= 0) {
+        totem.destroyed = true;
+        totem.group.visible = false;
+        totem.respawnTimer = 85;
+        spawnImpact(totem.worldPos, 0xff4510, 1.5);
+        spawnSparkBurst(totem.worldPos, 18, 0xffaa38, 1.45);
+        if (playBarricadeBlastSound) playBarricadeBlastSound();
+        storyState.brimstoneTotemsShattered = (storyState.brimstoneTotemsShattered || 0) + 1;
+        playerState.gold += scaleGoldReward(22);
+        checkStoryProgression();
+        updateStatusUI();
+      }
     }
 
     function damageBossEnemy(_dir, bulletInfo, rawOverride = 0) {
@@ -1321,6 +1671,19 @@ export function initWorldEntities(ctx) {
           damageBossEnemy(null, null, dmg);
         }
       }
+      if (wendigoBossEnemy.alive && wendigoBossEnemy.group.visible) {
+        const d = Math.hypot(wendigoBossEnemy.group.position.x - blastPos.x, wendigoBossEnemy.group.position.z - blastPos.z);
+        if (d < radius + 1.0) {
+          const dmg = Math.max(4, Math.round(9 * (1 - d / (radius * 1.2))));
+          damageWendigoBoss(null, null, dmg);
+        }
+      }
+      for (const bt of brimstoneTotems) {
+        if (bt.destroyed) continue;
+        if (blastPos.distanceTo(bt.worldPos) < radius + 1.4) {
+          damageBrimstoneTotem(bt, 8);
+        }
+      }
     };
 
     // --- 8k. Oppdatering av dyre-, rovdyr-, grizzly-, banditt-, nattmonster- og Boss-AI ---
@@ -1407,11 +1770,12 @@ export function initWorldEntities(ctx) {
           }
         }
 
-        deer.group.position.x = THREE.MathUtils.clamp(deer.group.position.x, FOREST_BOUNDS.minX, FOREST_BOUNDS.maxX);
-        deer.group.position.z = THREE.MathUtils.clamp(deer.group.position.z, FOREST_BOUNDS.minZ, FOREST_BOUNDS.maxZ);
+        const dBounds = deer.bounds || FOREST_BOUNDS;
+        deer.group.position.x = THREE.MathUtils.clamp(deer.group.position.x, dBounds.minX, dBounds.maxX);
+        deer.group.position.z = THREE.MathUtils.clamp(deer.group.position.z, dBounds.minZ, dBounds.maxZ);
         resolveWallCollisions(deer.group.position, DEER_RADIUS, true);
-        deer.group.position.x = THREE.MathUtils.clamp(deer.group.position.x, FOREST_BOUNDS.minX, FOREST_BOUNDS.maxX);
-        deer.group.position.z = THREE.MathUtils.clamp(deer.group.position.z, FOREST_BOUNDS.minZ, FOREST_BOUNDS.maxZ);
+        deer.group.position.x = THREE.MathUtils.clamp(deer.group.position.x, dBounds.minX, dBounds.maxX);
+        deer.group.position.z = THREE.MathUtils.clamp(deer.group.position.z, dBounds.minZ, dBounds.maxZ);
 
         const groundY = getTerrainHeight(deer.group.position.x, deer.group.position.z);
         if (movingSpeed > 0) {
@@ -1536,9 +1900,10 @@ export function initWorldEntities(ctx) {
           }
         }
 
+        const wBounds = wolf.bounds || FOREST_BOUNDS;
         pushOutOfHidingZone(wolf.group, WOLF_RADIUS);
-        wolf.group.position.x = THREE.MathUtils.clamp(wolf.group.position.x, -148, 148);
-        wolf.group.position.z = THREE.MathUtils.clamp(wolf.group.position.z, -148, 148);
+        wolf.group.position.x = THREE.MathUtils.clamp(wolf.group.position.x, wBounds.minX, wBounds.maxX);
+        wolf.group.position.z = THREE.MathUtils.clamp(wolf.group.position.z, wBounds.minZ, wBounds.maxZ);
         resolveWallCollisions(wolf.group.position, WOLF_RADIUS, true);
         pushOutOfHidingZone(wolf.group, WOLF_RADIUS);
 
@@ -1637,9 +2002,10 @@ export function initWorldEntities(ctx) {
           }
         }
 
+        const bBounds = bear.bounds || { minX: -148, maxX: 148, minZ: -148, maxZ: -26 };
         pushOutOfHidingZone(bear.group, BEAR_RADIUS);
-        bear.group.position.x = THREE.MathUtils.clamp(bear.group.position.x, -148, 148);
-        bear.group.position.z = THREE.MathUtils.clamp(bear.group.position.z, -148, -26);
+        bear.group.position.x = THREE.MathUtils.clamp(bear.group.position.x, bBounds.minX, bBounds.maxX);
+        bear.group.position.z = THREE.MathUtils.clamp(bear.group.position.z, bBounds.minZ, bBounds.maxZ);
         resolveWallCollisions(bear.group.position, BEAR_RADIUS, true);
         pushOutOfHidingZone(bear.group, BEAR_RADIUS);
         bear.group.position.y = getTerrainHeight(bear.group.position.x, bear.group.position.z);
@@ -1664,23 +2030,36 @@ export function initWorldEntities(ctx) {
       banditShotTarget.copy(playerChestPosition);
 
       banditShotDir.copy(banditShotTarget).sub(banditShotOrigin).normalize();
+      const isWarlord = bandit.isGeneralCortez || bandit.isBrimstoneMarshal;
+      if (isWarlord) {
+        for (let w = -1; w <= 1; w++) {
+          bossWaveDir.copy(banditShotDir).applyAxisAngle(UP, w * 0.14).normalize();
+          spawnEnemyBullet(banditShotOrigin, bossWaveDir, 27, bandit.isBrimstoneMarshal ? 20 : 17);
+        }
+        playBanditShotSound();
+        return;
+      }
       const spread = bandit.isCaptain ? 0.03 : 0.05;
       banditShotDir.x += (Math.random() - 0.5) * spread;
       banditShotDir.y += (Math.random() - 0.5) * 0.03;
       banditShotDir.z += (Math.random() - 0.5) * spread;
       banditShotDir.normalize();
 
-      spawnEnemyBullet(banditShotOrigin, banditShotDir, bandit.isCaptain ? 28 : 24, bandit.isCaptain ? 18 : 14);
+      const spd = bandit.isBrimstoneRaider ? 30 : (bandit.isCaptain ? 28 : 24);
+      const dmg = bandit.isBrimstoneRaider ? 17 : (bandit.isFortDesperado ? 15 : (bandit.isCaptain ? 18 : 14));
+      spawnEnemyBullet(banditShotOrigin, banditShotDir, spd, dmg);
       playBanditShotSound();
     }
 
     function updateBandits(dt) {
       for (const bandit of banditList) {
+        const activeAtNightToo = bandit.isForemanSlade || bandit.isBrimstoneMarshal || bandit.isGeneralCortez;
         if (!bandit.alive) {
           updateFallingEntity(bandit, dt);
-          if (!S.isNight && !(bandit.isCaptain && storyState.captainDefeated) && bandit.respawnTimer > 0) {
+          if ((!S.isNight || activeAtNightToo) && !(bandit.isCaptain && storyState.captainDefeated && storyState.currentLevel < 18) && bandit.respawnTimer > 0) {
             bandit.respawnTimer -= dt;
             if (bandit.respawnTimer <= 0) {
+              bandit.maxHp = Math.round((bandit.baseHp || 3) * getPrestigeHpMult());
               bandit.alive = true;
               bandit.hp = bandit.maxHp;
               bandit.active = true;
@@ -1689,31 +2068,44 @@ export function initWorldEntities(ctx) {
               bandit.cooldown = 1.4;
               bandit.group.position.copy(bandit.spawn);
               resolveWallCollisions(bandit.group.position, BANDIT_RADIUS, true);
-              bandit.group.position.y = getTerrainHeight(bandit.group.position.x, bandit.group.position.z);
+              bandit.group.position.y = bandit.customGroundY !== undefined
+                ? bandit.customGroundY
+                : getTerrainHeight(bandit.group.position.x, bandit.group.position.z);
               bandit.group.rotation.set(0, bandit.baseYaw, 0);
-              bandit.group.scale.setScalar(1);
+              const sc = bandit.isBrimstoneMarshal ? 1.34 : (bandit.isGeneralCortez ? 1.26 : (bandit.isForemanSlade ? 1.22 : (bandit.isCaptain ? 1.14 : 1)));
+              bandit.group.scale.setScalar(sc);
               bandit.group.visible = true;
+              if (bandit.group.userData.updateBossHealthBar) {
+                const lbl = bandit.isGeneralCortez
+                  ? (L().cortezBarTitle || 'GENERAL CORTEZ')
+                  : (L().marshalBarTitle || 'BRIMSTONE MARSHAL');
+                bandit.group.userData.updateBossHealthBar(bandit.hp, bandit.maxHp, lbl);
+              }
               setEntityAnimation(bandit, 'Idle');
             }
           }
           continue;
         }
 
-        if (!bandit.active || (S.isNight && !bandit.isForemanSlade)) continue;
+        if (!bandit.active || (S.isNight && !activeAtNightToo)) continue;
 
         bandit.attackAnimTimer = Math.max(0, bandit.attackAnimTimer - dt);
 
         const dx = playerRig.position.x - bandit.group.position.x;
         const dz = playerRig.position.z - bandit.group.position.z;
         const distance = Math.hypot(dx, dz);
-        const aggroDist = (bandit.isCaptain || bandit.isForemanSlade) ? 28 : 24;
+        const aggroDist = (bandit.isGeneralCortez || bandit.isBrimstoneMarshal)
+          ? 34
+          : ((bandit.isCaptain || bandit.isForemanSlade || bandit.isFortDesperado || bandit.isBrimstoneRaider) ? 28 : 24);
 
         if (!S.playerHiddenStatus && distance < aggroDist) {
           faceToward(bandit.group, playerRig.position.x, playerRig.position.z);
           bandit.cooldown -= dt;
 
           if (bandit.cooldown <= 0) {
-            bandit.cooldown = (bandit.isCaptain || bandit.isForemanSlade) ? 1.45 : 2.10;
+            bandit.cooldown = (bandit.isGeneralCortez || bandit.isBrimstoneMarshal)
+              ? 1.55
+              : ((bandit.isCaptain || bandit.isForemanSlade || bandit.isFortDesperado) ? 1.45 : 2.05);
             bandit.attackAnimTimer = 0.45;
             fireBanditBullet(bandit);
           }
@@ -1734,8 +2126,9 @@ export function initWorldEntities(ctx) {
       for (let index = 0; index < nightEnemies.length; index++) {
         const enemy = nightEnemies[index];
         const isCatacomb = !!enemy.isCatacombGuardian;
+        const isAlwaysSurface = !!enemy.isAlwaysActiveSurface;
         if (!enemy.group.visible) {
-          if ((S.isNight || isCatacomb) && !enemy.alive && !enemy.burning && enemy.respawnTimer > 0) {
+          if ((S.isNight || isCatacomb || isAlwaysSurface) && !enemy.alive && !enemy.burning && enemy.respawnTimer > 0) {
             enemy.respawnTimer -= dt;
             if (enemy.respawnTimer <= 0) {
               const point = nightRespawnPosition.copy(nightSpawnPoints[index]);
@@ -1759,8 +2152,9 @@ export function initWorldEntities(ctx) {
                 point.y = -6.5;
               }
 
+              enemy.maxHp = Math.round((enemy.baseHp || 3) * getPrestigeHpMult());
               enemy.alive = true;
-              enemy.hp = enemy.maxHp || 3;
+              enemy.hp = enemy.maxHp;
               enemy.burning = false;
               enemy.burnTimer = 0;
               enemy.igniteTimer = 0;
@@ -1858,6 +2252,18 @@ export function initWorldEntities(ctx) {
           resolveWallCollisions(enemy.group.position, NIGHT_RADIUS, true);
           enemy.group.position.y = -6.5 + 0.04 + Math.sin(S.worldTime * 3.1 + index) * 0.035;
           setEntityAnimation(enemy, enemy.attackAnimTimer > 0 ? 'Attack' : (movingSpeed > 0 ? 'Walk' : 'Idle'));
+          continue;
+        }
+
+        if (isAlwaysSurface && (S.playerHiddenStatus || distance > 38)) {
+          const hPt = nightSpawnPoints[index];
+          if (Math.hypot(hPt.x - enemy.group.position.x, hPt.z - enemy.group.position.z) > 1.5) {
+            moveEntityToward(enemy.group, hPt.x, hPt.z, 2.0, dt, 0.6, NIGHT_RADIUS, true);
+            movingSpeed = 2.0;
+          }
+          resolveWallCollisions(enemy.group.position, NIGHT_RADIUS, true);
+          enemy.group.position.y = getTerrainHeight(enemy.group.position.x, enemy.group.position.z) + 0.05;
+          setEntityAnimation(enemy, movingSpeed > 0 ? 'Walk' : 'Idle');
           continue;
         }
 
@@ -2057,6 +2463,82 @@ export function initWorldEntities(ctx) {
       setEntityAnimation(bossEnemy, bAnim);
     }
 
+    function updateWendigoBoss(dt) {
+      if (
+        !wendigoBossEnemy.alive &&
+        !storyState.wendigoBossDefeated &&
+        (storyState.currentLevel >= 16 || (storyState.prestigeRank || 0) > 0) &&
+        Math.hypot(playerRig.position.x + 140.0, playerRig.position.z - 136.0) < 38.0
+      ) {
+        awakenAncientWendigo(false);
+      }
+      if (!wendigoBossEnemy.alive || !wendigoBossEnemy.group.visible) return;
+
+      if (wendigoBossEnemy.igniteTimer > 0) {
+        wendigoBossEnemy.igniteTimer = Math.max(0, wendigoBossEnemy.igniteTimer - dt);
+        wendigoBossEnemy.igniteTick -= dt;
+        if (wendigoBossEnemy.igniteTick <= 0) {
+          wendigoBossEnemy.igniteTick = 0.55;
+          nightBurnImpactPosition.copy(wendigoBossEnemy.group.position);
+          nightBurnImpactPosition.y += 1.7;
+          spawnSparkBurst(nightBurnImpactPosition, 5, 0x58ffb8, 0.95);
+          damageWendigoBoss(null, null, 1);
+          if (!wendigoBossEnemy.alive) return;
+        }
+      }
+
+      wendigoBossEnemy.attackAnimTimer = Math.max(0, wendigoBossEnemy.attackAnimTimer - dt);
+      const dx = playerRig.position.x - wendigoBossEnemy.group.position.x;
+      const dz = playerRig.position.z - wendigoBossEnemy.group.position.z;
+      const dist = Math.hypot(dx, dz);
+      let movingSpeed = 0;
+
+      if (S.playerHiddenStatus || dist > 54) {
+        if (Math.hypot(wendigoBossEnemy.group.position.x - wendigoBossHomePos.x, wendigoBossEnemy.group.position.z - wendigoBossHomePos.z) > 2.2) {
+          moveEntityToward(wendigoBossEnemy.group, wendigoBossHomePos.x, wendigoBossHomePos.z, 2.7, dt, 1.0, BOSS_RADIUS, true);
+          movingSpeed = 2.7;
+        }
+      } else {
+        if (dist > 2.4) {
+          moveEntityToward(wendigoBossEnemy.group, playerRig.position.x, playerRig.position.z, 3.25, dt, 2.0, BOSS_RADIUS, true);
+          movingSpeed = 3.25;
+        } else {
+          faceToward(wendigoBossEnemy.group, playerRig.position.x, playerRig.position.z);
+          wendigoBossEnemy.attackCooldown -= dt;
+          if (wendigoBossEnemy.attackCooldown <= 0) {
+            wendigoBossEnemy.attackCooldown = 1.15;
+            wendigoBossEnemy.attackAnimTimer = 0.5;
+            damagePlayer(26);
+            nightAttackImpactPosition.copy(playerChestPosition);
+            spawnImpact(nightAttackImpactPosition, 0x38ffa2, 0.28);
+          }
+        }
+
+        wendigoBossEnemy.waveCooldown -= dt;
+        if (wendigoBossEnemy.waveCooldown <= 0 && dist < 36) {
+          wendigoBossEnemy.waveCooldown = 3.6;
+          wendigoBossEnemy.attackAnimTimer = 0.5;
+          bossWaveOrigin.copy(wendigoBossEnemy.group.position);
+          bossWaveOrigin.y += 1.75;
+          updatePlayerBodyPoints();
+          bossWaveBaseDir.copy(playerChestPosition).sub(bossWaveOrigin).normalize();
+          for (let w = -1; w <= 1; w++) {
+            bossWaveDir.copy(bossWaveBaseDir).applyAxisAngle(UP, w * 0.17).normalize();
+            spawnEnemyBullet(bossWaveOrigin, bossWaveDir, 25, 18);
+          }
+          playBanditShotSound();
+        }
+      }
+
+      pushOutOfHidingZone(wendigoBossEnemy.group, BOSS_RADIUS);
+      wendigoBossEnemy.group.position.x = THREE.MathUtils.clamp(wendigoBossEnemy.group.position.x, -205, 205);
+      wendigoBossEnemy.group.position.z = THREE.MathUtils.clamp(wendigoBossEnemy.group.position.z, -205, 205);
+      resolveWallCollisions(wendigoBossEnemy.group.position, BOSS_RADIUS, true);
+      wendigoBossEnemy.group.position.y =
+        getTerrainHeight(wendigoBossEnemy.group.position.x, wendigoBossEnemy.group.position.z) + 0.04;
+      setEntityAnimation(wendigoBossEnemy, wendigoBossEnemy.attackAnimTimer > 0 ? 'Attack' : (movingSpeed > 0 ? 'Walk' : 'Idle'));
+    }
+
     // --- 8l. Fiendekuler / Blodbølger og treff på spilleren ---
     const enemyBulletGeo = new THREE.CylinderGeometry(0.018, 0.018, 0.4, 6);
     enemyBulletGeo.rotateX(Math.PI / 2);
@@ -2180,13 +2662,17 @@ export function initWorldEntities(ctx) {
         considerCombatTarget(a, b, bear, 'bear', 0.95, 1.05);
       }
       for (const bandit of banditList) {
-        considerCombatTarget(a, b, bandit, 'bandit', 1.0, bandit.isCaptain ? 0.78 : 0.66);
+        const bRad = (bandit.isGeneralCortez || bandit.isBrimstoneMarshal) ? 0.92 : (bandit.isCaptain ? 0.78 : 0.66);
+        considerCombatTarget(a, b, bandit, 'bandit', 1.0, bRad);
       }
       for (const enemy of nightEnemies) {
-        considerCombatTarget(a, b, enemy, 'night', 1.0, 0.7);
+        considerCombatTarget(a, b, enemy, 'night', 1.0, enemy.isWendigoStalker ? 0.85 : 0.7);
       }
       if (bossEnemy.alive && bossEnemy.group.visible) {
         considerCombatTarget(a, b, bossEnemy, 'boss', 1.45, 1.12);
+      }
+      if (wendigoBossEnemy.alive && wendigoBossEnemy.group.visible) {
+        considerCombatTarget(a, b, wendigoBossEnemy, 'wendigo_boss', 1.5, 1.18);
       }
 
       return combatHitFound ? combatHitResult : null;
@@ -2199,6 +2685,7 @@ export function initWorldEntities(ctx) {
       else if (hit.type === 'bandit') damageBandit(hit.entity, direction, bulletInfo);
       else if (hit.type === 'night') damageNightEnemy(hit.entity, direction, bulletInfo);
       else if (hit.type === 'boss') damageBossEnemy(direction, bulletInfo);
+      else if (hit.type === 'wendigo_boss') damageWendigoBoss(direction, bulletInfo);
     }
 
     // --- 8n. Plasser alle skapningene og NPC-animasjoner i verdenen ---
@@ -2211,9 +2698,9 @@ export function initWorldEntities(ctx) {
     if (sheriffVanceGroup && sheriffVanceGroup.userData.animations && sheriffVanceGroup.userData.animations.length > 0) {
       registerEntityAnimations({ kind: 'npc', group: sheriffVanceGroup }, null);
     }
-    deerHomes.forEach((home) => createDeerAt(home.x, home.z));
-    wolfHomes.forEach((home) => createWolfAt(home.x, home.z));
-    bearHomes.forEach((home) => createBearAt(home.x, home.z));
+    deerHomes.forEach((home) => createDeerAt(home.x, home.z, home));
+    wolfHomes.forEach((home) => createWolfAt(home.x, home.z, home));
+    bearHomes.forEach((home) => createBearAt(home.x, home.z, home));
     banditDefs.forEach((def, index) => createBanditFromDef(def, index));
     for (let i = 0; i < nightSpawnPoints.length; i++) createNightEnemyAt(i);
 
@@ -2306,14 +2793,17 @@ export function initWorldEntities(ctx) {
     banditList,
     nightEnemies,
     bossEnemy,
+    wendigoBossEnemy,
     horseEntity,
     silverRelics,
     silverRelicHitMeshes,
     collectSilverRelic,
     callHorseToPlayer,
     damageBarricade,
+    damageBrimstoneTotem,
     syncBossHealthBarUI,
     summonBossFromAltar,
+    summonWendigoFromObelisk,
     onNightStateChangedBoss,
     applyDynamiteBlast,
     resetBanditsForDay,
@@ -2325,6 +2815,7 @@ export function initWorldEntities(ctx) {
     updateBandits,
     updateNightEnemies,
     updateBossEnemy,
+    updateWendigoBoss,
     updateHorseAndRelics,
     updateAnimationMixers,
     updateEnemyBullets,
