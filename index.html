@@ -84,6 +84,42 @@
     .hud-top-btn:active {
       transform: scale(0.96);
     }
+    #quest-hud-bar {
+      pointer-events: auto;
+      cursor: pointer;
+      text-align: left;
+      font-family: sans-serif;
+      font-size: 13.5px;
+      font-weight: bold;
+      line-height: 1.35;
+      padding: 7px 14px;
+      border-radius: 8px;
+      border: 2px solid #d9a04e;
+      background: rgba(48, 28, 13, 0.93);
+      color: #ffe7a8;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.38);
+      max-width: min(820px, calc(100vw - 28px));
+      box-sizing: border-box;
+      touch-action: manipulation;
+      transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.1s ease;
+    }
+    #quest-hud-bar:hover {
+      background: rgba(74, 44, 18, 0.97);
+    }
+    #quest-hud-bar:active {
+      transform: scale(0.98);
+    }
+    #quest-hud-bar.active-quest {
+      background: rgba(82, 48, 14, 0.96);
+      border-color: #ffe074;
+      color: #fff9e4;
+    }
+    #quest-hud-bar.completed-flash {
+      background: rgba(26, 98, 38, 0.97);
+      border-color: #92f588;
+      color: #ecffea;
+      box-shadow: 0 0 18px rgba(108, 240, 102, 0.52), 0 4px 14px rgba(0, 0, 0, 0.42);
+    }
     #sens-panel {
       display: none;
       pointer-events: auto;
@@ -336,6 +372,11 @@
         font-size: 11px;
         padding: 5px 9px;
       }
+      #quest-hud-bar {
+        font-size: 11px;
+        padding: 5px 9px;
+        max-width: calc(100vw - 16px);
+      }
       #pc-hint {
         display: none;
       }
@@ -373,15 +414,15 @@
       "imports": {
         "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
         "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/",
-        "./js/i18n.js": "./js/i18n.js?v=20261123x48h",
-        "./js/textures.js": "./js/textures.js?v=20261123x48h",
-        "./js/glb-utils.js": "./js/glb-utils.js?v=20261123x48h",
-        "./js/creatures.js": "./js/creatures.js?v=20261123x48h",
-        "./js/world.js": "./js/world.js?v=20261123x48h",
-        "./js/buildings.js": "./js/buildings.js?v=20261123x48h",
-        "./js/audio.js": "./js/audio.js?v=20261123x48h",
-        "./js/revolver-fx.js": "./js/revolver-fx.js?v=20261123x48h",
-        "./js/entities.js": "./js/entities.js?v=20261123x48h"
+        "./js/i18n.js": "./js/i18n.js?v=20261123quests",
+        "./js/textures.js": "./js/textures.js?v=20261123quests",
+        "./js/glb-utils.js": "./js/glb-utils.js?v=20261123quests",
+        "./js/creatures.js": "./js/creatures.js?v=20261123quests",
+        "./js/world.js": "./js/world.js?v=20261123quests",
+        "./js/buildings.js": "./js/buildings.js?v=20261123quests",
+        "./js/audio.js": "./js/audio.js?v=20261123quests",
+        "./js/revolver-fx.js": "./js/revolver-fx.js?v=20261123quests",
+        "./js/entities.js": "./js/entities.js?v=20261123quests"
       }
     }
   </script>
@@ -394,6 +435,7 @@
       <button id="sens-btn" class="hud-top-btn" type="button" title="Controls & Sensitivity">⚙ Sens: 100%</button>
       <button id="daynight-top-btn" class="hud-top-btn" type="button" title="Day / Night">☀ / 🌙</button>
     </div>
+    <button id="quest-hud-bar" type="button" title="Active Quest / Accept Next Quest (Q)"></button>
     <div id="sens-panel" role="dialog" aria-label="Controls and Sensitivity">
       <div id="sens-title" class="sens-header">CONTROLS & SENSITIVITY</div>
       <div class="sens-row">
@@ -448,7 +490,7 @@
     import { Sky } from 'three/addons/objects/Sky.js';
     import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
     import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
-    import { I18N, drawRoundedRect, drawSheriffStar2D } from './js/i18n.js';
+    import { I18N, drawRoundedRect, drawSheriffStar2D, getQuestBySeq, formatQuestTexts } from './js/i18n.js';
     import { initTexturesAndMaterials } from './js/textures.js';
     import { initCreatureModels } from './js/creatures.js';
     import { applySkyShaderParams, getTerrainHeight, buildEnvironmentAndScenery } from './js/world.js';
@@ -544,11 +586,17 @@
     let currentMoveDirX = 0;
     let currentMoveDirZ = 0;
 
+    let questBoardSlots = [1, 2, 3];
+    let nextQuestSeq = 4;
     let activeQuest = null;
+    let activeQuestSeq = 0;
     let questProgress = 0;
     const completedQuests = [];
     const questProgressMap = Object.create(null);
-    const questTiers = { deer_hunt: 1, bandit_clear: 1, night_guardian: 1 };
+    const slotCompletedFlash = [null, null, null];
+    let hudCompletedBanner = null;
+    let respawnSilverRelicsHook = null;
+    let respawnMineBarricadesHook = null;
     let hasSheriffStar = false;
     let hasGoldenRevolver = false;
     let hasLegendTitle = false;
@@ -638,8 +686,12 @@
           hasSheriffStar,
           hasGoldenRevolver,
           hasLegendTitle,
-          completedQuests: [...completedQuests],
-          questTiers: { ...questTiers },
+          completedQuests: completedQuests.slice(-200),
+          questBoardSlots: [...questBoardSlots],
+          nextQuestSeq,
+          activeQuestSeq: activeQuest ? activeQuest.seq : 0,
+          questProgress,
+          questProgressMap: { ...questProgressMap },
           totalPlaySeconds: Math.round(totalPlaySeconds),
           story: {
             ...storyState,
@@ -690,17 +742,44 @@
             if (typeof qid === 'string') completedQuests.push(qid);
           });
         }
-        if (data.questTiers && typeof data.questTiers === 'object') {
-          for (const k of Object.keys(questTiers)) {
-            if (typeof data.questTiers[k] === 'number') questTiers[k] = Math.max(1, Math.round(data.questTiers[k]));
-          }
-        }
         if (typeof data.totalPlaySeconds === 'number') totalPlaySeconds = Math.max(0, data.totalPlaySeconds);
         if (data.story && typeof data.story === 'object') {
           for (const sk of Object.keys(storyState)) {
             if (sk === 'bossActive' || sk === 'wendigoBossActive') continue;
             if (data.story[sk] !== undefined) storyState[sk] = data.story[sk];
           }
+        }
+        if (data.questProgressMap && typeof data.questProgressMap === 'object') {
+          for (const [qk, qv] of Object.entries(data.questProgressMap)) {
+            if (typeof qv === 'number' && qv > 0) questProgressMap[qk] = Math.round(qv);
+          }
+        }
+        if (Array.isArray(data.questBoardSlots) && data.questBoardSlots.length === 3) {
+          const seen = new Set();
+          let fallbackSeq = 1;
+          questBoardSlots = data.questBoardSlots.map((rawSeq) => {
+            let s = Math.max(1, Math.round(Number(rawSeq) || fallbackSeq));
+            while (seen.has(s)) s += 1;
+            seen.add(s);
+            fallbackSeq = s + 1;
+            return s;
+          });
+          const minNext = Math.max(...questBoardSlots) + 1;
+          nextQuestSeq = Math.max(minNext, Math.round(Number(data.nextQuestSeq) || minNext));
+          if (typeof data.activeQuestSeq === 'number' && data.activeQuestSeq > 0 && questBoardSlots.includes(data.activeQuestSeq)) {
+            activeQuestSeq = data.activeQuestSeq;
+            activeQuest = getQuestBySeq(activeQuestSeq, storyState.prestigeRank || 0);
+            questProgress = Math.max(0, Math.min(activeQuest.goal - 1, Math.round(Number(data.questProgress) || 0)));
+          }
+        } else {
+          // Migrer sømløst fra eldre lagring slik at allerede fullførte start-quests byttes ut med nye
+          const migSlots = [1, 2, 3];
+          let migNext = 4;
+          if (completedQuests.includes('deer_hunt')) migSlots[0] = migNext++;
+          if (completedQuests.includes('bandit_clear')) migSlots[1] = migNext++;
+          if (completedQuests.includes('night_guardian')) migSlots[2] = migNext++;
+          questBoardSlots = migSlots;
+          nextQuestSeq = migNext;
         }
       } catch (_) {
         // Ignorer korrupt lagring
@@ -716,6 +795,7 @@
     let forceNightForBloodMoonHook = null;
 
     const hudEl = document.getElementById('hud');
+    const questHudBarEl = document.getElementById('quest-hud-bar');
     const pcHintEl = document.getElementById('pc-hint');
     const langBtnEl = document.getElementById('lang-btn');
     const sensBtnEl = document.getElementById('sens-btn');
@@ -1350,16 +1430,64 @@
     let refreshTailorWorkshopHook = null;
     let refreshQuestBoardHook = null;
     let refreshWorldSignsHook = null;
-    const TOTAL_QUEST_COUNT = 3;
+    function getLowestOpenBoardSlotIndex() {
+      let bestIdx = 0;
+      let bestSeq = Infinity;
+      for (let i = 0; i < questBoardSlots.length; i++) {
+        const seq = questBoardSlots[i];
+        if (seq < bestSeq) {
+          bestSeq = seq;
+          bestIdx = i;
+        }
+      }
+      return bestIdx;
+    }
+
+    function syncQuestHudBar() {
+      if (!questHudBarEl) return;
+      const dict = L();
+      const isNo = currentLang === 'no';
+
+      if (hudCompletedBanner && hudCompletedBanner.timer > 0) {
+        const doneTitle = isNo ? hudCompletedBanner.noTitle : hudCompletedBanner.enTitle;
+        const doneReward = isNo ? hudCompletedBanner.rewardNo : hudCompletedBanner.rewardEn;
+        questHudBarEl.classList.remove('active-quest');
+        questHudBarEl.classList.add('completed-flash');
+        questHudBarEl.textContent = dict.questHudDoneBanner(hudCompletedBanner.seq, doneTitle, doneReward);
+        return;
+      }
+
+      questHudBarEl.classList.remove('completed-flash');
+      if (activeQuest) {
+        const fmt = formatQuestTexts(activeQuest, currentLang, { hasSheriffStar, hasGoldenRevolver });
+        questHudBarEl.classList.add('active-quest');
+        questHudBarEl.textContent = dict.questHudActiveBtn(
+          activeQuest.seq,
+          `${fmt.title} — ${fmt.task}`,
+          questProgress,
+          activeQuest.goal,
+          fmt.rewardSummary
+        );
+      } else {
+        questHudBarEl.classList.remove('active-quest');
+        const nextIdx = getLowestOpenBoardSlotIndex();
+        const nextQuest = getQuestBySeq(questBoardSlots[nextIdx], storyState.prestigeRank || 0);
+        const fmt = formatQuestTexts(nextQuest, currentLang, { hasSheriffStar, hasGoldenRevolver });
+        questHudBarEl.textContent = dict.questHudIdleBtn(nextQuest.seq, `${fmt.title} — ${fmt.task}`);
+      }
+    }
 
     function getActiveQuestStatusLine() {
       const dict = L();
-      if (activeQuest) {
-        const qInfo = dict.quests[activeQuest.id];
-        const qTitle = qInfo ? qInfo.title : activeQuest.title;
-        return `${dict.questPrefix}: ${qTitle} (${questProgress}/${activeQuest.goal})`;
+      if (hudCompletedBanner && hudCompletedBanner.timer > 0) {
+        const doneTitle = currentLang === 'no' ? hudCompletedBanner.noTitle : hudCompletedBanner.enTitle;
+        return `✓ #${hudCompletedBanner.seq} ${doneTitle} (${dict.badgeCompleted})`;
       }
-      if (completedQuests.length >= TOTAL_QUEST_COUNT) {
+      if (activeQuest) {
+        const fmt = formatQuestTexts(activeQuest, currentLang, { hasSheriffStar, hasGoldenRevolver });
+        return `${dict.questPrefix} #${activeQuest.seq}: ${fmt.title} (${questProgress}/${activeQuest.goal})`;
+      }
+      if ((storyState.totalBountiesDone || 0) > 0) {
         return dict.questAllDone;
       }
       return dict.questNone;
@@ -1367,6 +1495,7 @@
 
     function updateStatusUI() {
       syncLocalizedStateStrings();
+      syncQuestHudBar();
       const dict = L();
       document.documentElement.lang = currentLang === 'no' ? 'no' : 'en';
       if (langBtnEl) langBtnEl.textContent = dict.langBtn;
@@ -1720,24 +1849,7 @@
       wildlife: wildlifeGLTF
     };
 
-    // --- 5a. Saloon / Oppdragsbygg og «SHERIFF'S BOUNTY BOARD» (eskalerende dusørnivåer 1 -> 100+!) ---
-    const SALOON_QUESTS = [
-      { id: 'deer_hunt', baseGoal: 2, goal: 2, baseGold: 25, targetType: 'deer' },
-      { id: 'bandit_clear', baseGoal: 3, goal: 3, baseGold: 30, targetType: 'bandit' },
-      { id: 'night_guardian', baseGoal: 4, goal: 4, baseGold: 45, targetType: 'night' }
-    ];
-
-    function getScaledQuestGoal(quest) {
-      const tier = Math.max(1, questTiers[quest.id] || 1);
-      return quest.baseGoal + (tier - 1) * 2;
-    }
-
-    function getScaledQuestGold(quest) {
-      const tier = Math.max(1, questTiers[quest.id] || 1);
-      const pMult = 1 + (storyState.prestigeRank || 0) * 0.35;
-      return Math.round((quest.baseGold + (tier - 1) * 18) * pMult);
-    }
-
+    // --- 5a. Saloon / Oppdragsbygg og roterende «SHERIFF'S BOUNTY BOARD» (Oppdrag #1 -> #2 -> #3 -> #4 ... #999+!) ---
     let saloonMainSignMesh = null;
     let tailorMainSignMesh = null;
     let gunsmithMainSignMesh = null;
@@ -1762,7 +1874,7 @@
     saloonQuestTexture.colorSpace = THREE.SRGBColorSpace;
     saloonQuestTexture.anisotropy = maxAnisotropy;
 
-    function createQuestButtonEntry(quest) {
+    function createQuestButtonEntry(slotIndex) {
       const canvas = document.createElement('canvas');
       canvas.width = 1024;
       canvas.height = 126;
@@ -1775,37 +1887,39 @@
         new THREE.PlaneGeometry(2.58, 0.31),
         new THREE.MeshBasicMaterial({ map: texture, transparent: true, fog: false, toneMapped: false })
       );
-      mesh.userData.quest = quest;
-      return { quest, canvas, ctx, texture, mesh };
+      mesh.userData.questSlotIndex = slotIndex;
+      return { slotIndex, canvas, ctx, texture, mesh };
     }
 
-    const saloonQuestButtonEntries = SALOON_QUESTS.map((q) => createQuestButtonEntry(q));
+    const saloonQuestButtonEntries = [0, 1, 2].map((slotIdx) => createQuestButtonEntry(slotIdx));
 
     function resolveQuestBoardMessage() {
       const dict = L();
+      const isNo = currentLang === 'no';
       if (!questBoardMessageKey) return '';
-      if (questBoardMessageKey === 'done_already') return dict.questMsgDoneAlready;
       if (questBoardMessageKey === 'active_now' && questBoardMessageArg) {
         const q = questBoardMessageArg;
-        const qTitle = (dict.quests[q.id] && dict.quests[q.id].title) || q.id;
-        return dict.questMsgActiveNow(qTitle, questProgress, q.goal);
+        const qTitle = isNo ? q.noTitle : q.enTitle;
+        return dict.questMsgActiveNow(q.seq, qTitle, questProgress, q.goal);
       }
       if (questBoardMessageKey === 'accepted' && questBoardMessageArg) {
         const q = questBoardMessageArg;
-        const qTitle = (dict.quests[q.id] && dict.quests[q.id].title) || q.id;
-        return dict.questMsgAccepted(qTitle);
+        const qTitle = isNo ? q.noTitle : q.enTitle;
+        return dict.questMsgAccepted(q.seq, qTitle);
       }
-      if (questBoardMessageKey === 'reward_deer') return dict.questMsgRewardDeer;
-      if (questBoardMessageKey === 'reward_bandit') return dict.questMsgRewardBandit;
-      if (questBoardMessageKey === 'reward_night') return dict.questMsgRewardNight;
-      if (questBoardMessageKey === 'reward_tier' && questBoardMessageArg && dict.questMsgRewardGeneric) {
-        return dict.questMsgRewardGeneric(questBoardMessageArg.gold, questBoardMessageArg.tier);
+      if (questBoardMessageKey === 'completed_toast' && questBoardMessageArg) {
+        const info = questBoardMessageArg;
+        const qTitle = isNo ? info.noTitle : info.enTitle;
+        const rew = isNo ? info.rewardNo : info.rewardEn;
+        return dict.questMsgCompletedToast(info.seq, qTitle, rew);
       }
       return questBoardMessageKey;
     }
 
     function updateSaloonQuestBoardUI() {
       const dict = L();
+      const isNo = currentLang === 'no';
+      const totalDone = storyState.totalBountiesDone || completedQuests.length;
       saloonQuestCtx.clearRect(0, 0, saloonQuestCanvas.width, saloonQuestCanvas.height);
 
       drawRoundedRect(saloonQuestCtx, 8, 8, 1008, 496, 22);
@@ -1831,59 +1945,112 @@
 
       const bannerMsg = resolveQuestBoardMessage();
       if (questBoardTimer > 0 && bannerMsg) {
-        drawRoundedRect(saloonQuestCtx, 56, 90, 912, 50, 12);
+        drawRoundedRect(saloonQuestCtx, 44, 90, 936, 50, 12);
         saloonQuestCtx.fillStyle = questBoardMessageSuccess
-          ? 'rgba(36, 98, 42, 0.96)'
+          ? 'rgba(30, 98, 40, 0.96)'
           : 'rgba(132, 34, 26, 0.96)';
         saloonQuestCtx.fill();
         saloonQuestCtx.lineWidth = 3;
         saloonQuestCtx.strokeStyle = questBoardMessageSuccess ? '#9bf08a' : '#ff9a8a';
         saloonQuestCtx.stroke();
 
-        saloonQuestCtx.font = 'bold 26px sans-serif';
+        let bFont = 25;
+        saloonQuestCtx.font = `bold ${bFont}px sans-serif`;
+        while (bFont > 17 && saloonQuestCtx.measureText(bannerMsg).width > 904) {
+          bFont -= 1;
+          saloonQuestCtx.font = `bold ${bFont}px sans-serif`;
+        }
         saloonQuestCtx.fillStyle = '#ffffff';
         saloonQuestCtx.fillText(bannerMsg, 512, 116);
       } else {
-        saloonQuestCtx.font = 'bold 24px sans-serif';
-        saloonQuestCtx.fillStyle = '#f2c16b';
-        const activeTitle =
-          activeQuest && dict.quests[activeQuest.id]
-            ? dict.quests[activeQuest.id].title
-            : '';
+        const activeTitle = activeQuest ? (isNo ? activeQuest.noTitle : activeQuest.enTitle) : '';
         const subText = activeQuest
           ? dict.questBoardActiveSub(
+              activeQuest.seq,
               activeTitle,
               questProgress,
               activeQuest.goal,
+              totalDone,
               playerState.gold
             )
-          : dict.questBoardIdleSub(storyState.totalBountiesDone || completedQuests.length, playerState.gold);
+          : dict.questBoardIdleSub(totalDone, playerState.gold);
+        let subFont = 23;
+        saloonQuestCtx.font = `bold ${subFont}px sans-serif`;
+        while (subFont > 17 && saloonQuestCtx.measureText(subText).width > 930) {
+          subFont -= 1;
+          saloonQuestCtx.font = `bold ${subFont}px sans-serif`;
+        }
+        saloonQuestCtx.fillStyle = '#f2c16b';
         saloonQuestCtx.fillText(subText, 512, 116);
       }
 
       saloonQuestTexture.needsUpdate = true;
 
       saloonQuestButtonEntries.forEach((entry) => {
-        const { quest, canvas, ctx, texture } = entry;
-        const qText = dict.quests[quest.id];
-        const tier = Math.max(1, questTiers[quest.id] || 1);
-        const dynGoal = getScaledQuestGoal(quest);
-        const dynGold = getScaledQuestGold(quest);
-        const isDone = completedQuests.includes(quest.id);
-        const isActive = activeQuest && activeQuest.id === quest.id;
-        const savedProg = questProgressMap[quest.id] || 0;
-        const shownProg = isActive ? questProgress : savedProg;
-        const shownGoal = isActive ? activeQuest.goal : dynGoal;
-
+        const { slotIndex, canvas, ctx, texture } = entry;
+        const flash = slotCompletedFlash[slotIndex];
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Vis tydelig grønn «✓ FULLFØRT!»-markering i 2.8s før oppdraget forsvinner og erstattes av neste i køen!
+        if (flash && flash.timer > 0) {
+          drawRoundedRect(ctx, 6, 6, canvas.width - 12, canvas.height - 12, 16);
+          ctx.fillStyle = '#1d5e28';
+          ctx.strokeStyle = '#9cff91';
+          ctx.fill();
+          ctx.lineWidth = 5.5;
+          ctx.stroke();
+
+          drawRoundedRect(ctx, 744, 18, 256, 44, 10);
+          ctx.fillStyle = 'rgba(130, 255, 130, 0.30)';
+          ctx.fill();
+
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.font = 'bold 21px sans-serif';
+          ctx.fillStyle = '#ebffea';
+          ctx.fillText(dict.badgeCompleted, 872, 41);
+
+          const fTitle = isNo ? flash.noTitle : flash.enTitle;
+          const fRew = isNo ? flash.rewardNo : flash.rewardEn;
+          const line1 = dict.questCompletedSlotLine1(flash.seq, fTitle);
+          const line2 = dict.questCompletedSlotLine2(fRew);
+
+          ctx.textAlign = 'left';
+          let tFont = 25;
+          ctx.font = `bold ${tFont}px sans-serif`;
+          while (tFont > 17 && ctx.measureText(line1).width > 706) {
+            tFont -= 1;
+            ctx.font = `bold ${tFont}px sans-serif`;
+          }
+          ctx.fillStyle = '#eaffea';
+          ctx.fillText(line1, 28, 41);
+
+          let rFont = 20;
+          ctx.font = `bold ${rFont}px sans-serif`;
+          while (rFont > 15 && ctx.measureText(line2).width > 960) {
+            rFont -= 1;
+            ctx.font = `bold ${rFont}px sans-serif`;
+          }
+          ctx.fillStyle = '#b9ffb5';
+          ctx.fillText(line2, 28, 88);
+
+          texture.needsUpdate = true;
+          return;
+        }
+
+        const seq = questBoardSlots[slotIndex];
+        const quest = (activeQuest && activeQuest.seq === seq)
+          ? activeQuest
+          : getQuestBySeq(seq, storyState.prestigeRank || 0);
+        const fmt = formatQuestTexts(quest, currentLang, { hasSheriffStar, hasGoldenRevolver });
+        const isActive = !!(activeQuest && activeQuest.seq === seq);
+        const savedProg = questProgressMap[seq] || 0;
+        const shownProg = isActive ? questProgress : savedProg;
 
         drawRoundedRect(ctx, 6, 6, canvas.width - 12, canvas.height - 12, 16);
         if (isActive) {
-          ctx.fillStyle = '#633c12';
+          ctx.fillStyle = '#683f12';
           ctx.strokeStyle = '#ffe074';
-        } else if (isDone) {
-          ctx.fillStyle = '#1f4a24';
-          ctx.strokeStyle = '#8ce881';
         } else {
           ctx.fillStyle = '#4c2c15';
           ctx.strokeStyle = '#cc9548';
@@ -1896,47 +2063,41 @@
         let badgeBg = 'rgba(217, 160, 78, 0.22)';
         let badgeTextCol = '#ffe3a3';
         if (isActive) {
-          statusLabel = `${dict.badgeActive} (${shownProg}/${shownGoal})`;
-          badgeBg = 'rgba(255, 214, 90, 0.28)';
+          statusLabel = `${dict.badgeActive} (${shownProg}/${quest.goal})`;
+          badgeBg = 'rgba(255, 214, 90, 0.30)';
           badgeTextCol = '#fff3a6';
-        } else if (isDone) {
-          statusLabel = `${dict.badgeDone} ${tier}`;
-          badgeBg = 'rgba(90, 200, 95, 0.28)';
-          badgeTextCol = '#b8ffaf';
         } else if (savedProg > 0) {
-          statusLabel = `${dict.badgeOpen} (${savedProg}/${shownGoal})`;
+          statusLabel = `${dict.badgeOpen} (${savedProg}/${quest.goal})`;
         }
 
-        drawRoundedRect(ctx, 758, 18, 242, 44, 10);
+        drawRoundedRect(ctx, 756, 18, 244, 44, 10);
         ctx.fillStyle = badgeBg;
         ctx.fill();
 
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.font = 'bold 22px sans-serif';
+        ctx.font = 'bold 21px sans-serif';
         ctx.fillStyle = badgeTextCol;
-        ctx.fillText(statusLabel, 879, 41);
-
-        const taskLine = qText.formatTask ? qText.formatTask(tier, shownGoal) : qText.taskText;
-        const foodBonus = 2 + Math.floor(tier / 2);
-        const peltBonus = 2 + Math.floor(tier / 3);
-        const rewardLine = qText.formatReward
-          ? qText.formatReward(dynGold, foodBonus, peltBonus, !isDone && tier === 1)
-          : qText.rewardText;
+        ctx.fillText(statusLabel, 878, 41);
 
         ctx.textAlign = 'left';
-        let titleFont = 26;
+        let titleFont = 25;
         ctx.font = `bold ${titleFont}px sans-serif`;
-        while (titleFont > 17 && ctx.measureText(taskLine).width > 718) {
+        while (titleFont > 16 && ctx.measureText(fmt.cardTitleLine).width > 716) {
           titleFont -= 1;
           ctx.font = `bold ${titleFont}px sans-serif`;
         }
-        ctx.fillStyle = isDone && !isActive ? '#dcffd8' : '#fff7e5';
-        ctx.fillText(taskLine, 28, 41);
+        ctx.fillStyle = '#fff7e5';
+        ctx.fillText(fmt.cardTitleLine, 28, 41);
 
-        ctx.font = 'bold 21px sans-serif';
-        ctx.fillStyle = isDone && !isActive ? '#a7e8a1' : '#f5c76e';
-        ctx.fillText(rewardLine, 28, 88);
+        let rewFont = 20.5;
+        ctx.font = `bold ${rewFont}px sans-serif`;
+        while (rewFont > 15 && ctx.measureText(fmt.rewardLine).width > 960) {
+          rewFont -= 1;
+          ctx.font = `bold ${rewFont}px sans-serif`;
+        }
+        ctx.fillStyle = '#f5c76e';
+        ctx.fillText(fmt.rewardLine, 28, 88);
 
         texture.needsUpdate = true;
       });
@@ -3599,11 +3760,12 @@
       );
 
       playerState.targets += 1;
-      updateStatusUI();
       playBottleHit();
+      recordQuestKill(['bottle']);
+      updateStatusUI();
 
       if (playerState.targets >= practiceBottles.length) {
-        targetResetTimer = 2.6;
+        targetResetTimer = (activeQuest && activeQuest.targetType === 'bottle') ? 1.15 : 2.6;
       }
     }
 
@@ -3653,14 +3815,17 @@
         storyState.moonstonesCollected = (storyState.moonstonesCollected || 0) + 1;
         playerState.gold += 25;
         spawnSparkBurst(entry.worldPos, 16, 0x8ad8ff, 1.35);
+        recordQuestKill(['moonstone', 'treasure_any']);
       } else if (entry.kind === 'strongbox') {
         storyState.strongboxesRecovered = (storyState.strongboxesRecovered || 0) + 1;
         playerState.gold += 35;
         spawnSparkBurst(entry.worldPos, 18, 0xffd24c, 1.4);
+        recordQuestKill(['strongbox', 'treasure_any']);
       } else if (entry.kind === 'sun_rune') {
         storyState.ancientRunesAttuned = (storyState.ancientRunesAttuned || 0) + 1;
         playerState.gold += 28;
         spawnSparkBurst(entry.worldPos, 16, 0xffe26a, 1.35);
+        recordQuestKill(['sun_rune', 'treasure_any']);
       }
       if (playRelicPickupSound) playRelicPickupSound();
       else playGoldPickupSound();
@@ -3675,10 +3840,12 @@
       gp.group.visible = false;
       gp.respawnTimer = 45;
       playerState.gold += gp.amount;
-      if (gp.group.position.x > 65) {
+      const inMineArea = gp.group.position.x > 65;
+      if (inMineArea) {
         storyState.mineGoldCollected = true;
       }
       playGoldPickupSound();
+      recordQuestKill(inMineArea ? ['gold_pickup', 'treasure_any', 'mine_action'] : ['gold_pickup', 'treasure_any']);
       checkStoryProgression();
       updateStatusUI();
     }
@@ -4202,6 +4369,9 @@
       }
       if ((e.code === 'KeyT' || keyLower === 't') && !e.repeat && !renderer.xr.isPresenting) resetTargets();
       if ((e.code === 'KeyN' || keyLower === 'n') && !e.repeat && !renderer.xr.isPresenting) toggleDayNight();
+      if ((e.code === 'KeyJ' || keyLower === 'j') && !e.repeat && !renderer.xr.isPresenting) {
+        acceptOrCycleBoardQuest();
+      }
     });
 
     window.addEventListener('wheel', (e) => {
@@ -4622,67 +4792,200 @@
       updateSaloonQuestBoardUI();
     }
 
-    function selectSaloonQuest(quest) {
+    function ensureQuestTargetsAvailable(quest) {
       if (!quest) return;
+      const t = quest.targetType;
 
-      if (activeQuest && activeQuest.id === quest.id) {
-        setQuestBoardFeedback('active_now', true, 3.0, quest);
-        playQuestSelectSound();
-        return;
+      if (t === 'bottle' && playerState.targets > 0) {
+        resetTargets();
       }
 
-      const wasDone = completedQuests.includes(quest.id);
-      if (wasDone) {
-        questProgressMap[quest.id] = 0;
-      }
-
-      quest.goal = getScaledQuestGoal(quest);
-      activeQuest = quest;
-      questProgress = questProgressMap[quest.id] || 0;
-
-      if (quest.id === 'bandit_clear' && !isNight) {
-        for (const bandit of banditList) {
-          if (!bandit.alive && (!bandit.respawnTimer || bandit.respawnTimer > 6)) {
-            bandit.respawnTimer = 4;
+      if (
+        t === 'bandit_any' || t === 'train_sniper' || t === 'fort_bandit' ||
+        t === 'cortez' || t === 'marshal' || t === 'mine_action' ||
+        t === 'elite_foe' || t === 'any_boss' || t === 'combat_any' || t === 'brimstone_foe'
+      ) {
+        if (typeof banditList !== 'undefined' && Array.isArray(banditList)) {
+          for (let i = 0; i < banditList.length; i++) {
+            const b = banditList[i];
+            if (!b.alive && (!b.respawnTimer || b.respawnTimer > 3.5)) {
+              b.respawnTimer = 2.5;
+            }
           }
         }
       }
 
-      setQuestBoardFeedback(wasDone ? 'done_already' : 'accepted', true, 3.2, quest);
+      if (
+        t === 'deer_any' || t === 'white_stag' || t === 'wolf' || t === 'cougar' ||
+        t === 'alpha_wolf' || t === 'grizzly' || t === 'bison' ||
+        t === 'wild_beast' || t === 'apex_predator'
+      ) {
+        if (typeof deerList !== 'undefined' && Array.isArray(deerList)) {
+          for (let i = 0; i < deerList.length; i++) {
+            const d = deerList[i];
+            if (!d.alive && (!d.respawnTimer || d.respawnTimer > 3.5)) d.respawnTimer = 2.5;
+          }
+        }
+        if (typeof wolfList !== 'undefined' && Array.isArray(wolfList)) {
+          for (let i = 0; i < wolfList.length; i++) {
+            const w = wolfList[i];
+            if (!w.alive && (!w.respawnTimer || w.respawnTimer > 3.5)) w.respawnTimer = 2.5;
+          }
+        }
+        if (typeof bearList !== 'undefined' && Array.isArray(bearList)) {
+          for (let i = 0; i < bearList.length; i++) {
+            const br = bearList[i];
+            if (!br.alive && (!br.respawnTimer || br.respawnTimer > 3.5)) br.respawnTimer = 2.5;
+          }
+        }
+      }
+
+      if (
+        t === 'night_any' || t === 'vampire_or_catacomb' || t === 'catacomb_guardian' ||
+        t === 'wendigo' || t === 'brimstone_foe' || t === 'elite_foe' || t === 'combat_any'
+      ) {
+        if (typeof nightEnemies !== 'undefined' && Array.isArray(nightEnemies)) {
+          for (let i = 0; i < nightEnemies.length; i++) {
+            const ne = nightEnemies[i];
+            if (!ne.alive && (!ne.respawnTimer || ne.respawnTimer > 3.5)) ne.respawnTimer = 2.5;
+          }
+        }
+      }
+
+      if ((t === 'gold_pickup' || t === 'treasure_any' || t === 'mine_action') && goldPickups) {
+        for (let i = 0; i < goldPickups.length; i++) {
+          const gp = goldPickups[i];
+          if (gp.collected && gp.respawnTimer > 1.5) gp.respawnTimer = 1.0;
+        }
+      }
+
+      if (t === 'moonstone' || t === 'treasure_any') {
+        if (moonstoneTotems) {
+          for (let i = 0; i < moonstoneTotems.length; i++) {
+            const m = moonstoneTotems[i];
+            if (m.collected) {
+              m.collected = false;
+              m.respawnTimer = 0;
+              m.group.visible = true;
+            }
+          }
+        }
+      }
+      if (t === 'strongbox' || t === 'treasure_any') {
+        if (fortStrongboxes) {
+          for (let i = 0; i < fortStrongboxes.length; i++) {
+            const sb = fortStrongboxes[i];
+            if (sb.collected) {
+              sb.collected = false;
+              sb.respawnTimer = 0;
+              sb.group.visible = true;
+            }
+          }
+        }
+      }
+      if (t === 'sun_rune' || t === 'treasure_any') {
+        if (ancientRunes) {
+          for (let i = 0; i < ancientRunes.length; i++) {
+            const rn = ancientRunes[i];
+            if (rn.collected) {
+              rn.collected = false;
+              rn.respawnTimer = 0;
+              rn.group.visible = true;
+            }
+          }
+        }
+      }
+      if (t === 'brimstone_totem' && brimstoneTotems) {
+        for (let i = 0; i < brimstoneTotems.length; i++) {
+          const bt = brimstoneTotems[i];
+          if (bt.destroyed) {
+            bt.destroyed = false;
+            bt.hp = bt.maxHp || 3;
+            bt.respawnTimer = 0;
+            bt.group.visible = true;
+          }
+        }
+      }
+      if ((t === 'silver_relic' || t === 'treasure_any') && respawnSilverRelicsHook) {
+        respawnSilverRelicsHook();
+      }
+      if (t === 'mine_action' && respawnMineBarricadesHook) {
+        respawnMineBarricadesHook();
+      }
+    }
+
+    function selectSaloonQuestSlot(slotIndex) {
+      if (typeof slotIndex !== 'number' || slotIndex < 0 || slotIndex >= questBoardSlots.length) return;
+
+      // Hvis plassen fortsatt viser «✓ FULLFØRT!»-feiringen, fjern den med én gang og åpne det nye oppdraget!
+      if (slotCompletedFlash[slotIndex]) {
+        slotCompletedFlash[slotIndex] = null;
+      }
+      hudCompletedBanner = null;
+
+      const seq = questBoardSlots[slotIndex];
+      const quest = getQuestBySeq(seq, storyState.prestigeRank || 0);
+
+      if (activeQuest && activeQuest.seq === seq) {
+        setQuestBoardFeedback('active_now', true, 3.0, activeQuest);
+        updateStatusUI();
+        playQuestSelectSound();
+        return;
+      }
+
+      if (activeQuest && questProgress > 0) {
+        questProgressMap[activeQuest.seq] = questProgress;
+      }
+
+      activeQuest = quest;
+      activeQuestSeq = seq;
+      questProgress = Math.min(quest.goal - 1, questProgressMap[seq] || 0);
+      ensureQuestTargetsAvailable(quest);
+
+      setQuestBoardFeedback('accepted', true, 3.2, quest);
+      saveCareerProgress();
+      updateSaloonQuestBoardUI();
       updateStatusUI();
       playQuestSelectSound();
+    }
+
+    function acceptOrCycleBoardQuest() {
+      hudCompletedBanner = null;
+      if (!activeQuest) {
+        const bestSlot = getLowestOpenBoardSlotIndex();
+        selectSaloonQuestSlot(bestSlot);
+        return;
+      }
+      const curSlot = questBoardSlots.indexOf(activeQuest.seq);
+      const nextSlot = curSlot >= 0 ? (curSlot + 1) % questBoardSlots.length : getLowestOpenBoardSlotIndex();
+      selectSaloonQuestSlot(nextSlot);
+    }
+
+    if (questHudBarEl) {
+      questHudBarEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        acceptOrCycleBoardQuest();
+      });
     }
 
     function completeActiveQuest() {
       if (!activeQuest) return;
       const finished = activeQuest;
-      const currentTier = Math.max(1, questTiers[finished.id] || 1);
-      const firstClear = !completedQuests.includes(finished.id) && currentTier === 1;
-      if (!completedQuests.includes(finished.id)) {
-        completedQuests.push(finished.id);
-      }
-      const earnedGold = getScaledQuestGold(finished);
-      const foodBonus = 2 + Math.floor(currentTier / 2);
-      const peltBonus = 2 + Math.floor(currentTier / 3);
+      const slotIdx = questBoardSlots.indexOf(finished.seq);
 
-      questTiers[finished.id] = currentTier + 1;
-      finished.goal = getScaledQuestGoal(finished);
-      storyState.totalBountiesDone = (storyState.totalBountiesDone || 0) + 1;
+      const enFmt = formatQuestTexts(finished, 'en', { hasSheriffStar, hasGoldenRevolver });
+      const noFmt = formatQuestTexts(finished, 'no', { hasSheriffStar, hasGoldenRevolver });
 
-      questProgressMap[finished.id] = 0;
-      activeQuest = null;
-      questProgress = 0;
+      playerState.gold += finished.gold;
+      if (finished.food > 0) playerState.food += finished.food;
+      if (finished.pelts > 0) playerState.pelt += finished.pelts;
+      if (finished.dynamite > 0) playerState.dynamite += finished.dynamite;
 
-      if (finished.id === 'deer_hunt') {
-        playerState.gold += earnedGold;
-        playerState.food += foodBonus;
-        playerState.pelt += peltBonus;
+      if (finished.grantsSheriffStar) {
         hasSheriffStar = true;
         sheriffStarBadge.visible = true;
-        if (firstClear) setQuestBoardFeedback('reward_deer', true, 4.5);
-        else setQuestBoardFeedback('reward_tier', true, 4.5, { gold: earnedGold, tier: currentTier });
-      } else if (finished.id === 'bandit_clear') {
-        playerState.gold += earnedGold;
+      }
+      if (finished.grantsGoldRevolver) {
         weaponDamage = Math.max(weaponDamage, 2);
         if (!hasGoldenRevolver) {
           hasGoldenRevolver = true;
@@ -4690,39 +4993,90 @@
         } else {
           playerState.dynamite += 1;
         }
-        if (firstClear) setQuestBoardFeedback('reward_bandit', true, 4.5);
-        else setQuestBoardFeedback('reward_tier', true, 4.5, { gold: earnedGold, tier: currentTier });
-      } else if (finished.id === 'night_guardian') {
-        playerState.gold += earnedGold;
-        playerState.pelt += 1;
-        playerState.health = playerState.maxHealth;
-        if (firstClear) setQuestBoardFeedback('reward_night', true, 4.5);
-        else setQuestBoardFeedback('reward_tier', true, 4.5, { gold: earnedGold, tier: currentTier });
       }
+      if (finished.fullHeal) {
+        playerState.health = playerState.maxHealth;
+      }
+
+      if (!completedQuests.includes(finished.id)) {
+        completedQuests.push(finished.id);
+        if (completedQuests.length > 200) completedQuests.shift();
+      }
+      delete questProgressMap[finished.seq];
+      storyState.totalBountiesDone = (storyState.totalBountiesDone || 0) + 1;
+
+      // Bytt ut det fullførte oppdraget i plassen med neste nye oppdrag i den uendelige køen (#4, #5, #6 ...)
+      const replacementSeq = nextQuestSeq++;
+      if (slotIdx >= 0) {
+        questBoardSlots[slotIdx] = replacementSeq;
+        slotCompletedFlash[slotIdx] = {
+          seq: finished.seq,
+          enTitle: enFmt.title,
+          noTitle: noFmt.title,
+          rewardEn: enFmt.rewardSummary,
+          rewardNo: noFmt.rewardSummary,
+          timer: 2.8
+        };
+      }
+
+      hudCompletedBanner = {
+        seq: finished.seq,
+        enTitle: enFmt.title,
+        noTitle: noFmt.title,
+        rewardEn: enFmt.rewardSummary,
+        rewardNo: noFmt.rewardSummary,
+        timer: 4.2
+      };
+
+      activeQuest = null;
+      activeQuestSeq = 0;
+      questProgress = 0;
+
+      setQuestBoardFeedback('completed_toast', true, 4.2, {
+        seq: finished.seq,
+        enTitle: enFmt.title,
+        noTitle: noFmt.title,
+        rewardEn: enFmt.rewardSummary,
+        rewardNo: noFmt.rewardSummary
+      });
 
       checkStoryProgression();
       saveCareerProgress();
+      updateSaloonQuestBoardUI();
       updateStatusUI();
       playQuestFanfare();
     }
 
-    function recordQuestKill(targetType) {
+    function recordQuestKill(tagsInput) {
+      const isArr = Array.isArray(tagsInput);
       // Oppdater også evige Prestisje-kapitler (Kapittel 21+) ved hvert nedlagte vilt/fiende!
       if (storyState.currentLevel >= 21) {
-        if (targetType === 'deer') {
+        const isBeast = isArr
+          ? (tagsInput.includes('wild_beast') || tagsInput.includes('deer'))
+          : tagsInput === 'deer';
+        const isFoe = isArr
+          ? (tagsInput.includes('combat_any') || tagsInput.includes('bandit') || tagsInput.includes('night'))
+          : (tagsInput === 'bandit' || tagsInput === 'night');
+        if (isBeast) {
           storyState.prestigeBeasts = (storyState.prestigeBeasts || 0) + 1;
-        } else if (targetType === 'bandit' || targetType === 'night') {
+        } else if (isFoe) {
           storyState.prestigeFoes = (storyState.prestigeFoes || 0) + 1;
         }
       }
 
-      if (!activeQuest || activeQuest.targetType !== targetType) return;
+      if (!activeQuest) return;
+      const matches = isArr
+        ? tagsInput.includes(activeQuest.targetType)
+        : activeQuest.targetType === tagsInput;
+      if (!matches) return;
+
       questProgress += 1;
-      questProgressMap[activeQuest.id] = questProgress;
+      questProgressMap[activeQuest.seq] = questProgress;
 
       if (questProgress >= activeQuest.goal) {
         completeActiveQuest();
       } else {
+        updateSaloonQuestBoardUI();
         updateStatusUI();
       }
     }
@@ -4943,6 +5297,7 @@
       if (playRelicPickupSound) playRelicPickupSound();
       else playGoldPickupSound();
       spawnSparkBurst(mineMapPickup.worldPos, 16, 0xffe066, 1.35);
+      recordQuestKill(['mine_action', 'treasure_any']);
       checkStoryProgression();
       updateStatusUI();
       return true;
@@ -5085,7 +5440,7 @@
       if (isPlayerNearSaloonQuestBoard()) {
         const qHits = uiRaycaster.intersectObjects(saloonQuestButtonMeshes, false);
         if (qHits.length > 0 && !isPracticeBottleCloserOnRay(uiRaycaster.ray, qHits[0].distance)) {
-          selectSaloonQuest(qHits[0].object.userData.quest);
+          selectSaloonQuestSlot(qHits[0].object.userData.questSlotIndex);
           return true;
         }
         const qShieldHits = uiRaycaster.intersectObjects(saloonQuestBlockMeshes, false);
@@ -5192,6 +5547,11 @@
       if (uiRaycaster.intersectObject(horseWristButton, false).length > 0) {
         if (isRidingHorse) toggleHorseMount();
         else if (callHorseHook) callHorseHook();
+        return true;
+      }
+      // I VR: klikk direkte på selve wristBoard når intet oppdrag er aktivt for å starte neste oppdrag med én gang!
+      if (!activeQuest && uiRaycaster.intersectObject(wristBoard, false).length > 0) {
+        acceptOrCycleBoardQuest();
         return true;
       }
 
@@ -5384,11 +5744,14 @@
     };
     damageBarricadeHook = damageBarricade;
     damageBrimstoneTotemHook = damageBrimstoneTotem;
+    respawnSilverRelicsHook = E.respawnSilverRelicsNow;
+    respawnMineBarricadesHook = E.respawnMineBarricadesNow;
     refreshBossBarHook = E.syncBossHealthBarUI;
     summonBossFromAltarHook = E.summonBossFromAltar;
     summonWendigoFromObeliskHook = E.summonWendigoFromObelisk;
     onNightStateChangedBossHook = E.onNightStateChangedBoss;
     applyDynamiteBlastHook = E.applyDynamiteBlast;
+    if (activeQuest) ensureQuestTargetsAvailable(activeQuest);
     // --- 8o. VR-kontrollerknapper: høyre grip = spis mat, venstre grip = sitt opp/av hest nær hest (ellers dag/natt) ---
     function tryVRDayNightToggle(controller, data) {
       if (!renderer.xr.isPresenting) return;
@@ -6049,6 +6412,28 @@
           updateSaloonQuestBoardUI();
         }
       }
+      let slotFlashChanged = false;
+      for (let sIdx = 0; sIdx < 3; sIdx++) {
+        const fl = slotCompletedFlash[sIdx];
+        if (fl && fl.timer > 0) {
+          fl.timer = Math.max(0, fl.timer - dt);
+          if (fl.timer === 0) {
+            slotCompletedFlash[sIdx] = null;
+            slotFlashChanged = true;
+          }
+        }
+      }
+      if (slotFlashChanged) {
+        updateSaloonQuestBoardUI();
+      }
+      if (hudCompletedBanner && hudCompletedBanner.timer > 0) {
+        hudCompletedBanner.timer = Math.max(0, hudCompletedBanner.timer - dt);
+        if (hudCompletedBanner.timer === 0) {
+          hudCompletedBanner = null;
+          syncQuestHudBar();
+          updateStatusUI();
+        }
+      }
       if (tailorNPCGroup) {
         tailorNPCGroup.rotation.y = 0.14 + Math.sin(worldTime * 1.4) * 0.08;
       }
@@ -6215,6 +6600,20 @@
       controlSettings,
       setTouchUIEnabled,
       setLookSensitivityPct,
+      selectSaloonQuestSlot,
+      acceptOrCycleBoardQuest,
+      recordQuestKill,
+      getQuestState() {
+        return {
+          questBoardSlots: [...questBoardSlots],
+          nextQuestSeq,
+          activeQuest: activeQuest ? { ...activeQuest } : null,
+          questProgress,
+          totalBountiesDone: storyState.totalBountiesDone || 0,
+          slotCompletedFlash: slotCompletedFlash.map((f) => (f ? { ...f } : null)),
+          hudCompletedBanner: hudCompletedBanner ? { ...hudCompletedBanner } : null
+        };
+      },
       setLookYawPitch(yaw, pitch = 0) {
         playerRig.rotation.y = yaw;
         pcPitch = pitch;
