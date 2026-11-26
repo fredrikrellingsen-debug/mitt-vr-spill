@@ -360,6 +360,9 @@
     );
 
     function isPointInHidingZone(px, pz) {
+      if (frontierExpansion && frontierExpansion.isPointSafeFromMonsters(px, pz)) {
+        return true;
+      }
       return (
         px >= hidingZone.minX &&
         px <= hidingZone.maxX &&
@@ -759,8 +762,11 @@
       return false;
     }
 
-    // Vampyrer og ulver skal ALDRI kunne gå inn i hidingZone (uansett om døren er åpen eller spilleren står utenfor)
+    // Vampyrer, rovdyr og monstre skal ALDRI kunne gå inn i Fristeder eller innenfor et tent Leirbål!
     function pushOutOfHidingZone(group, radius) {
+      if (frontierExpansion) {
+        frontierExpansion.repelGroupFromSafeZonesAndCampfires(group, radius);
+      }
       const pad = radius + 0.34;
       const boxMinX = hidingZone.minX - 0.36;
       const boxMaxX = hidingZone.maxX + 0.36;
@@ -1539,7 +1545,7 @@
     const casingOrigin = new THREE.Vector3();
 
     // Prosjektiler fjernes ved treff, bakken, livstid eller maks rekkevidde (utvidet til +-235m).
-    const PROJECTILE_MAX_HORIZONTAL = 235;
+    const PROJECTILE_MAX_HORIZONTAL = 445;
     const PROJECTILE_MAX_HEIGHT = 110;
     const bullets = [];
     const bulletGeo = new THREE.CylinderGeometry(0.018, 0.018, 0.42, 6);
@@ -1994,6 +2000,11 @@
           }
         }
 
+        if (frontierExpansion && frontierExpansion.checkBulletFirewoodHit(bullet.prev, bullet.mesh.position)) {
+          removeBullet(i);
+          continue;
+        }
+
         // Sjekk om kula treffer en gullklump/gullkiste i Crimson Canyon
         if (goldPickups) {
           let hitGold = null;
@@ -2160,7 +2171,7 @@
     // --- 7e. Bevegelse: venstre spak i VR, WASD/piltaster på PC (Kartgrenser -215..+215, 2x fart til hest) ---
     const VR_MOVE_SPEED = 3.1;
     const PC_MOVE_SPEED = 7.4;
-    const PLAY_AREA_LIMIT = 215;
+    const PLAY_AREA_LIMIT = 412;
     const SNAP_TURN_ANGLE = Math.PI / 6;
     const SNAP_TURN_COOLDOWN = 0.35;
 
@@ -2389,6 +2400,9 @@
       }
       if ((e.code === 'KeyB' || keyLower === 'b') && !e.repeat && !renderer.xr.isPresenting) {
         if (shopAndCameraSystem) shopAndCameraSystem.toggleStoreModal();
+      }
+      if ((e.code === 'KeyX' || keyLower === 'x') && !e.repeat && !renderer.xr.isPresenting) {
+        if (frontierExpansion) frontierExpansion.tryBuildOrStokeCampfire();
       }
       if (e.code === 'Escape') {
         if (codexModalEl && codexModalEl.classList.contains('open')) toggleCodexModal(false);
