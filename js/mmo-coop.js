@@ -964,11 +964,11 @@ export function initMMOAndCoopSystem(ctx) {
     pushAlive(entities.bearList, 'bear');
     if (entities.bossEnemy && entities.bossEnemy.alive && entities.bossEnemy.group.visible) {
       const d = Math.hypot(entities.bossEnemy.group.position.x - px, entities.bossEnemy.group.position.z - pz);
-      if (d <= maxRange) candidates.push({ type, target: entities.bossEnemy, d, point: entities.bossEnemy.group.position });
+      if (d <= maxRange) candidates.push({ type: 'boss', target: entities.bossEnemy, d, point: entities.bossEnemy.group.position });
     }
     if (entities.wendigoBossEnemy && entities.wendigoBossEnemy.alive && entities.wendigoBossEnemy.group.visible) {
       const d = Math.hypot(entities.wendigoBossEnemy.group.position.x - px, entities.wendigoBossEnemy.group.position.z - pz);
-      if (d <= maxRange) candidates.push({ type, target: entities.wendigoBossEnemy, d, point: entities.wendigoBossEnemy.group.position });
+      if (d <= maxRange) candidates.push({ type: 'wendigo_boss', target: entities.wendigoBossEnemy, d, point: entities.wendigoBossEnemy.group.position });
     }
 
     candidates.sort((a, b) => a.d - b.d);
