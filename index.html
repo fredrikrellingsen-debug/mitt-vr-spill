@@ -963,7 +963,8 @@
     <div id="hud-row">
       <div id="hud">Health: 100 | Food: 0 (E = eat) | Pelts: 0 | Outfit: Plain | Time: Day</div>
       <button id="view-mode-btn" class="hud-top-btn" type="button" title="Switch 1st-Person (VR) / 3rd-Person Character View (V)">🎥 View: 1st Person (VR) [V]</button>
-      <button id="store-open-btn" class="hud-top-btn" type="button" title="Armor, Weapons & Stripe Gold Store (B)">🛒 Shop & Gold: 15 💰 [B]</button>
+      <button id="store-open-btn" class="hud-top-btn" type="button" title="Armor, Weapons & Stripe Gold Store (B)">🛒 Shop & Gold: 120 💰 [B]</button>
+      <button id="campfire-btn" class="hud-top-btn" type="button" title="Build Monster-Repelling Campfire (3 Wood) [X]">🔥 Campfire (2/3 Wood) [X]</button>
       <button id="class-skill-btn" class="hud-top-btn" type="button" title="Cowboy Class Skill (G)">🤠 [G] Skill</button>
       <button id="coop-mode-btn" class="hud-top-btn" type="button" title="Singleplayer / Co-op Multiplayer & Classes (M)">👥 Mode: Solo [M]</button>
       <button id="codex-btn" class="hud-top-btn" type="button" title="100% Codex & Stagecoach Fast Travel (K)">📖 Codex: 0.0%</button>
@@ -1125,6 +1126,7 @@
       <button id="btn-touch-weapon" class="touch-act-btn" type="button">WEAPON</button>
       <button id="btn-touch-skill" class="touch-act-btn" type="button">🤠 SKILL</button>
       <button id="btn-touch-horse" class="touch-act-btn" type="button">HORSE</button>
+      <button id="btn-touch-campfire" class="touch-act-btn" type="button">🔥 FIRE</button>
       <button id="btn-touch-eat" class="touch-act-btn" type="button">EAT +35</button>
       <button id="btn-touch-use" class="touch-act-btn" type="button">DOOR / USE</button>
       <button id="btn-touch-fire" class="touch-act-btn" type="button">FIRE</button>
@@ -1147,6 +1149,7 @@
     import { initWorldEntities } from './js/entities.js';
     import { initMMOAndCoopSystem } from './js/mmo-coop.js';
     import { initShopAndCameraSystem, getArmorDefByTier } from './js/shop-and-camera.js';
+    import { initFrontierExpansion } from './js/frontier-expansion.js';
 
     const gltfLoader = new GLTFLoader();
     const rgbeLoader = new RGBELoader();
@@ -1194,7 +1197,7 @@
       initTexturesAndMaterials, initCreatureModels,
       applySkyShaderParams, getTerrainHeight, buildEnvironmentAndScenery,
       buildTownBuildings, initWesternAudio, initRevolverAndAtmosphereFX,
-      initWorldEntities, initMMOAndCoopSystem, initShopAndCameraSystem, getArmorDefByTier, preloaded
+      initWorldEntities, initMMOAndCoopSystem, initShopAndCameraSystem, getArmorDefByTier, initFrontierExpansion, preloaded
     };
 
     const loadClassicScript = (src) => new Promise((resolve, reject) => {
@@ -1206,9 +1209,9 @@
       document.body.appendChild(s);
     });
 
-    await loadClassicScript('./js/app-part1.js?v=20261126shop4');
-    await loadClassicScript('./js/app-part2.js?v=20261126shop4');
-    await loadClassicScript('./js/app-part3.js?v=20261126shop4');
+    await loadClassicScript('./js/app-part1.js?v=20261126exp1');
+    await loadClassicScript('./js/app-part2.js?v=20261126exp1');
+    await loadClassicScript('./js/app-part3.js?v=20261126exp1');
   </script>
 </body>
 </html>
