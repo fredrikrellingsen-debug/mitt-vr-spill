@@ -2277,8 +2277,44 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     return g;
   }
 
+  // --- Spillerens egen 3D Cowboy-helt (peker fremover mot -Z med våpenarm klar og håndfeste i hand_r!) ---
+  function createPlayerHeroModel() {
+    const heroGLTF = loadedAssets && (loadedAssets.bandit || loadedAssets.gunsmithNpc || loadedAssets.sheriffNpc);
+    if (heroGLTF && heroGLTF.scene) {
+      const { group, model } = instantiateGLTFCreature(heroGLTF, 'playerHero', 1.82, -1);
+      if (createContactShadow) group.add(createContactShadow(0.50, 0.50, 0.018));
+
+      // Fjern ev. innebygd banditt-pistol fra GLB slik at spillerens ekte valgte 3D-våpen sitter rent i hånden
+      const oldGuns = [];
+      model.traverse((n) => {
+        const nm = (n.name || '').toLowerCase();
+        if (n.isMesh && (nm.includes('gun') || nm.includes('pistol') || nm.includes('revolver') || nm.includes('weapon'))) {
+          oldGuns.push(n);
+        }
+      });
+      oldGuns.forEach((g) => {
+        if (g.parent) g.parent.remove(g);
+      });
+
+      const bones = attachWesternHumanGear(model, group, {
+        hatMat: sharedStetsonSaddleMat.clone(),
+        bandMat: polishedBrassMat.clone(),
+        hatScale: 0.57,
+        hatTiltX: 0.04,
+        hatTiltZ: 0,
+        bandana: false,
+        holster: true
+      });
+      group.userData.heroBones = bones;
+      group.userData.heroModel = model;
+      return group;
+    }
+    return createBanditModel();
+  }
+
   return {
     createSculptedCowboyHat,
+    createPlayerHeroModel,
     createTailorNPC,
     createGunsmithNPC,
     createSheriffVanceNPC,
