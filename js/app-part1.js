@@ -4,7 +4,7 @@ const {
   initTexturesAndMaterials, initCreatureModels,
   applySkyShaderParams, getTerrainHeight, buildEnvironmentAndScenery,
   buildTownBuildings, initWesternAudio, initRevolverAndAtmosphereFX,
-  initWorldEntities, initMMOAndCoopSystem, initShopAndCameraSystem, getArmorDefByTier
+  initWorldEntities, initMMOAndCoopSystem, initShopAndCameraSystem, getArmorDefByTier, initFrontierExpansion
 } = window.__WVR_DEPS;
 
     // =========================================================================
@@ -12,9 +12,9 @@ const {
     // =========================================================================
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xd99b66);
-    scene.fog = new THREE.Fog(0xe2b483, 48, 285);
+    scene.fog = new THREE.Fog(0xe2b483, 55, 385);
 
-    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 560);
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 820);
     camera.position.set(0, 1.65, 0);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -62,6 +62,7 @@ const {
       gold: 120,
       food: 1,
       pelt: 0,
+      wood: 2,
       dynamite: 2,
       outfit: 'Plain',
       weapon: 'Peacemaker',
@@ -240,6 +241,7 @@ const {
           gold: playerState.gold,
           food: playerState.food,
           pelt: playerState.pelt,
+          wood: playerState.wood,
           dynamite: playerState.dynamite,
           outfitTier: currentOutfitTier,
           visualOutfitTier,
@@ -288,6 +290,7 @@ const {
         if (typeof data.gold === 'number') playerState.gold = Math.max(0, Math.round(data.gold));
         if (typeof data.food === 'number') playerState.food = Math.max(0, Math.round(data.food));
         if (typeof data.pelt === 'number') playerState.pelt = Math.max(0, Math.round(data.pelt));
+        if (typeof data.wood === 'number') playerState.wood = Math.max(0, Math.round(data.wood));
         if (typeof data.dynamite === 'number') playerState.dynamite = Math.max(0, Math.round(data.dynamite));
         if (typeof data.outfitTier === 'number') currentOutfitTier = Math.max(0, Math.min(6, Math.round(data.outfitTier)));
         visualOutfitTier = typeof data.visualOutfitTier === 'number'
@@ -397,6 +400,7 @@ const {
     let refreshHomesteadHook = null;
     let mmoSystem = null;
     let shopAndCameraSystem = null;
+    let frontierExpansion = null;
     let refreshSheriffHook = null;
     let equipWeaponHook = null;
     let playStoryFanfareHook = null;
@@ -1544,7 +1548,7 @@ const {
       const summaryText =
         `${dict.hudHealth}: ${hpDisplay} | ${dict.hudGold}: ${playerState.gold} | ` +
         `${dict.hudWeapon}: ${playerState.weapon} | ${dict.hudDynamite}: ${playerState.dynamite} | ` +
-        `${dict.hudFood}: ${playerState.food} ${dict.hudEatHint} | ${dict.hudPelts}: ${playerState.pelt} | ` +
+        `${dict.hudFood}: ${playerState.food} ${dict.hudEatHint} | ${dict.hudPelts}: ${playerState.pelt} | 🪵 ${dict.hudWood || 'Wood'}: ${playerState.wood || 0} [X] | ` +
         `${dict.hudOutfit}: ${playerState.outfit} | ${dict.hudTime}: ${playerState.timeOfDay}${titleSuffix}${horseHudSuffix}${careerSuffix}\n` +
         `${storyLine}  •  ${questLine}`;
       hudEl.textContent = playerHiddenStatus ? `${summaryText}\n${dict.hiddenStatus}` : summaryText;
@@ -1589,9 +1593,11 @@ const {
       wristCtx.fillText(`${dict.hudTime}: ${playerState.timeOfDay}`, 440, 108);
 
       wristCtx.fillText(`${dict.hudFood}: ${playerState.food}`, 34, 156);
-      wristCtx.fillText(`${dict.hudPelts}: ${playerState.pelt}`, 250, 156);
+      wristCtx.fillText(`${dict.hudPelts}: ${playerState.pelt}`, 205, 156);
+      wristCtx.fillStyle = '#ffe082';
+      wristCtx.fillText(`🪵 ${playerState.wood || 0}`, 360, 156);
       wristCtx.fillStyle = '#ffb88a';
-      wristCtx.fillText(`Dyn: ${playerState.dynamite}`, 440, 156);
+      wristCtx.fillText(`Dyn: ${playerState.dynamite}`, 465, 156);
 
       wristCtx.font = 'bold 26px sans-serif';
       wristCtx.fillStyle = '#bfe4ff';
@@ -1645,6 +1651,9 @@ const {
       if (shopAndCameraSystem) {
         shopAndCameraSystem.syncViewButtonsUI();
         if (shopAndCameraSystem.isStoreModalOpen()) shopAndCameraSystem.renderStoreModal();
+      }
+      if (frontierExpansion) {
+        frontierExpansion.refreshLanguage();
       }
     }
 
