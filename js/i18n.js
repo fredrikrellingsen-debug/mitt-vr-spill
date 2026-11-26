@@ -1175,7 +1175,7 @@ export const I18N = {
     roadCanyonSub: 'Bandittleir & Dyp Gullgruve',
     roadGraveyardTitle: '← BOOT HILL',
     roadGraveyardSub: 'Kirkegård & Sunkne Katakomber',
-    roadRailwayTitle: '↓ SØNDRE JERNBAN' + 'E',
+    roadRailwayTitle: '↓ SØNDRE JERNBANE',
     roadRailwaySub: 'Pansret Damptog & Sprengt Bro',
     roadTownTitle: 'DUSTWOOD SENTRUM',
     roadTownSub: 'Saloon • Ranch • Hest',
