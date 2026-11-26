@@ -1,10 +1,10 @@
     // --- 5b2. Våpensmed-butikk («GUNSMITH'S ARMORY» / «VÅPENSMEDENS VERKSTED») ---
     const GUNSMITH_ITEMS = [
       { id: 'shotgun', type: 'weapon', weaponId: 'shotgun', goldCost: 45, peltCost: 0 },
-      { id: 'rifle', type: 'weapon', weaponId: 'rifle', goldCost: 85, peltCost: 0 },
-      { id: 'crossbow', type: 'weapon', weaponId: 'crossbow', goldCost: 65, pureGoldCost: 165, peltCost: 2 },
+      { id: 'rifle', type: 'weapon', weaponId: 'rifle', goldCost: 80, peltCost: 0 },
+      { id: 'crossbow', type: 'weapon', weaponId: 'crossbow', goldCost: 65, pureGoldCost: 155, peltCost: 2 },
       { id: 'dynamite_pack', type: 'ammo', amount: 3, goldCost: 15, peltCost: 0 },
-      { id: 'hellfire', type: 'weapon', weaponId: 'hellfire', goldCost: 120, pureGoldCost: 450, peltCost: 0, minLevel: 7 }
+      { id: 'hellfire', type: 'weapon', weaponId: 'hellfire', goldCost: 120, pureGoldCost: 420, peltCost: 0, minLevel: 7 }
     ];
 
     let gunsmithCounterMesh = null;
