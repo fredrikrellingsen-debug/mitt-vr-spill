@@ -28,7 +28,7 @@ export const ARMOR_CATALOG = [
   {
     tier: 1,
     id: 'leather_vest',
-    goldCost: 55,
+    goldCost: 35,
     peltAltCost: 2,
     damageMultiplier: 0.75,
     armorPct: 25,
@@ -47,7 +47,7 @@ export const ARMOR_CATALOG = [
   {
     tier: 2,
     id: 'ranger_duster',
-    goldCost: 120,
+    goldCost: 90,
     peltAltCost: 3,
     damageMultiplier: 0.60,
     armorPct: 40,
@@ -66,7 +66,7 @@ export const ARMOR_CATALOG = [
   {
     tier: 3,
     id: 'direwolf_coat',
-    goldCost: 220,
+    goldCost: 180,
     peltAltCost: 4,
     damageMultiplier: 0.45,
     armorPct: 55,
@@ -85,7 +85,7 @@ export const ARMOR_CATALOG = [
   {
     tier: 4,
     id: 'vampire_hunter',
-    goldCost: 380,
+    goldCost: 340,
     peltAltCost: 6,
     damageMultiplier: 0.30,
     armorPct: 70,
@@ -104,7 +104,7 @@ export const ARMOR_CATALOG = [
   {
     tier: 5,
     id: 'marshal_ironclad',
-    goldCost: 680,
+    goldCost: 650,
     peltAltCost: 10,
     damageMultiplier: 0.22,
     armorPct: 78,
@@ -123,7 +123,7 @@ export const ARMOR_CATALOG = [
   {
     tier: 6,
     id: 'golden_legend',
-    goldCost: 1250,
+    goldCost: 1200,
     peltAltCost: 16,
     damageMultiplier: 0.15,
     armorPct: 85,
@@ -157,7 +157,7 @@ export const WEAPON_SHOP_CATALOG = [
     id: 'rifle',
     kind: 'weapon',
     weaponId: 'rifle',
-    goldCost: 85,
+    goldCost: 80,
     icon: '🎯',
     enName: 'Winchester Lever-Action Rifle',
     noName: 'Winchester Lever-Action Rifle',
@@ -168,7 +168,7 @@ export const WEAPON_SHOP_CATALOG = [
     id: 'gold_revolver',
     kind: 'gold_revolver',
     weaponId: 'revolver',
-    goldCost: 140,
+    goldCost: 130,
     icon: '✨',
     enName: '24k Golden Peacemaker',
     noName: '24k Gull-belagt Peacemaker',
@@ -179,7 +179,7 @@ export const WEAPON_SHOP_CATALOG = [
     id: 'crossbow',
     kind: 'weapon',
     weaponId: 'crossbow',
-    goldCost: 165,
+    goldCost: 155,
     icon: '🏹',
     enName: 'Blessed Silver Crossbow',
     noName: 'Velsignet Sølv-armbrøst',
@@ -190,7 +190,7 @@ export const WEAPON_SHOP_CATALOG = [
     id: 'hellfire',
     kind: 'weapon',
     weaponId: 'hellfire',
-    goldCost: 450,
+    goldCost: 420,
     icon: '🔥',
     enName: 'Hellfire Silver Gatling Repeater',
     noName: 'Hellfire Sølv-Gatling Karabin',
@@ -201,7 +201,7 @@ export const WEAPON_SHOP_CATALOG = [
     id: 'dynamite_5',
     kind: 'dynamite',
     amount: 5,
-    goldCost: 30,
+    goldCost: 25,
     icon: '🧨',
     enName: '5x Frontier Dynamite Crate',
     noName: '5x Dynamitt-kasse',
@@ -212,7 +212,7 @@ export const WEAPON_SHOP_CATALOG = [
     id: 'rations_heal',
     kind: 'rations',
     amount: 5,
-    goldCost: 25,
+    goldCost: 15,
     icon: '🥩',
     enName: 'Trail Rations (+5 Food & Full Heal)',
     noName: 'Reiseproviant (+5 Mat & Full Helse)',
@@ -241,13 +241,13 @@ export const STRIPE_GOLD_PACKS = [
     bonusTagEn: 'Starter Pouch',
     bonusTagNo: 'Startpung',
     priceNok: 29,
-    priceUsd: '$2.99',
+    priceUsd: '29 kr inkl. mva',
     icon: '🪙',
     enName: '500 Gold Coins',
     noName: '500 Gullmynter',
     enDesc: 'Great for unlocking your first Leather Armor, Shotgun & Winchester Rifle.',
     noDesc: 'Perfekt startpakke til Lærvest, Hagle, Winchester og dynamitt.',
-    paymentLinkUrl: ''
+    paymentLinkUrl: 'https://buy.stripe.com/bJe00k3v32kb7IC43p5Ne0A'
   },
   {
     id: 'sheriff_1600',
@@ -255,14 +255,14 @@ export const STRIPE_GOLD_PACKS = [
     bonusTagEn: '+100 Bonus Gold',
     bonusTagNo: '+100 Bonusgull',
     priceNok: 79,
-    priceUsd: '$7.99',
+    priceUsd: '79 kr inkl. mva',
     popular: true,
     icon: '💰',
     enName: '1,600 Gold Coins',
     noName: '1 600 Gullmynter',
     enDesc: 'Popular! Enough for Vampire Hunter Armor, Silver Crossbow & Golden Peacemaker.',
     noDesc: 'Mest populær! Nok til Vampyrjeger-rustning, Sølv-armbrøst og Gull-Peacemaker.',
-    paymentLinkUrl: ''
+    paymentLinkUrl: 'https://buy.stripe.com/14A5kE5Dbe2T3sm57t5Ne0B'
   },
   {
     id: 'vault_4500',
@@ -270,13 +270,13 @@ export const STRIPE_GOLD_PACKS = [
     bonusTagEn: '+500 Bonus Gold',
     bonusTagNo: '+500 Bonusgull',
     priceNok: 179,
-    priceUsd: '$17.99',
+    priceUsd: '179 kr inkl. mva',
     icon: '🏦',
     enName: '4,500 Gold Coins',
     noName: '4 500 Gullmynter',
     enDesc: 'Unlock Golden Legend Armor, Hellfire Repeater & high Homestead Ranch ranks!',
     noDesc: 'Lås opp Legendarisk Gullrustning, Hellfire-karabin og høye Ranch-oppgraderinger!',
-    paymentLinkUrl: ''
+    paymentLinkUrl: 'https://buy.stripe.com/14A4gA1mVcYPfb4arN5Ne0C'
   },
   {
     id: 'baron_12000',
@@ -284,13 +284,13 @@ export const STRIPE_GOLD_PACKS = [
     bonusTagEn: '+2,500 Bonus Gold',
     bonusTagNo: '+2 500 Bonusgull',
     priceNok: 399,
-    priceUsd: '$39.99',
+    priceUsd: '399 kr inkl. mva',
     icon: '👑',
     enName: '12,000 Gold Coins',
     noName: '12 000 Gullmynter',
     enDesc: 'Ultimate Frontier Tycoon chest — fund max Armor Padding, Weapon Mastery & Ranch Empire!',
     noDesc: 'Gullbaronens skattkiste — finansier maks rustningsfôr, våpenmestring og hele Ranch-imperiet!',
-    paymentLinkUrl: ''
+    paymentLinkUrl: 'https://buy.stripe.com/dRm4gAc1z5wn5AubvR5Ne0D'
   }
 ];
 
@@ -331,10 +331,14 @@ const SHOP_STRINGS = {
     stripeBannerTitle: '💳 Secure In-Game Gold Store (Powered by Stripe)',
     stripeBannerSub:
       'Want extra Gold right away without grinding quests? Choose a Gold Pack below to pay securely with Card, Apple Pay, Google Pay or Vipps via Stripe Checkout.',
-    stripeBuyBtn: (nok, usd) => `💳 Buy with Stripe — ${nok} kr (${usd})`,
+    stripeBuyBtn: (nok) => `💳 Buy with Stripe — ${nok} kr`,
     stripePendingSetupMsg:
-      '🔒 Stripe Live Checkout (Ai Chat Norge AS) is ready for activation! Confirm live Stripe Payment Links with the game owner, or earn Gold right now from Quests [J]!',
-    stripeSuccessToast: (gold, packName) => `🎉 Stripe Payment Complete! +${gold} Gold credited (${packName})!`
+      '🔒 Stripe Checkout is ready!',
+    stripeSuccessToast: (gold, packName) => `🎉 Stripe Payment Complete! +${gold} Gold credited (${packName})!`,
+    notEnoughGoldBanner: (have, need, item) =>
+      `⚠️ Not enough Gold for ${item}: you have ${have} Gold, need ${need} Gold. Complete Quests [J] or click "💳 Buy Gold (Stripe)" above!`,
+    proxTailorBtn: '🧥 Enter Tailor Armor Shop [B / Click]',
+    proxGunsmithBtn: '🔫 Enter Gunsmith Weapon Shop [B / Click]'
   },
   no: {
     viewBtnFirst: '🎥 Visning: 1. person (VR) [V]',
@@ -370,10 +374,14 @@ const SHOP_STRINGS = {
     stripeBannerTitle: '💳 Kjøp Spillpenger med Stripe (Kort / Vipps / Apple Pay)',
     stripeBannerSub:
       'Vil du fylle opp gullkisten med én gang? Velg en gullpakke under for trygg betaling via Stripe Checkout — gullet legges rett inn på karakteren din.',
-    stripeBuyBtn: (nok) => `💳 Kjøp med Stripe — ${nok} kr`,
+    stripeBuyBtn: (nok) => `💳 Kjøp med Stripe — ${nok} kr (inkl. mva)`,
     stripePendingSetupMsg:
-      '🔒 Stripe Checkout (Ai Chat Norge AS) er klargjort og venter på bekreftelse av skarpe betalingslenker — imens kan du tjene Gull på alle Quests [J]!',
-    stripeSuccessToast: (gold, packName) => `🎉 Stripe-kjøp fullført! +${gold} Gull lagt til (${packName})!`
+      '🔒 Stripe Checkout er klar!',
+    stripeSuccessToast: (gold, packName) => `🎉 Stripe-kjøp fullført! +${gold} Gull lagt til (${packName})!`,
+    notEnoughGoldBanner: (have, need, item) =>
+      `⚠️ Ikke nok Gull til ${item}: du har ${have} Gull, men trenger ${need} Gull. Klar oppdrag [J] eller klikk på fanen «💳 Kjøp Spillpenger (Stripe)» over!`,
+    proxTailorBtn: '🧥 Åpne Skredderbutikken (Armor & Klær) [Klikk / B]',
+    proxGunsmithBtn: '🔫 Åpne Våpensmeden (Våpen & Ammo) [Klikk / B]'
   }
 };
 
@@ -1383,7 +1391,10 @@ export function initShopAndCameraSystem(ctx) {
 
     if (storeStatusBannerEl) {
       if (stripeInlineFeedback) {
+        const isWarn = stripeInlineFeedback.startsWith('⚠️');
         storeStatusBannerEl.style.display = 'block';
+        storeStatusBannerEl.style.background = isWarn ? 'rgba(108, 36, 20, 0.96)' : 'rgba(32, 74, 42, 0.96)';
+        storeStatusBannerEl.style.borderColor = isWarn ? '#ffaa78' : '#8ef79e';
         storeStatusBannerEl.textContent = stripeInlineFeedback;
       } else {
         storeStatusBannerEl.style.display = 'none';
@@ -1432,15 +1443,17 @@ export function initShopAndCameraSystem(ctx) {
           btn.textContent = s.buyForGold(def.goldCost);
           btn.addEventListener('click', (ev) => {
             ev.stopPropagation();
+            stripeInlineFeedback = `✓ ${s.boughtArmorToast(name, def.armorPct, (playerState.maxHealth || 100) + def.bonusMaxHp)}`;
             buyOrEquipArmorTier(def.tier, false);
           });
         } else {
           btn.className = 'sens-mini-btn';
-          btn.style.opacity = '0.82';
-          btn.textContent = `${s.needGold(def.goldCost)} → 💳`;
+          btn.style.borderColor = '#ffaa6e';
+          btn.textContent = s.needGold(def.goldCost);
           btn.addEventListener('click', (ev) => {
             ev.stopPropagation();
-            activeStoreTab = 'gold';
+            if (audio && audio.playShopDenySound) audio.playShopDenySound();
+            stripeInlineFeedback = s.notEnoughGoldBanner(playerState.gold, def.goldCost, name);
             renderStoreModal();
           });
         }
@@ -1471,14 +1484,17 @@ export function initShopAndCameraSystem(ctx) {
         padBtn.textContent = s.buyForGold(padCost);
         padBtn.addEventListener('click', (ev) => {
           ev.stopPropagation();
+          stripeInlineFeedback = `✓ +20 Max HP!`;
           buyArmorPaddingUpgrade();
         });
       } else {
         padBtn.className = 'sens-mini-btn';
-        padBtn.textContent = `${s.needGold(padCost)} → 💳`;
+        padBtn.style.borderColor = '#ffaa6e';
+        padBtn.textContent = s.needGold(padCost);
         padBtn.addEventListener('click', (ev) => {
           ev.stopPropagation();
-          activeStoreTab = 'gold';
+          if (audio && audio.playShopDenySound) audio.playShopDenySound();
+          stripeInlineFeedback = s.notEnoughGoldBanner(playerState.gold, padCost, s.paddingTitle);
           renderStoreModal();
         });
       }
@@ -1531,14 +1547,17 @@ export function initShopAndCameraSystem(ctx) {
           btn.textContent = s.buyForGold(cost);
           btn.addEventListener('click', (ev) => {
             ev.stopPropagation();
+            stripeInlineFeedback = `✓ ${s.boughtWeaponToast(name)}`;
             buyStoreWeaponItem(item);
           });
         } else {
           btn.className = 'sens-mini-btn';
-          btn.textContent = `${s.needGold(cost)} → 💳`;
+          btn.style.borderColor = '#ffaa6e';
+          btn.textContent = s.needGold(cost);
           btn.addEventListener('click', (ev) => {
             ev.stopPropagation();
-            activeStoreTab = 'gold';
+            if (audio && audio.playShopDenySound) audio.playShopDenySound();
+            stripeInlineFeedback = s.notEnoughGoldBanner(playerState.gold, cost, name);
             renderStoreModal();
           });
         }
@@ -1636,6 +1655,39 @@ export function initShopAndCameraSystem(ctx) {
     });
   }
 
+  const shopProximityBtnEl = document.getElementById('shop-proximity-btn');
+  let currentNearbyShopTab = '';
+
+  if (shopProximityBtnEl) {
+    shopProximityBtnEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      stripeInlineFeedback = '';
+      toggleStoreModal(true, currentNearbyShopTab || 'armor');
+    });
+  }
+
+  function updateNearbyShopPrompt(nearTailor, nearGunsmith) {
+    if (!shopProximityBtnEl) return;
+    if (renderer.xr.isPresenting || storeModalOpen) {
+      shopProximityBtnEl.style.display = 'none';
+      currentNearbyShopTab = '';
+      return;
+    }
+    const s = SL();
+    if (nearTailor) {
+      currentNearbyShopTab = 'armor';
+      shopProximityBtnEl.textContent = s.proxTailorBtn;
+      shopProximityBtnEl.style.display = 'block';
+    } else if (nearGunsmith) {
+      currentNearbyShopTab = 'weapons';
+      shopProximityBtnEl.textContent = s.proxGunsmithBtn;
+      shopProximityBtnEl.style.display = 'block';
+    } else {
+      currentNearbyShopTab = '';
+      shopProximityBtnEl.style.display = 'none';
+    }
+  }
+
   // Init ved oppstart
   applyCameraAndWeaponVisibility();
   checkStripeReturnFulfillment();
@@ -1648,6 +1700,8 @@ export function initShopAndCameraSystem(ctx) {
     syncViewButtonsUI,
     syncAvatarAppearance,
     updateThirdPersonCameraAndAvatar,
+    updateNearbyShopPrompt,
+    getNearbyShopTab: () => currentNearbyShopTab,
     getThirdPersonShotOriginAndDir,
     buyOrEquipArmorTier,
     buyArmorPaddingUpgrade,
