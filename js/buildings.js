@@ -9,6 +9,7 @@ export function buildTownBuildings(ctx) {
     worldLangButtonMeshes,
     workshopBoardTexture, tailorButtonEntries, tailorButtonMeshes, tailorBlockHitMeshes,
     gunsmithBoardTexture = null, gunsmithButtonEntries = [], gunsmithButtonMeshes = [], gunsmithBlockHitMeshes = [],
+    homesteadBoardTexture = null, homesteadButtonEntries = [], homesteadButtonMeshes = [], homesteadBlockHitMeshes = [],
     sheriffHitMeshes = [],
     hidingZone, safeHouseCenterWorld, safeHouseDoorAngle, safeHouseDoorHitMeshes
   } = ctx;
@@ -981,6 +982,134 @@ export function buildTownBuildings(ctx) {
   const gunsmithBuilding = buildGunsmithShop();
   const safeHouseBuilding = buildSafeHouse();
 
+  // --- Homestead Ranch & Vindmølle i Dustwood (Passiv inntekt, Cowboy-talenter & Trofast Jakthund!) ---
+  let homesteadMainSignMesh = null;
+  let homesteadCounterMesh = null;
+  let homesteadWindmillWheel = null;
+
+  function buildHomesteadRanch() {
+    const ranch = new THREE.Group();
+    const dict = L();
+
+    // Solid PBR treplatting og overbygd veranda
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(5.6, 0.22, 4.4), darkWoodMat);
+    deck.position.set(0, 0.11, 0);
+    deck.receiveShadow = true;
+    deck.castShadow = true;
+    ranch.add(deck);
+
+    const backWall = new THREE.Mesh(new THREE.BoxGeometry(5.2, 3.35, 0.28), logTimberMat);
+    backWall.position.set(0, 1.85, -1.85);
+    backWall.castShadow = true;
+    backWall.receiveShadow = true;
+    ranch.add(backWall);
+
+    [-2.48, 2.48].forEach((px) => {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.18, 3.25, 0.18), darkWoodMat);
+      post.position.set(px, 1.80, 1.85);
+      post.castShadow = true;
+      ranch.add(post);
+    });
+
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(5.9, 0.26, 4.8), roofMat || darkWoodMat);
+    roof.position.set(0, 3.52, 0.05);
+    roof.rotation.x = 0.09;
+    roof.castShadow = true;
+    ranch.add(roof);
+
+    // Klassisk amerikansk Western-vindmølle ved siden av ranch-verandaen
+    const millTower = new THREE.Group();
+    millTower.position.set(3.85, 0, -0.8);
+    [[-0.65, -0.65], [0.65, -0.65], [-0.65, 0.65], [0.65, 0.65]].forEach(([lx, lz]) => {
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.11, 6.8, 7), darkWoodMat);
+      leg.position.set(lx * 0.62, 3.35, lz * 0.62);
+      leg.rotation.z = lx * 0.085;
+      leg.rotation.x = -lz * 0.085;
+      leg.castShadow = true;
+      millTower.add(leg);
+    });
+    [2.1, 4.2, 6.1].forEach((by, bIdx) => {
+      const w = 1.05 - bIdx * 0.24;
+      const brace = new THREE.Mesh(new THREE.BoxGeometry(w, 0.08, w), weatheredPlankMatA);
+      brace.position.y = by;
+      millTower.add(brace);
+    });
+    const vaneTail = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.62, 1.15), weatheredPlankMatA);
+    vaneTail.position.set(0, 6.75, -0.72);
+    millTower.add(vaneTail);
+
+    homesteadWindmillWheel = new THREE.Group();
+    homesteadWindmillWheel.position.set(0, 6.75, 0.42);
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.24, 10), wroughtIronMat);
+    hub.rotation.x = Math.PI / 2;
+    homesteadWindmillWheel.add(hub);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(1.32, 0.045, 7, 20), wroughtIronMat);
+    homesteadWindmillWheel.add(rim);
+    for (let b = 0; b < 10; b++) {
+      const bladePiv = new THREE.Group();
+      bladePiv.rotation.z = (b / 10) * Math.PI * 2;
+      const slat = new THREE.Mesh(new THREE.BoxGeometry(0.24, 1.12, 0.03), lightWoodMat);
+      slat.position.y = 0.72;
+      slat.rotation.y = 0.36;
+      bladePiv.add(slat);
+      homesteadWindmillWheel.add(bladePiv);
+    }
+    millTower.add(homesteadWindmillWheel);
+    ranch.add(millTower);
+
+    // Interaksjonsanker + 3D Ranch- og Talenttavle
+    const counterAnchor = new THREE.Object3D();
+    counterAnchor.position.set(0, 1.25, 1.15);
+    ranch.add(counterAnchor);
+    homesteadCounterMesh = counterAnchor;
+
+    if (homesteadBoardTexture && homesteadButtonEntries.length > 0) {
+      const boardGrp = new THREE.Group();
+      boardGrp.position.set(0, 1.88, -1.62);
+      ranch.add(boardGrp);
+
+      const backing = new THREE.Mesh(new THREE.BoxGeometry(3.84, 1.98, 0.08), darkWoodMat);
+      backing.position.set(0, 0, -0.045);
+      boardGrp.add(backing);
+      homesteadBlockHitMeshes.push(backing);
+
+      const surface = new THREE.Mesh(
+        new THREE.PlaneGeometry(3.72, 1.88),
+        new THREE.MeshBasicMaterial({ map: homesteadBoardTexture, transparent: true, fog: false, toneMapped: false })
+      );
+      boardGrp.add(surface);
+      homesteadBlockHitMeshes.push(surface);
+
+      const btnY = [0.36, 0.10, -0.16, -0.42, -0.68];
+      homesteadButtonEntries.forEach((entry, idx) => {
+        const plaque = new THREE.Mesh(new THREE.BoxGeometry(3.50, 0.238, 0.028), darkWoodMat);
+        plaque.position.set(0, btnY[idx], 0.015);
+        boardGrp.add(plaque);
+
+        entry.mesh.position.set(0, btnY[idx], 0.033);
+        boardGrp.add(entry.mesh);
+        homesteadButtonMeshes.push(entry.mesh);
+      });
+    }
+
+    homesteadMainSignMesh = createWesternSign(
+      dict.signHomesteadTitle || 'HOMESTEAD RANCH',
+      dict.signHomesteadSub || 'EMPIRE • TALENTS • HOUND',
+      4.1,
+      0.98
+    );
+    homesteadMainSignMesh.position.set(0, 4.18, 2.15);
+    ranch.add(homesteadMainSignMesh);
+
+    const barrel = createDetailedBarrel();
+    barrel.position.set(-2.15, 0.62, 1.35);
+    ranch.add(barrel);
+
+    return ranch;
+  }
+
+  const homesteadBuilding = buildHomesteadRanch();
+
   // Plasser Plakat #1 på Saloon-veggen og Plakat #2 på Skredder/Våpensmed-stolpen
   const saloonPoster = createLorePoster(0);
   saloonPoster.position.set(-0.98, 1.56, 2.04);
@@ -1014,6 +1143,10 @@ export function buildTownBuildings(ctx) {
     safeHouseDoorPivot,
     safeHouseMainSignMesh,
     safeHouseStreetSignMesh,
+    homesteadBuilding,
+    homesteadMainSignMesh,
+    homesteadCounterMesh,
+    homesteadWindmillWheel,
     sheriffVanceGroup,
     createLorePoster,
     lorePosters
