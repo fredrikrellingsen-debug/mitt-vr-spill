@@ -1,10 +1,10 @@
     // --- 5b2. Våpensmed-butikk («GUNSMITH'S ARMORY» / «VÅPENSMEDENS VERKSTED») ---
     const GUNSMITH_ITEMS = [
-      { id: 'shotgun', type: 'weapon', weaponId: 'shotgun', goldCost: 25, peltCost: 0 },
-      { id: 'rifle', type: 'weapon', weaponId: 'rifle', goldCost: 40, peltCost: 0 },
-      { id: 'crossbow', type: 'weapon', weaponId: 'crossbow', goldCost: 65, peltCost: 2 },
+      { id: 'shotgun', type: 'weapon', weaponId: 'shotgun', goldCost: 45, peltCost: 0 },
+      { id: 'rifle', type: 'weapon', weaponId: 'rifle', goldCost: 85, peltCost: 0 },
+      { id: 'crossbow', type: 'weapon', weaponId: 'crossbow', goldCost: 65, pureGoldCost: 165, peltCost: 2 },
       { id: 'dynamite_pack', type: 'ammo', amount: 3, goldCost: 15, peltCost: 0 },
-      { id: 'hellfire', type: 'weapon', weaponId: 'hellfire', goldCost: 120, peltCost: 0, minLevel: 7 }
+      { id: 'hellfire', type: 'weapon', weaponId: 'hellfire', goldCost: 120, pureGoldCost: 450, peltCost: 0, minLevel: 7 }
     ];
 
     let gunsmithCounterMesh = null;
@@ -120,7 +120,10 @@
         const isEquipped = isWeapon && activeWeaponId === item.weaponId;
         const canAfford = showMasterySlot
           ? playerState.gold >= masteryCost
-          : (playerState.gold >= item.goldCost && playerState.pelt >= item.peltCost);
+          : (
+              (item.pureGoldCost && playerState.gold >= item.pureGoldCost) ||
+              ((!item.minLevel || storyState.currentLevel >= item.minLevel) && playerState.gold >= item.goldCost && playerState.pelt >= item.peltCost)
+            );
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -951,9 +954,10 @@
       activeWeaponId = wId;
 
       const inVR = renderer.xr.isPresenting;
+      const inThird = !!(shopAndCameraSystem && shopAndCameraSystem.isThirdPersonActive());
       WEAPON_ORDER.forEach((id) => {
         if (pcWeapons[id]) {
-          pcWeapons[id].visible = !inVR && id === activeWeaponId;
+          pcWeapons[id].visible = !inVR && !inThird && id === activeWeaponId;
         }
         if (vrHands.right && vrHands.right.userData.weapons && vrHands.right.userData.weapons[id]) {
           vrHands.right.userData.weapons[id].visible = id === activeWeaponId;
@@ -963,6 +967,7 @@
         vrActiveWeapon = vrHands.right.userData.weapons[activeWeaponId];
         updateControllerRayStyle(vrHands.right, activeWeaponId);
       }
+      if (shopAndCameraSystem) shopAndCameraSystem.syncAvatarAppearance();
 
       updateStatusUI();
       if (!silent && playWeaponSwitchSfxFn) playWeaponSwitchSfxFn();
@@ -1027,8 +1032,9 @@
     });
 
     renderer.xr.addEventListener('sessionend', () => {
+      const inThird = !!(shopAndCameraSystem && shopAndCameraSystem.isThirdPersonActive());
       WEAPON_ORDER.forEach((id) => {
-        if (pcWeapons[id]) pcWeapons[id].visible = id === activeWeaponId;
+        if (pcWeapons[id]) pcWeapons[id].visible = !inThird && id === activeWeaponId;
       });
       const crosshair = document.getElementById('crosshair');
       if (crosshair) crosshair.style.display = 'block';
@@ -1401,21 +1407,26 @@
       if (audioCtx.state === 'suspended') audioCtx.resume();
 
       const useVR = renderer.xr.isPresenting && vrActiveWeapon;
+      const useThird = !useVR && !!(shopAndCameraSystem && shopAndCameraSystem.isThirdPersonActive());
       const weaponObj = useVR ? vrActiveWeapon : pcWeapons[activeWeaponId];
-      if (!weaponObj) return;
+      if (!weaponObj && !useThird) return;
 
-      weaponObj.userData.muzzle.getWorldPosition(shotPos);
-      shotDir.set(0, 0, 0);
-
-      if (useVR) {
-        weaponObj.getWorldQuaternion(shotQuat);
-        shotDir.copy(FORWARD).applyQuaternion(shotQuat).normalize();
+      if (useThird) {
+        shopAndCameraSystem.getThirdPersonShotOriginAndDir(shotPos, shotDir);
       } else {
-        camera.getWorldPosition(aimCamPos);
-        camera.getWorldDirection(aimCamDir);
-        const convergeDist = activeWeaponId === 'rifle' ? 28 : 16;
-        aimPoint.copy(aimCamPos).addScaledVector(aimCamDir, convergeDist);
-        shotDir.copy(aimPoint).sub(shotPos).normalize();
+        weaponObj.userData.muzzle.getWorldPosition(shotPos);
+        shotDir.set(0, 0, 0);
+
+        if (useVR) {
+          weaponObj.getWorldQuaternion(shotQuat);
+          shotDir.copy(FORWARD).applyQuaternion(shotQuat).normalize();
+        } else {
+          camera.getWorldPosition(aimCamPos);
+          camera.getWorldDirection(aimCamDir);
+          const convergeDist = activeWeaponId === 'rifle' ? 28 : 16;
+          aimPoint.copy(aimCamPos).addScaledVector(aimCamDir, convergeDist);
+          shotDir.copy(aimPoint).sub(shotPos).normalize();
+        }
       }
 
       if (activeWeaponId === 'dynamite') {
@@ -2373,8 +2384,15 @@
       if ((e.code === 'KeyM' || keyLower === 'm') && !e.repeat && !renderer.xr.isPresenting) {
         if (mmoSystem) mmoSystem.toggleCoopModal();
       }
+      if ((e.code === 'KeyV' || keyLower === 'v') && !e.repeat && !renderer.xr.isPresenting) {
+        if (shopAndCameraSystem) shopAndCameraSystem.toggleViewMode();
+      }
+      if ((e.code === 'KeyB' || keyLower === 'b') && !e.repeat && !renderer.xr.isPresenting) {
+        if (shopAndCameraSystem) shopAndCameraSystem.toggleStoreModal();
+      }
       if (e.code === 'Escape') {
         if (codexModalEl && codexModalEl.classList.contains('open')) toggleCodexModal(false);
+        if (shopAndCameraSystem) shopAndCameraSystem.toggleStoreModal(false);
         if (mmoSystem) {
           mmoSystem.closeNpcQuestDialog();
           mmoSystem.toggleCoopModal(false);
