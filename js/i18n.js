@@ -580,14 +580,14 @@ export const I18N = {
     tailorInfo: (pelts, outfit, maxHp, gold = 0) =>
       `Gold: ${gold}  •  Pelts: ${pelts}  •  Armor: ${outfit}  •  Max HP: ${maxHp || 100}`,
     tailorButtons: [
-      'Leather Vest (55 Gold or 2 Pelts) -> 25% Armor +20 HP',
-      'Direwolf Armor (220 Gold or 4 Pelts) -> 55% Armor +75 HP',
-      'Vampire Hunter Armor (380 Gold or 6 Pelts) -> 70% Armor +110 HP'
+      'Leather Vest (35 Gold or 2 Pelts) -> 25% Armor +20 HP',
+      'Direwolf Armor (180 Gold or 4 Pelts) -> 55% Armor +75 HP',
+      'Vampire Hunter Armor (340 Gold or 6 Pelts) -> 70% Armor +110 HP'
     ],
     tailorMythicBtn: (owned) =>
       owned
         ? 'Golden Legend Armor -> 85% Armor +240 HP [EQUIPPED]'
-        : 'Golden Legend Armor (1250 Gold or 16 Pelts) -> 85% Armor +240 HP',
+        : 'Golden Legend Armor (1200 Gold or 16 Pelts) -> 85% Armor +240 HP',
     tailorReinforceBtn: (cost, maxHp) =>
       maxHp >= 300
         ? `Reinforced Frontier Padding (Max ${maxHp} HP Reached!)`
@@ -597,7 +597,7 @@ export const I18N = {
     ownedTag: '[OWNED]',
     tailorMsgSame: 'Already at maximum upgrade for this slot!',
     tailorMsgBetter: 'You already wear stronger armor!',
-    tailorMsgNoPelts: 'Not enough pelts! Hunt deer, wolves, cougars or bison.',
+    tailorMsgNoPelts: 'Not enough Gold or Pelts! Complete Quests [J] or buy Gold in [B]!',
     tailorMsgCrafted: 'New frontier gear crafted!',
     tailorMsgHpUp: (hp) => `Armor reinforced! Max Health increased to ${hp} HP!`,
     tailorMsgRations: '+4 Food & Full Health restored!',
@@ -608,10 +608,10 @@ export const I18N = {
       `Gold: ${gold}  •  Pelts: ${pelts}  •  Dynamite: ${dyn}${mastery > 0 ? `  •  Mastery +${mastery * 20}%` : ''}`,
     gunsmithButtons: [
       'Double-Barrel Shotgun (45 Gold) -> 6-Pellet Heavy Blast',
-      'Winchester Rifle (85 Gold) -> Long-Range Precision (3x Dmg)',
-      'Silver Crossbow (165 Gold or 65G+2P) -> 3x Burn vs Undead',
+      'Winchester Rifle (80 Gold) -> Long-Range Precision (3x Dmg)',
+      'Silver Crossbow (155 Gold or 65G+2P) -> 3x Burn vs Undead',
       '3x Dynamite Pack (15 Gold) -> Thrown 2.2s Explosive Blast',
-      'Hellfire Repeater (450 Gold / Lv7: 120G) -> Rapid Silver Gatling'
+      'Hellfire Repeater (420 Gold / Lv7: 120G) -> Rapid Silver Gatling'
     ],
     gunsmithMasteryBtn: (nextRank, cost) =>
       `Forge Masterwork Rifling Lv.${nextRank} (${cost} Gold) -> +20% All Weapon Dmg`,
@@ -1271,14 +1271,14 @@ export const I18N = {
     tailorInfo: (pelts, outfit, maxHp, gold = 0) =>
       `Gull: ${gold}  •  Skinn: ${pelts}  •  Antrekk: ${outfit}  •  Maks helse: ${maxHp || 100}`,
     tailorButtons: [
-      'Speider-lærvest (55 Gull eller 2 Skinn) -> 25% beskyttelse +20 HP',
-      'Vargpels-rustning (220 Gull eller 4 Skinn) -> 55% beskyttelse +75 HP',
-      'Vampyrjeger-rustning (380 Gull eller 6 Skinn) -> 70% beskyttelse +110 HP'
+      'Speider-lærvest (35 Gull eller 2 Skinn) -> 25% beskyttelse +20 HP',
+      'Vargpels-rustning (180 Gull eller 4 Skinn) -> 55% beskyttelse +75 HP',
+      'Vampyrjeger-rustning (340 Gull eller 6 Skinn) -> 70% beskyttelse +110 HP'
     ],
     tailorMythicBtn: (owned) =>
       owned
         ? 'Legendarisk Gullrustning -> 85% beskyttelse +240 HP [AKTIV]'
-        : 'Legendarisk Gullrustning (1250 Gull eller 16 Skinn) -> 85% rustning +240 HP',
+        : 'Legendarisk Gullrustning (1200 Gull eller 16 Skinn) -> 85% rustning +240 HP',
     tailorReinforceBtn: (cost, maxHp) =>
       maxHp >= 300
         ? `Forsterket Pelsfôr (Maks ${maxHp} HP nådd!)`
@@ -1288,7 +1288,7 @@ export const I18N = {
     ownedTag: '[KJØPT]',
     tailorMsgSame: 'Allerede maksimalt oppgradert på dette valget!',
     tailorMsgBetter: 'Du har allerede sterkere rustning!',
-    tailorMsgNoPelts: 'Ikke nok skinn! Jakt hjort, ulv, puma eller bison.',
+    tailorMsgNoPelts: 'Ikke nok Gull eller Skinn! Fullfør oppdrag [J] eller kjøp Gull i [B]!',
     tailorMsgCrafted: 'Nytt mektig antrekk sydd!',
     tailorMsgHpUp: (hp) => `Rustning forsterket! Maks helse økt til ${hp} HP!`,
     tailorMsgRations: '+4 Mat og full helse gjenopprettet!',
@@ -1299,10 +1299,10 @@ export const I18N = {
       `Gull: ${gold}  •  Skinn: ${pelts}  •  Dynamitt: ${dyn}${mastery > 0 ? `  •  Mestring +${mastery * 20}%` : ''}`,
     gunsmithButtons: [
       'Avsaget Hagle (45 Gull) -> 6 hagl med enorm nærskade',
-      'Winchester Rifle (85 Gull) -> Langtrekkende presisjon (3x skade)',
-      'Sølv-armbrøst (165 Gull eller 65G+2S) -> 3x brannskade mot udøde',
+      'Winchester Rifle (80 Gull) -> Langtrekkende presisjon (3x skade)',
+      'Sølv-armbrøst (155 Gull eller 65G+2S) -> 3x brannskade mot udøde',
       '3x Dynamitt-pakke (15 Gull) -> Kastes i bue, eksploderer etter 2,2s',
-      'Hellfire-karabin (450 Gull / Lv7: 120G) -> Lynrask sølv-gatling'
+      'Hellfire-karabin (420 Gull / Lv7: 120G) -> Lynrask sølv-gatling'
     ],
     gunsmithMasteryBtn: (nextRank, cost) =>
       `Smi Mestermunning Nivå ${nextRank} (${cost} Gull) -> +20% våpenskade`,
