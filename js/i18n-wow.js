@@ -78,9 +78,9 @@ export const WOW_WESTERN_LOOT_TABLE = [
 export const WOW_ZONE_NPCS = [
   {
     id: 'npc_maeve',
-    x: 3.6,
-    z: 8.2,
-    yaw: -0.35,
+    x: -2.4,
+    z: 8.8,
+    yaw: 0.22,
     hatColor: 0xd8be94,
     coatColor: 0x3b4d6b,
     style: 'sheriff',
