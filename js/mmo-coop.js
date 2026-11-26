@@ -964,11 +964,11 @@ export function initMMOAndCoopSystem(ctx) {
     pushAlive(entities.bearList, 'bear');
     if (entities.bossEnemy && entities.bossEnemy.alive && entities.bossEnemy.group.visible) {
       const d = Math.hypot(entities.bossEnemy.group.position.x - px, entities.bossEnemy.group.position.z - pz);
-      if (d <= maxRange) candidates.push({ type: 'boss', target: entities.bossEnemy, d, point: entities.bossEnemy.group.position });
+      if (d <= maxRange) candidates.push({ type, target: entities.bossEnemy, d, point: entities.bossEnemy.group.position });
     }
     if (entities.wendigoBossEnemy && entities.wendigoBossEnemy.alive && entities.wendigoBossEnemy.group.visible) {
       const d = Math.hypot(entities.wendigoBossEnemy.group.position.x - px, entities.wendigoBossEnemy.group.position.z - pz);
-      if (d <= maxRange) candidates.push({ type: 'wendigo_boss', target: entities.wendigoBossEnemy, d, point: entities.wendigoBossEnemy.group.position });
+      if (d <= maxRange) candidates.push({ type, target: entities.wendigoBossEnemy, d, point: entities.wendigoBossEnemy.group.position });
     }
 
     candidates.sort((a, b) => a.d - b.d);
@@ -1022,7 +1022,9 @@ export function initMMOAndCoopSystem(ctx) {
 
   function createRemotePlayerAvatar(info) {
     const group = new THREE.Group();
-    const avatarBody = C.createSheriffVanceNPC ? C.createSheriffVanceNPC([]) : C.createBanditModel(false);
+    const avatarBody = C.createPlayerHeroModel
+      ? C.createPlayerHeroModel()
+      : (C.createBanditModel ? C.createBanditModel(false) : C.createSheriffVanceNPC([]));
     const bodyAnim = attachIdleWalkMixer(avatarBody);
     group.add(avatarBody);
 
@@ -1032,14 +1034,28 @@ export function initMMOAndCoopSystem(ctx) {
     horseGroup.visible = false;
     group.add(horseGroup);
 
-    // Våpen i høyre hånd
+    // Våpen direkte i høyre hånd (hand_r) på medspilleren
     let weaponMesh = null;
     let currentWeaponId = info.weaponId || 'revolver';
+    const rBones = avatarBody.userData && avatarBody.userData.heroBones;
     if (FX && FX.createWeaponModel) {
       weaponMesh = FX.createWeaponModel(currentWeaponId);
-      weaponMesh.scale.setScalar(0.75);
-      weaponMesh.position.set(0.28, 1.05, -0.32);
-      group.add(weaponMesh);
+      weaponMesh.scale.setScalar(0.85);
+      if (rBones && rBones.handRBone) {
+        const handSocket = new THREE.Group();
+        const hb = new THREE.Matrix4().makeBasis(
+          new THREE.Vector3(0, 0, -1),
+          new THREE.Vector3(1, 0, 0),
+          new THREE.Vector3(0, -1, 0)
+        );
+        handSocket.quaternion.setFromRotationMatrix(hb);
+        handSocket.position.set(0.022, 0.065, 0.005);
+        handSocket.add(weaponMesh);
+        rBones.handRBone.add(handSocket);
+      } else {
+        weaponMesh.position.set(0.28, 1.15, -0.42);
+        group.add(weaponMesh);
+      }
     }
 
     // WoW-stil 3D Navneskilt + Grønn Party Helsebar + Prateboble over hodet!
