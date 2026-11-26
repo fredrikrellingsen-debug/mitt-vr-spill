@@ -904,8 +904,8 @@ export function initWorldEntities(ctx) {
       const yaw = playerRig.rotation.y;
       const sideX = Math.cos(yaw) * 2.8 - Math.sin(yaw) * 1.8;
       const sideZ = -Math.sin(yaw) * 2.8 - Math.cos(yaw) * 1.8;
-      const tx = THREE.MathUtils.clamp(playerRig.position.x + sideX, -210, 210);
-      const tz = THREE.MathUtils.clamp(playerRig.position.z + sideZ, -210, 210);
+      const tx = THREE.MathUtils.clamp(playerRig.position.x + sideX, -408, 408);
+      const tz = THREE.MathUtils.clamp(playerRig.position.z + sideZ, -408, 408);
       if (playerRig.position.y < -1.8) {
         horseEntity.targetPos.set(-112.0, getTerrainHeight(-112.0, -1.5), -1.5);
       } else {
@@ -1865,6 +1865,9 @@ export function initWorldEntities(ctx) {
           damageBrimstoneTotem(bt, 8);
         }
       }
+      if (expansionHooks && expansionHooks.applyDynamiteToExpansion) {
+        expansionHooks.applyDynamiteToExpansion(blastPos, radius);
+      }
     };
 
     // --- 8k. Oppdatering av dyre-, rovdyr-, grizzly-, banditt-, nattmonster- og Boss-AI ---
@@ -2324,8 +2327,8 @@ export function initWorldEntities(ctx) {
                   point.x = playerRig.position.x + dx * sc;
                   point.z = playerRig.position.z + dz * sc;
                 }
-                point.x = THREE.MathUtils.clamp(point.x, -205, 205);
-                point.z = THREE.MathUtils.clamp(point.z, -205, 205);
+                point.x = THREE.MathUtils.clamp(point.x, -405, 405);
+                point.z = THREE.MathUtils.clamp(point.z, -405, 405);
                 point.y = getTerrainHeight(point.x, point.z);
               } else {
                 point.x = THREE.MathUtils.clamp(point.x, -170, -136);
@@ -2527,8 +2530,8 @@ export function initWorldEntities(ctx) {
         }
 
         pushOutOfHidingZone(enemy.group, NIGHT_RADIUS);
-        enemy.group.position.x = THREE.MathUtils.clamp(enemy.group.position.x, -205, 205);
-        enemy.group.position.z = THREE.MathUtils.clamp(enemy.group.position.z, -205, 205);
+        enemy.group.position.x = THREE.MathUtils.clamp(enemy.group.position.x, -405, 405);
+        enemy.group.position.z = THREE.MathUtils.clamp(enemy.group.position.z, -405, 405);
         resolveWallCollisions(enemy.group.position, NIGHT_RADIUS, true);
         pushOutOfHidingZone(enemy.group, NIGHT_RADIUS);
 
@@ -2634,8 +2637,8 @@ export function initWorldEntities(ctx) {
       }
 
       pushOutOfHidingZone(bossEnemy.group, BOSS_RADIUS);
-      bossEnemy.group.position.x = THREE.MathUtils.clamp(bossEnemy.group.position.x, -205, 205);
-      bossEnemy.group.position.z = THREE.MathUtils.clamp(bossEnemy.group.position.z, -205, 205);
+      bossEnemy.group.position.x = THREE.MathUtils.clamp(bossEnemy.group.position.x, -405, 405);
+      bossEnemy.group.position.z = THREE.MathUtils.clamp(bossEnemy.group.position.z, -405, 405);
       resolveWallCollisions(bossEnemy.group.position, BOSS_RADIUS, true);
       pushOutOfHidingZone(bossEnemy.group, BOSS_RADIUS);
       bossEnemy.group.position.y =
@@ -2715,8 +2718,8 @@ export function initWorldEntities(ctx) {
       }
 
       pushOutOfHidingZone(wendigoBossEnemy.group, BOSS_RADIUS);
-      wendigoBossEnemy.group.position.x = THREE.MathUtils.clamp(wendigoBossEnemy.group.position.x, -205, 205);
-      wendigoBossEnemy.group.position.z = THREE.MathUtils.clamp(wendigoBossEnemy.group.position.z, -205, 205);
+      wendigoBossEnemy.group.position.x = THREE.MathUtils.clamp(wendigoBossEnemy.group.position.x, -405, 405);
+      wendigoBossEnemy.group.position.z = THREE.MathUtils.clamp(wendigoBossEnemy.group.position.z, -405, 405);
       resolveWallCollisions(wendigoBossEnemy.group.position, BOSS_RADIUS, true);
       wendigoBossEnemy.group.position.y =
         getTerrainHeight(wendigoBossEnemy.group.position.x, wendigoBossEnemy.group.position.z) + 0.04;
@@ -2808,6 +2811,11 @@ export function initWorldEntities(ctx) {
       }
     }
 
+    let expansionHooks = null;
+    function setExpansionHooks(hooks) {
+      expansionHooks = hooks || null;
+    }
+
     // --- 8m. Finn spillerkulas treff blant alle skapninger ---
     function considerCombatTarget(a, b, entity, type, centerY, radius) {
       if (!entity.alive || !entity.group.visible || entity.burning) return;
@@ -2862,6 +2870,9 @@ export function initWorldEntities(ctx) {
       if (wendigoBossEnemy.alive && wendigoBossEnemy.group.visible) {
         considerCombatTarget(a, b, wendigoBossEnemy, 'wendigo_boss', 1.5, 1.18);
       }
+      if (expansionHooks && expansionHooks.considerExpansionHits) {
+        expansionHooks.considerExpansionHits(a, b, considerCombatTarget);
+      }
 
       return combatHitFound ? combatHitResult : null;
     }
@@ -2874,6 +2885,9 @@ export function initWorldEntities(ctx) {
       else if (hit.type === 'night') damageNightEnemy(hit.entity, direction, bulletInfo);
       else if (hit.type === 'boss') damageBossEnemy(direction, bulletInfo);
       else if (hit.type === 'wendigo_boss') damageWendigoBoss(direction, bulletInfo);
+      else if (expansionHooks && expansionHooks.damageExpansionTarget) {
+        expansionHooks.damageExpansionTarget(hit, direction, bulletInfo);
+      }
     }
 
     // --- 8n. Plasser alle skapningene og NPC-animasjoner i verdenen ---
@@ -2972,6 +2986,14 @@ export function initWorldEntities(ctx) {
           const dSq = (wendigoBossEnemy.group.position.x - px) ** 2 + (wendigoBossEnemy.group.position.z - pz) ** 2;
           if (dSq < bestDistSq) { bestDistSq = dSq; bestTarget = wendigoBossEnemy; bestKind = 'wendigo_boss'; }
         }
+        if (expansionHooks && Array.isArray(expansionHooks.regionalMonsters)) {
+          for (let i = 0; i < expansionHooks.regionalMonsters.length; i++) {
+            const rm = expansionHooks.regionalMonsters[i];
+            if (!rm.alive || !rm.group.visible) continue;
+            const dSq = (rm.group.position.x - px) ** 2 + (rm.group.position.z - pz) ** 2;
+            if (dSq < bestDistSq) { bestDistSq = dSq; bestTarget = rm; bestKind = 'exp_monster'; }
+          }
+        }
       }
 
       let speed = 0;
@@ -2995,6 +3017,9 @@ export function initWorldEntities(ctx) {
             else if (bestKind === 'night') damageNightEnemy(bestTarget, null, null, biteDmg);
             else if (bestKind === 'boss') damageBossEnemy(null, null, biteDmg);
             else if (bestKind === 'wendigo_boss') damageWendigoBoss(null, null, biteDmg);
+            else if (bestKind === 'exp_monster' && expansionHooks) {
+              expansionHooks.damageExpansionTarget({ type: 'exp_monster', entity: bestTarget }, null, { dmgMult: biteDmg });
+            }
           }
         }
       } else {
@@ -3197,6 +3222,7 @@ export function initWorldEntities(ctx) {
     updateAnimationMixers,
     updateEnemyBullets,
     findCombatHit,
-    damageCombatTarget
+    damageCombatTarget,
+    setExpansionHooks
   };
 }
