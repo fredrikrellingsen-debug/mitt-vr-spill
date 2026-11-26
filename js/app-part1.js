@@ -59,8 +59,8 @@ const {
     const playerState = {
       health: 100,
       maxHealth: 100,
-      gold: 15,
-      food: 0,
+      gold: 120,
+      food: 1,
       pelt: 0,
       dynamite: 2,
       outfit: 'Plain',
@@ -244,6 +244,7 @@ const {
           outfitTier: currentOutfitTier,
           visualOutfitTier,
           armorPaddingRanks,
+          starterGoldGrantedV4: true,
           redeemedStripeSessions: redeemedStripeSessions.slice(-100),
           damageMultiplier,
           nightMonsterDamage,
@@ -304,6 +305,10 @@ const {
           });
         }
         if (typeof data.damageMultiplier === 'number') damageMultiplier = Math.max(0.15, Math.min(1, data.damageMultiplier));
+        // Gi eksisterende start-lagringer med <= 20 Gull opptil 120 start-gull én gang slik at man kan handle i butikkene med én gang!
+        if (!data.starterGoldGrantedV4 && playerState.gold < 120 && currentOutfitTier === 0 && !(data.story && data.story.boughtGear)) {
+          playerState.gold = 120;
+        }
         if (typeof data.nightMonsterDamage === 'number') nightMonsterDamage = Math.max(1, Math.min(4, data.nightMonsterDamage));
         if (typeof data.weaponDamage === 'number') weaponDamage = Math.max(1, data.weaponDamage);
         if (typeof data.weaponMasteryRank === 'number') weaponMasteryRank = Math.max(0, Math.min(40, Math.round(data.weaponMasteryRank)));
@@ -2113,9 +2118,9 @@ const {
 
     // --- 5b. Skredder-butikk med disk, skulpturert skredder-NPC og interaktivt verksted ---
     const TAILOR_OUTFITS = [
-      { level: 1, tier: 1, cost: 2, goldCost: 55, damageMultiplier: 0.75, nightMonsterDamage: 1 },
-      { level: 2, tier: 3, cost: 4, goldCost: 220, damageMultiplier: 0.45, nightMonsterDamage: 2 },
-      { level: 3, tier: 4, cost: 6, goldCost: 380, damageMultiplier: 0.30, nightMonsterDamage: 2 }
+      { level: 1, tier: 1, cost: 2, goldCost: 35, damageMultiplier: 0.75, nightMonsterDamage: 1 },
+      { level: 2, tier: 3, cost: 4, goldCost: 180, damageMultiplier: 0.45, nightMonsterDamage: 2 },
+      { level: 3, tier: 4, cost: 6, goldCost: 340, damageMultiplier: 0.30, nightMonsterDamage: 2 }
     ];
 
     let tailorCounterMesh = null;
@@ -2236,8 +2241,8 @@ const {
           displayLabel = isEquipped ? `${baseLabel} ${dict.equippedTag}` : baseLabel;
         } else if (idx === 0) {
           isEquipped = currentOutfitTier >= 6;
-          canAfford = !isEquipped && (playerState.gold >= 1250 || playerState.pelt >= 16);
-          displayLabel = dict.tailorMythicBtn ? dict.tailorMythicBtn(isEquipped) : 'Golden Legend Armor (1250 Gold)';
+          canAfford = !isEquipped && (playerState.gold >= 1200 || playerState.pelt >= 16);
+          displayLabel = dict.tailorMythicBtn ? dict.tailorMythicBtn(isEquipped) : 'Golden Legend Armor (1200 Gold)';
         } else if (idx === 1) {
           isEquipped = playerState.maxHealth >= 500;
           canAfford = !isEquipped && (playerState.gold >= hpGoldCost || playerState.pelt >= hpCost);
@@ -2245,8 +2250,8 @@ const {
             ? dict.tailorReinforceBtn(hpCost, playerState.maxHealth)
             : `Reinforce Armor (${hpGoldCost}G / ${hpCost}P) -> +20 Max HP`;
         } else {
-          canAfford = playerState.gold >= 25 || playerState.pelt >= 2;
-          displayLabel = dict.tailorRationsBtn || 'Smoked Venison Pack (25G / 2 Pelts) -> +4 Food & Heal';
+          canAfford = playerState.gold >= 15 || playerState.pelt >= 2;
+          displayLabel = dict.tailorRationsBtn || 'Smoked Venison Pack (15G / 2 Pelts) -> +4 Food & Heal';
         }
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
