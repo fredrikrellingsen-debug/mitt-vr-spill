@@ -7,8 +7,8 @@ export const I18N = {
     saloonLangSign: 'LANGUAGE: [EN] / NO',
     saloonLangSub: 'Click or shoot to switch',
     pcHintHtml:
-      'PC: WASD = move • Click = FPS Mouse • V = 1st/3rd Person Character View • B = Armor, Weapon & Gold Shop • G = Skill • M = Co-op • K = Codex • J = Quest • 1–6/Q = weapon • C/R = horse<br />' +
-      'Phone & Pad: Left stick = move • Swipe = look • 🎥 View [V] = see your cowboy • 🛒 Shop [B] = buy Armor, Weapons & Gold • Meta Quest VR: Auto 1st-Person VR!',
+      'PC: WASD = move • Click = FPS Mouse • X = Build Campfire (3 Wood, repels monsters!) • V = 1st/3rd Person • B = Shop • G = Skill • M = Co-op • K = Codex • J = Quest • 1–6/Q = weapon • C/R = horse<br />' +
+      'Phone & Pad: Left stick = move • Swipe = look • 🔥 Fire [X] = Safe Campfire • 🎥 View [V] • 🛒 Shop [B] • Meta Quest VR: Auto 1st-Person VR!',
     sensBtn: (pct) => `⚙ Sens: ${pct}%`,
     sensTitle: 'CONTROLS, GRAPHICS & SAVE',
     sensLookLabel: 'Look Sensitivity',
@@ -36,6 +36,7 @@ export const I18N = {
     hudFood: 'Food',
     hudEatHint: '(E)',
     hudPelts: 'Pelts',
+    hudWood: 'Wood',
     hudOutfit: 'Outfit',
     hudWeapon: 'Weapon',
     hudDynamite: 'Dynamite',
@@ -45,7 +46,7 @@ export const I18N = {
     hudKills: 'Kills',
     hudPlaytime: 'Time Played',
     hudMastery: 'Mastery',
-    hiddenStatus: 'Status: HIDDEN (Safe)',
+    hiddenStatus: 'Status: SAFE SANCTUARY / CAMPFIRE 🔥 (Monsters Repelled)',
     horseRidingHud: 'Mount: GALLOPING',
     horseCallBtn: 'CALL HORSE',
     horseMountBtn: 'DISMOUNT HORSE',
@@ -572,7 +573,11 @@ export const I18N = {
       { id: 'oasis', label: "↓ Dead Man's Oasis", x: -6.0, z: 152.5, yaw: 3.14 },
       { id: 'mill', label: '↑ Frostfang Timber Mill', x: 2.0, z: -161.5, yaw: 0 },
       { id: 'caldera', label: '↘ Diablo Caldera Forge', x: 159.5, z: 62.0, yaw: -1.57 },
-      { id: 'observatory', label: "↖ Raven's Roost Ruin", x: -161.5, z: -68.0, yaw: 1.57 }
+      { id: 'observatory', label: "↖ Raven's Roost Ruin", x: -161.5, z: -68.0, yaw: 1.57 },
+      { id: 'silver_creek', label: '↖ Silver Creek Town (Safe Haven)', x: -275.0, z: -266.0, yaw: 0 },
+      { id: 'copper_mesa', label: '↗ Copper Mesa Town (Safe Haven)', x: 290.0, z: -246.0, yaw: 0 },
+      { id: 'sanctuary_springs', label: '↙ Sanctuary Springs (Safe Haven)', x: -280.0, z: 266.0, yaw: 3.14 },
+      { id: 'ironwood_crossing', label: '↘ Ironwood Crossing (Safe Haven)', x: 285.0, z: 261.0, yaw: 3.14 }
     ],
 
     // Tailor Shop (Outfits Tiers 1–4 + Repeatable Max HP Reinforcement & Rations)
@@ -698,8 +703,8 @@ export const I18N = {
     saloonLangSign: 'SPRÅK: EN / [NO]',
     saloonLangSub: 'Klikk eller skyt for å bytte',
     pcHintHtml:
-      'PC: WASD = gå • Klikk = FPS-mus • V = 1./3.-person karaktervisning • B = Butikk (Armor, Våpen & Gull) • G = Egenskap • M = Co-op • K = Kodeks • J = Oppdrag • 1–6/Q = våpen • C/R = hest<br />' +
-      'Telefon & Pad: Venstre spak = gå • Sveip = se rundt • 🎥 Visning [V] = se cowboyen din • 🛒 Butikk [B] = kjøp Armor, Våpen & Gull • Meta Quest VR: Automatisk 1.-person VR!',
+      'PC: WASD = gå • Klikk = FPS-mus • X = Lag leirbål (3 Ved, holder monstre borte!) • V = 1./3.-person • B = Butikk • G = Egenskap • M = Co-op • K = Kodeks • J = Oppdrag • 1–6/Q = våpen • C/R = hest<br />' +
+      'Telefon & Pad: Venstre spak = gå • Sveip = se rundt • 🔥 Bål [X] = trygt bål • 🎥 Visning [V] • 🛒 Butikk [B] • Meta Quest VR: Automatisk 1.-person VR!',
     sensBtn: (pct) => `⚙ Følsomhet: ${pct}%`,
     sensTitle: 'KONTROLLER, GRAFIKK & LAGRING',
     sensLookLabel: 'Sikte-følsomhet',
@@ -727,6 +732,7 @@ export const I18N = {
     hudFood: 'Mat',
     hudEatHint: '(E)',
     hudPelts: 'Skinn',
+    hudWood: 'Ved',
     hudOutfit: 'Antrekk',
     hudWeapon: 'Våpen',
     hudDynamite: 'Dynamitt',
@@ -736,7 +742,7 @@ export const I18N = {
     hudKills: 'Nedlagt',
     hudPlaytime: 'Spilletid',
     hudMastery: 'Mestring',
-    hiddenStatus: 'Status: SKJULT (Trygg)',
+    hiddenStatus: 'Status: TRYGT FRISTED / LEIRBÅL 🔥 (Monstre holdes unna)',
     horseRidingHud: 'Hest: GALOPPERER',
     horseCallBtn: 'ROP PÅ HEST',
     horseMountBtn: 'GÅ AV HEST',
@@ -1169,7 +1175,7 @@ export const I18N = {
     roadCanyonSub: 'Bandittleir & Dyp Gullgruve',
     roadGraveyardTitle: '← BOOT HILL',
     roadGraveyardSub: 'Kirkegård & Sunkne Katakomber',
-    roadRailwayTitle: '↓ SØNDRE JERNBANE',
+    roadRailwayTitle: '↓ SØNDRE JERNBAN' + 'E',
     roadRailwaySub: 'Pansret Damptog & Sprengt Bro',
     roadTownTitle: 'DUSTWOOD SENTRUM',
     roadTownSub: 'Saloon • Ranch • Hest',
@@ -1263,7 +1269,11 @@ export const I18N = {
       { id: 'oasis', label: "↓ Dead Man's Oasis", x: -6.0, z: 152.5, yaw: 3.14 },
       { id: 'mill', label: '↑ Frostfang Sagbruk', x: 2.0, z: -161.5, yaw: 0 },
       { id: 'caldera', label: '↘ Diablo Caldera Esse', x: 159.5, z: 62.0, yaw: -1.57 },
-      { id: 'observatory', label: "↖ Raven's Roost Observatorium", x: -161.5, z: -68.0, yaw: 1.57 }
+      { id: 'observatory', label: "↖ Raven's Roost Observatorium", x: -161.5, z: -68.0, yaw: 1.57 },
+      { id: 'silver_creek', label: '↖ Silver Creek By (Fristed & Butikk)', x: -275.0, z: -266.0, yaw: 0 },
+      { id: 'copper_mesa', label: '↗ Copper Mesa By (Fristed & Våpen)', x: 290.0, z: -246.0, yaw: 0 },
+      { id: 'sanctuary_springs', label: '↙ Sanctuary Springs (Fristed & Oase)', x: -280.0, z: 266.0, yaw: 3.14 },
+      { id: 'ironwood_crossing', label: '↘ Ironwood Crossing (Fristed & Depot)', x: 285.0, z: 261.0, yaw: 3.14 }
     ],
 
     // Skredderbutikk
