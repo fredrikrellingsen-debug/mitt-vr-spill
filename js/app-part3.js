@@ -14,6 +14,8 @@
     let playerInvulnerableTimer = 0;
     let damageVignetteTimer = 0;
     let lastVRDayNightToggle = 0;
+    let pcPitch = 0;
+    const MAX_LOOK_PITCH = 1.18; // +-67.6 grader så man kan sikte høyt (gribber/balkonger) og lavt (ulver/kasser)
 
     // Pre-allokerte hjelpeobjekter for animasjonsløkken. Løkken skal ikke
     // opprette nye Vector3/Matrix4/Raycaster-objekter (GC-hakking på Quest).
@@ -280,7 +282,7 @@
 
     const uiRaycaster = new THREE.Raycaster();
     uiRaycaster.near = 0.01;
-    uiRaycaster.far = 15;
+    uiRaycaster.far = 20;
     const uiTempMatrix = new THREE.Matrix4();
     const uiPointerNDC = new THREE.Vector2();
     const tailorCounterWorldPos = new THREE.Vector3();
@@ -729,49 +731,43 @@
     function purchaseTailorOutfit(outfit) {
       if (!outfit) return;
 
-      // Sluttspill-modus hos Skredderen når Vampyrjeger-sett (Tier 3) allerede er sydd!
-      if (currentOutfitTier >= 3) {
+      // Sluttspill-modus hos Skredderen når Vampyrjeger-rustning (Tier 4) allerede er låst opp!
+      if (currentOutfitTier >= 4) {
         if (outfit.level === 1) {
-          // Slot 1: Mytisk Grenselandsfrakk (Tier 4 -> 80 % rustning + 3x nattskade, pris 12 Skinn)
-          if (currentOutfitTier >= 4) {
+          if (currentOutfitTier >= 6) {
             setTailorFeedback('same', false, 3.0);
             playShopDenySound();
             return;
           }
-          if (playerState.pelt < 12) {
-            setTailorFeedback('no_pelts', false, 3.0);
-            playShopDenySound();
+          if (shopAndCameraSystem) {
+            const res = shopAndCameraSystem.buyOrEquipArmorTier(6, true);
+            if (res.ok) {
+              setTailorFeedback('crafted', true, 3.2);
+            } else {
+              setTailorFeedback('no_pelts', false, 3.0);
+            }
             return;
           }
-          playerState.pelt -= 12;
-          currentOutfitTier = 4;
-          damageMultiplier = 0.20;
-          nightMonsterDamage = Math.max(nightMonsterDamage, 3);
-          storyState.masterUpgradeBought = true;
-          updateLeftSleeveAppearance(4);
-          setTailorFeedback('crafted', true, 3.2);
-          checkStoryProgression();
-          saveCareerProgress();
-          updateStatusUI();
-          playUpgradeSound();
-          return;
         }
         if (outfit.level === 2) {
-          // Slot 2: Forsterk Rustningsfôr (+15 Maks Helse opp til 300 HP!)
-          if (playerState.maxHealth >= 300) {
+          if (playerState.maxHealth >= 500) {
             setTailorFeedback('same', false, 3.0);
             playShopDenySound();
             return;
           }
-          const hpRanks = Math.round((playerState.maxHealth - 100) / 15);
-          const hpCost = 5 + hpRanks * 3;
+          if (shopAndCameraSystem && shopAndCameraSystem.buyArmorPaddingUpgrade()) {
+            setTailorFeedback('hp_up', true, 3.2);
+            return;
+          }
+          const hpCost = 5 + armorPaddingRanks * 3;
           if (playerState.pelt < hpCost) {
             setTailorFeedback('no_pelts', false, 3.0);
             playShopDenySound();
             return;
           }
           playerState.pelt -= hpCost;
-          playerState.maxHealth = Math.min(300, playerState.maxHealth + 15);
+          armorPaddingRanks += 1;
+          playerState.maxHealth = Math.min(500, playerState.maxHealth + 20);
           playerState.health = playerState.maxHealth;
           storyState.masterUpgradeBought = true;
           setTailorFeedback('hp_up', true, 3.2);
@@ -781,13 +777,16 @@
           playUpgradeSound();
           return;
         }
-        // Slot 3: Røkt Viltproviant (2 Skinn -> +4 Mat & Full Helse)
-        if (playerState.pelt < 2) {
+        // Slot 3: Røkt Viltproviant (25 Gull eller 2 Skinn -> +4 Mat & Full Helse)
+        if (playerState.gold >= 25) {
+          playerState.gold -= 25;
+        } else if (playerState.pelt >= 2) {
+          playerState.pelt -= 2;
+        } else {
           setTailorFeedback('no_pelts', false, 3.0);
           playShopDenySound();
           return;
         }
-        playerState.pelt -= 2;
         playerState.food += 4;
         playerState.health = playerState.maxHealth;
         setTailorFeedback('rations', true, 3.0);
@@ -797,35 +796,23 @@
         return;
       }
 
-      if (currentOutfitTier >= outfit.level) {
-        const key = currentOutfitTier === outfit.level ? 'same' : 'better';
+      const targetTier = outfit.tier || outfit.level;
+      if (currentOutfitTier >= targetTier) {
+        const key = currentOutfitTier === targetTier ? 'same' : 'better';
         setTailorFeedback(key, false, 3.0);
         playShopDenySound();
         return;
       }
 
-      if (playerState.pelt < outfit.cost) {
-        setTailorFeedback('no_pelts', false, 3.0);
-        playShopDenySound();
+      if (shopAndCameraSystem) {
+        const res = shopAndCameraSystem.buyOrEquipArmorTier(targetTier, true);
+        if (res.ok) {
+          setTailorFeedback('crafted', true, 3.0);
+        } else {
+          setTailorFeedback('no_pelts', false, 3.0);
+        }
         return;
       }
-
-      playerState.pelt -= outfit.cost;
-      currentOutfitTier = outfit.level;
-      damageMultiplier = outfit.damageMultiplier;
-      if (outfit.nightMonsterDamage > nightMonsterDamage) {
-        nightMonsterDamage = outfit.nightMonsterDamage;
-      }
-      storyState.boughtGear = true;
-      if (currentOutfitTier >= 3) {
-        storyState.hasVampireGear = true;
-      }
-      updateLeftSleeveAppearance(currentOutfitTier);
-      setTailorFeedback('crafted', true, 3.0);
-      checkStoryProgression();
-      saveCareerProgress();
-      updateStatusUI();
-      playUpgradeSound();
     }
 
     function setGunsmithFeedback(key, isSuccess, duration = 3.2, arg = null) {
@@ -864,23 +851,29 @@
           setGunsmithFeedback('owned', true, 3.0, item.weaponId);
           return;
         }
-        if (item.minLevel && storyState.currentLevel < item.minLevel) {
-          setGunsmithFeedback('locked_level', false, 3.4);
+        const canBuyDiscount =
+          (!item.minLevel || storyState.currentLevel >= item.minLevel) &&
+          playerState.gold >= item.goldCost &&
+          playerState.pelt >= item.peltCost;
+        const canBuyPureGold = !!(item.pureGoldCost && playerState.gold >= item.pureGoldCost);
+
+        if (!canBuyDiscount && !canBuyPureGold) {
+          if (item.minLevel && storyState.currentLevel < item.minLevel && (!item.pureGoldCost || playerState.gold < item.pureGoldCost)) {
+            setGunsmithFeedback('no_gold', false, 3.2);
+          } else if (playerState.gold < item.goldCost) {
+            setGunsmithFeedback('no_gold', false, 3.2);
+          } else {
+            setGunsmithFeedback('no_pelts', false, 3.2);
+          }
           playShopDenySound();
           return;
         }
-        if (playerState.gold < item.goldCost) {
-          setGunsmithFeedback('no_gold', false, 3.2);
-          playShopDenySound();
-          return;
+        if (canBuyDiscount) {
+          playerState.gold -= item.goldCost;
+          playerState.pelt -= item.peltCost;
+        } else {
+          playerState.gold -= item.pureGoldCost;
         }
-        if (playerState.pelt < item.peltCost) {
-          setGunsmithFeedback('no_pelts', false, 3.2);
-          playShopDenySound();
-          return;
-        }
-        playerState.gold -= item.goldCost;
-        playerState.pelt -= item.peltCost;
         unlockedWeapons[item.weaponId] = true;
         storyState.boughtGear = true;
         if (item.weaponId === 'crossbow') {
@@ -1327,6 +1320,11 @@
 
     // --- 8f. Spillerens helse, skade og gjenoppliving ---
     function updatePlayerBodyPoints() {
+      if (!renderer.xr.isPresenting && shopAndCameraSystem && shopAndCameraSystem.isThirdPersonActive()) {
+        playerHeadPosition.set(playerRig.position.x, playerRig.position.y + 1.65, playerRig.position.z);
+        playerChestPosition.set(playerRig.position.x, playerRig.position.y + 1.20, playerRig.position.z);
+        return;
+      }
       camera.getWorldPosition(playerHeadPosition);
       playerChestPosition.copy(playerHeadPosition);
       playerChestPosition.y -= 0.45;
@@ -1550,6 +1548,80 @@
       },
       entities: E
     });
+
+    shopAndCameraSystem = initShopAndCameraSystem({
+      scene,
+      camera,
+      renderer,
+      playerRig,
+      playerState,
+      storyState,
+      controlSettings,
+      saveControlSettings,
+      M,
+      C,
+      FX,
+      WEAPON_ORDER,
+      pcWeapons,
+      unlockedWeapons,
+      getLang: () => currentLang,
+      getActiveWeaponId: () => activeWeaponId,
+      equipWeapon,
+      getIsRidingHorse: () => isRidingHorse,
+      getHorseEntity: () => horseEntity,
+      getPcPitch: () => pcPitch,
+      getMoveSpeed: () => currentMoveSpeed,
+      getTerrainHeight,
+      pointHitsSolidWall,
+      findCombatHit,
+      triggerWeaponKick,
+      updateWeaponViewFX,
+      getOutfitTier: () => currentOutfitTier,
+      setOutfitStats(newTier, newMult, newNightDmg) {
+        currentOutfitTier = Math.max(currentOutfitTier, newTier);
+        damageMultiplier = Math.min(damageMultiplier, newMult);
+        nightMonsterDamage = Math.max(nightMonsterDamage, newNightDmg || 1);
+      },
+      getVisualOutfitTier: () => visualOutfitTier,
+      setVisualOutfitTier(vTier) {
+        visualOutfitTier = Math.max(0, Math.min(currentOutfitTier, vTier));
+      },
+      getArmorPaddingRanks: () => armorPaddingRanks,
+      setArmorPaddingRanks(r) {
+        armorPaddingRanks = Math.max(0, Math.min(25, r));
+      },
+      getTrailblazerRank: () => homesteadRanks.trailblazer || 0,
+      getHasSheriffStar: () => hasSheriffStar,
+      getHasGoldenRevolver: () => hasGoldenRevolver,
+      grantGoldenRevolver() {
+        weaponDamage = Math.max(weaponDamage, 2);
+        if (!hasGoldenRevolver) {
+          hasGoldenRevolver = true;
+          upgradeRevolverToGold();
+        }
+      },
+      getWeaponMasteryRank: () => weaponMasteryRank,
+      incrementWeaponMasteryRank() {
+        weaponMasteryRank = Math.min(40, weaponMasteryRank + 1);
+      },
+      getRedeemedStripeSessions: () => redeemedStripeSessions,
+      addRedeemedStripeSession(sid) {
+        if (sid && !redeemedStripeSessions.includes(sid)) redeemedStripeSessions.push(sid);
+      },
+      updateLeftSleeveAppearance,
+      checkStoryProgression,
+      saveCareerProgress,
+      updateStatusUI,
+      showFrontierToast,
+      spawnSparkBurst,
+      audio: {
+        playQuestSelectSound,
+        playQuestFanfare,
+        playUpgradeSound,
+        playHealSound,
+        playShopDenySound
+      }
+    });
     updateStatusUI();
 
     if (activeQuest) ensureQuestTargetsAvailable(activeQuest);
@@ -1598,9 +1670,6 @@
     // =========================================================================
     // 9. KRYSSPLATTFORM KONTROLLMOTOR FOR VR, TELEFON, PAD OG PC (FØLSOMHET + MULTI-TOUCH + POINTER LOCK)
     // =========================================================================
-    let pcPitch = 0;
-    const MAX_LOOK_PITCH = 1.18; // +-67.6 grader så man kan sikte høyt (gribber/balkonger) og lavt (ulver/kasser)
-
     function resetPCCameraPitch() {
       pcPitch = 0;
       camera.rotation.x = 0;
@@ -1726,9 +1795,11 @@
         controlSettings.invertY = false;
         controlSettings.vrSmoothTurn = false;
         controlSettings.perfMode = 'auto';
+        controlSettings.viewMode = 'first';
         adaptiveDprCap = isSmallMobileScreen ? 1.35 : 1.25;
         applyQualityPixelRatio();
         saveControlSettings();
+        if (shopAndCameraSystem) shopAndCameraSystem.applyCameraAndWeaponVisibility();
         syncControlsLocalizationUI();
       });
     }
@@ -1916,6 +1987,7 @@
         target.closest('#codex-modal') ||
         target.closest('#npc-quest-modal') ||
         target.closest('#coop-modal') ||
+        target.closest('#store-modal') ||
         target.closest('#wow-quest-tracker') ||
         target.closest('#wow-party-panel') ||
         target.closest('#touch-actions')
@@ -2107,10 +2179,13 @@
       if (document.pointerLockElement && document.exitPointerLock) {
         document.exitPointerLock();
       }
+      camera.position.set(0, 1.65, 0);
       camera.rotation.set(0, 0, 0);
+      if (shopAndCameraSystem) shopAndCameraSystem.applyCameraAndWeaponVisibility();
     });
     renderer.xr.addEventListener('sessionend', () => {
       document.body.classList.remove('in-vr');
+      if (shopAndCameraSystem) shopAndCameraSystem.applyCameraAndWeaponVisibility();
     });
 
     window.addEventListener('resize', () => {
@@ -2394,6 +2469,9 @@
       }
       updateWeaponViewFX(pcWeapons[activeWeaponId], dt);
       if (vrActiveWeapon) updateWeaponViewFX(vrActiveWeapon, dt);
+      if (shopAndCameraSystem) {
+        shopAndCameraSystem.updateThirdPersonCameraAndAvatar(dt, worldTime);
+      }
 
       // Nullstill blinkene automatisk litt etter at alle er truffet
       if (targetResetTimer > 0) {
@@ -2465,6 +2543,7 @@
       stagecoachTravelTo,
       triggerWorldEvent,
       mmoSystem,
+      shopAndCameraSystem,
       playerState,
       storyState,
       toggleDayNight,
