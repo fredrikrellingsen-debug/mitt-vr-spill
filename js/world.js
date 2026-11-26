@@ -36,18 +36,18 @@ export function getTerrainBaseHeight(x, z) {
     Math.sin((x + z) * 0.095) * 0.24 +
     Math.cos((x - z * 1.2) * 0.075) * 0.20;
 
-  const outerFactor = Math.min(2.15, Math.max(0, (cheb - 175.0) / 85.0));
-  const rimLift = outerFactor * outerFactor * (1.85 + 0.65 * Math.sin(x * 0.038) * Math.cos(z * 0.038));
+  const outerFactor = Math.min(2.65, Math.max(0, (cheb - 175.0) / 360.0));
+  const rimLift = outerFactor * outerFactor * (1.55 + 0.65 * Math.sin(x * 0.018) * Math.cos(z * 0.018));
 
   let h = (dunePrimary + duneSecondary + rimLift + 0.18) * blend;
 
-  // Grunt/tørt elveleie gjennom Whispering Woods (nord, rundt z = -78)
-  if (z < -62 && z > -94 && Math.abs(x) < 68) {
-    const riverCenterZ = -78.0 + Math.sin(x * 0.065) * 3.6;
+  // Glitrende elveleie gjennom Whispering Woods og ut over hele 2.4km-kontinentet (rundt z = -78)
+  if (z < -48 && z > -112 && Math.abs(x) < 1195) {
+    const riverCenterZ = -78.0 + Math.sin(x * 0.065) * 3.6 + Math.sin(x * 0.008) * 14.0 * Math.min(1, Math.max(0, (Math.abs(x) - 90) / 140));
     const distRiver = Math.abs(z - riverCenterZ);
-    if (distRiver < 5.4) {
-      const rNorm = distRiver / 5.4;
-      const carve = (1 - rNorm * rNorm) * 0.95;
+    if (distRiver < 5.6) {
+      const rNorm = distRiver / 5.6;
+      const carve = (1 - rNorm * rNorm) * 1.05;
       h -= carve;
     }
   }
@@ -174,6 +174,32 @@ export function getTerrainBaseHeight(x, z) {
     h = THREE.MathUtils.lerp(1.10, h, ft4 * ft4 * (3 - 2 * ft4));
   }
 
+  // 4 Fjerne Kontinent-Hovedsteder / Citadeller (~860..890m ut i 2.4km x 2.4km-verdenen):
+  // 5) Frostpeak Citadel (Fjernt NV Høyfjell: x = -860, z = -880, h = 6.20)
+  const dFrostpeak = Math.max(Math.abs(x + 860.0), Math.abs(z + 880.0));
+  if (dFrostpeak < 42.0) {
+    const ft5 = Math.max(0, Math.min(1, (dFrostpeak - 24.0) / 18.0));
+    h = THREE.MathUtils.lerp(6.20, h, ft5 * ft5 * (3 - 2 * ft5));
+  }
+  // 6) Sunfire Canyon City (Fjernt NØ Solkløft: x = 890, z = -840, h = 3.85)
+  const dSunfire = Math.max(Math.abs(x - 890.0), Math.abs(z + 840.0));
+  if (dSunfire < 42.0) {
+    const ft6 = Math.max(0, Math.min(1, (dSunfire - 24.0) / 18.0));
+    h = THREE.MathUtils.lerp(3.85, h, ft6 * ft6 * (3 - 2 * ft6));
+  }
+  // 7) Emerald Mirage Lagoon (Fjernt SV Smaragdoase: x = -880, z = 870, h = 0.55)
+  const dEmerald = Math.max(Math.abs(x + 880.0), Math.abs(z - 870.0));
+  if (dEmerald < 44.0) {
+    const ft7 = Math.max(0, Math.min(1, (dEmerald - 26.0) / 18.0));
+    h = THREE.MathUtils.lerp(0.55, h, ft7 * ft7 * (3 - 2 * ft7));
+  }
+  // 8) Ashenforge Bastion (Fjernt SØ Vulkankrater: x = 875, z = 885, h = 2.85)
+  const dAshen = Math.max(Math.abs(x - 875.0), Math.abs(z - 885.0));
+  if (dAshen < 42.0) {
+    const ft8 = Math.max(0, Math.min(1, (dAshen - 24.0) / 18.0));
+    h = THREE.MathUtils.lerp(2.85, h, ft8 * ft8 * (3 - 2 * ft8));
+  }
+
   return h;
 }
 
@@ -231,7 +257,7 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
 
   // --- 3f. Ekte HDRI-miljølys (.hdr + PMREMGenerator) med prosedyrisk Sky-fallback ---
   const sky = new SkyClass();
-  sky.scale.setScalar(1280);
+  sky.scale.setScalar(3400);
   scene.add(sky);
 
   const skySunVec = new THREE.Vector3();
@@ -384,11 +410,12 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     metalness: 0.0,
     envMapIntensity: 0.36
   });
-  desertGroundMat.customProgramCacheKey = () => 'western_photo_terrain_v3_fbm';
+  desertGroundMat.customProgramCacheKey = () => 'western_photo_terrain_v4_magic_continent';
   desertGroundMat.onBeforeCompile = (shader) => {
     shader.uniforms.uRoadPhotoMap = { value: sharedRoadSandTex };
     shader.uniforms.uRockPhotoMap = { value: sharedSandstoneTex };
     shader.uniforms.uForestPhotoMap = { value: sharedFoliageTex };
+    shader.uniforms.uCloudTime = windUniforms.uWindTime;
 
     shader.vertexShader = shader.vertexShader
       .replace(
@@ -408,6 +435,7 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
         uniform sampler2D uRoadPhotoMap;
         uniform sampler2D uRockPhotoMap;
         uniform sampler2D uForestPhotoMap;
+        uniform float uCloudTime;
 
         float wHash21(vec2 p) {
           p = fract(p * vec2(127.1, 311.7));
@@ -463,17 +491,17 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
           float swayNS = (wNoise2(vec2(wz * 0.055, 3.1)) - 0.5) * 0.85;
           float swayEW = (wNoise2(vec2(wx * 0.055, 8.7)) - 0.5) * 0.85;
 
-          float spanNS = smoothstep(-370.0, -340.0, wz) * smoothstep(370.0, 340.0, wz);
-          float halfW_NS = mix(2.15, 3.35, exp(-pow(wz / 18.0, 2.0))) + sandDrift;
+          float spanNS = smoothstep(-1140.0, -1080.0, wz) * smoothstep(1140.0, 1080.0, wz);
+          float halfW_NS = mix(2.25, 3.45, exp(-pow(wz / 18.0, 2.0))) + sandDrift;
           float dNS = smoothstep(halfW_NS + 1.35, max(0.35, halfW_NS - 1.25), abs(wx - swayNS)) * spanNS;
 
-          float spanEW = smoothstep(-370.0, -340.0, wx) * smoothstep(370.0, 340.0, wx);
-          float halfW_EW = mix(2.05, 2.85, exp(-pow(wx / 18.0, 2.0))) + sandDrift;
+          float spanEW = smoothstep(-1140.0, -1080.0, wx) * smoothstep(1140.0, 1080.0, wx);
+          float halfW_EW = mix(2.15, 2.95, exp(-pow(wx / 18.0, 2.0))) + sandDrift;
           float dEW = smoothstep(halfW_EW + 1.35, max(0.35, halfW_EW - 1.20), abs((wz + 1.5) - swayEW)) * spanEW;
 
-          float spanDiag = smoothstep(24.0, 42.0, max(abs(wx), abs(wz))) * smoothstep(315.0, 290.0, max(abs(wx), abs(wz)));
-          float dDiagA = smoothstep(3.1 + sandDrift * 0.5, 1.0, abs(wx - wz * 0.98) * 0.707) * spanDiag;
-          float dDiagB = smoothstep(3.1 + sandDrift * 0.5, 1.0, abs(wx + wz * 1.02) * 0.707) * spanDiag;
+          float spanDiag = smoothstep(24.0, 42.0, max(abs(wx), abs(wz))) * smoothstep(960.0, 910.0, max(abs(wx), abs(wz)));
+          float dDiagA = smoothstep(3.2 + sandDrift * 0.5, 1.0, abs(wx - wz * 0.985) * 0.707) * spanDiag;
+          float dDiagB = smoothstep(3.2 + sandDrift * 0.5, 1.0, abs(wx + wz * 1.015) * 0.707) * spanDiag;
 
           float spanRail = smoothstep(-146.0, -132.0, wx) * smoothstep(54.0, 44.0, wx);
           float dRail = smoothstep(3.4 + sandDrift * 0.6, 1.35, abs(wz - 75.0)) * spanRail;
@@ -511,7 +539,27 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
             splatted = mix(splatted, rockTex * vec3(0.86, 0.68, 0.55), canyonMask * 0.66);
             splatted = mix(splatted, rockTex * vec3(0.56, 0.55, 0.58), bootMask * 0.68);
           }
-          diffuseColor.rgb = splatted;
+
+          // Smaragd-oase i SV, vulkansk obsidian i SØ og snødekte alpetopper i høyden (Frostpeak NV)
+          float oasisLush = smoothstep(210.0, 340.0, -wx + edgeN) * smoothstep(210.0, 340.0, wz - edgeN) * (1.0 - roadMask * 0.7);
+          if (oasisLush > 0.01) {
+            splatted = mix(splatted, vec3(0.24, 0.48, 0.26) * (0.85 + 0.3 * macroN), oasisLush * 0.62);
+          }
+          float volcanicSE = smoothstep(360.0, 560.0, wx + edgeN) * smoothstep(360.0, 560.0, wz + edgeN) * (1.0 - roadMask * 0.6);
+          if (volcanicSE > 0.01) {
+            float lavaVein = smoothstep(0.76, 0.92, wFbmFast(wp * 0.09));
+            vec3 ashCol = mix(vec3(0.18, 0.16, 0.18), vec3(0.95, 0.34, 0.08), lavaVein * 0.65);
+            splatted = mix(splatted, ashCol, volcanicSE * 0.72);
+          }
+          float snowMask = smoothstep(4.6, 6.8, wy + macroN * 1.2) * smoothstep(-120.0, -480.0, wz) * (1.0 - roadMask * 0.75);
+          if (snowMask > 0.01) {
+            splatted = mix(splatted, vec3(0.90, 0.94, 0.99), snowMask * 0.82);
+          }
+
+          // Levende sky-skygger som glir rolig over hele kontinentet!
+          float cloudNoise = wFbmFast(wp * 0.0075 + vec2(uCloudTime * 0.012, uCloudTime * 0.007));
+          float cloudLight = mix(0.80, 1.06, smoothstep(0.28, 0.72, cloudNoise));
+          diffuseColor.rgb = splatted * cloudLight;
         }`
       );
   };
@@ -638,19 +686,19 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     staticDesertPropsGroup.add(g);
   }
 
-  // Plasser Monument Valley-platåer i en vid horisontring utenfor den utvidede PLAY_AREA_LIMIT (412m)
+  // Plasser Monument Valley-platåer som majestetiske landemerker i mellom- og ytterkontinentet (god klaring til alle veier!)
   [
-    { x: -315, z: -455, r: 44, h: 56, seed: 101, spire: true },
-    { x: 165, z: -468, r: 48, h: 52, seed: 202, spire: false },
-    { x: 355, z: -445, r: 46, h: 58, seed: 303, spire: true },
-    { x: -458, z: -175, r: 42, h: 52, seed: 404, spire: false },
-    { x: 462, z: -155, r: 44, h: 54, seed: 505, spire: true },
-    { x: -454, z: 168, r: 40, h: 48, seed: 606, spire: false },
-    { x: 458, z: 185, r: 42, h: 52, seed: 707, spire: true },
-    { x: -195, z: 456, r: 46, h: 56, seed: 808, spire: true },
-    { x: 215, z: 462, r: 48, h: 58, seed: 909, spire: false },
-    { x: -435, z: -425, r: 42, h: 54, seed: 951, spire: true },
-    { x: 438, z: 428, r: 44, h: 56, seed: 977, spire: true }
+    { x: -345, z: -565, r: 44, h: 58, seed: 101, spire: true },
+    { x: 245, z: -585, r: 48, h: 54, seed: 202, spire: false },
+    { x: 565, z: -385, r: 46, h: 62, seed: 303, spire: true },
+    { x: -585, z: -225, r: 42, h: 54, seed: 404, spire: false },
+    { x: 590, z: -185, r: 44, h: 56, seed: 505, spire: true },
+    { x: -575, z: 220, r: 40, h: 50, seed: 606, spire: false },
+    { x: 585, z: 235, r: 42, h: 54, seed: 707, spire: true },
+    { x: -255, z: 575, r: 46, h: 58, seed: 808, spire: true },
+    { x: 265, z: 585, r: 48, h: 60, seed: 909, spire: false },
+    { x: -640, z: -460, r: 46, h: 64, seed: 951, spire: true },
+    { x: 650, z: 465, r: 48, h: 64, seed: 977, spire: true }
   ].forEach((m) => spawnMonumentMesa(m.x, m.z, m.r, m.h, m.seed, m.spire));
 
   // Forrevne, skarpt lagdelte sandsteinsklipper (erstatter glatte kuler/bobler med ekte kløvede klippeblokker + boks-UV!)
@@ -3058,6 +3106,7 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     sky, skySunVec, dayEnvRT, nightEnvRT,
     hdrState, mountHDRIEnvironments,
     hemiLight, sunLight, sunMesh,
+    desertGroundMat,
     rockColliders,
     structureWallColliders,
     goldPickups,
