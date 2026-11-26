@@ -797,25 +797,36 @@ export function initRevolverAndAtmosphereFX({
   moonGroup.position.set(-76, 86, -155);
   scene.add(moonGroup);
 
-  const STAR_COUNT = 380;
+  const STAR_COUNT = 1250;
   const starPositions = new Float32Array(STAR_COUNT * 3);
+  const starColors = new Float32Array(STAR_COUNT * 3);
   {
     const starRng = createSeededRng(8842);
     for (let i = 0; i < STAR_COUNT; i++) {
       const angle = starRng() * Math.PI * 2;
-      const elev = 0.14 + starRng() * 1.32;
-      const radius = 210 + starRng() * 70;
+      const elev = 0.08 + starRng() * 1.42;
+      const radius = 480 + starRng() * 220;
       starPositions[i * 3] = Math.cos(angle) * Math.cos(elev) * radius;
       starPositions[i * 3 + 1] = Math.sin(elev) * radius;
       starPositions[i * 3 + 2] = Math.sin(angle) * Math.cos(elev) * radius;
+      const tint = starRng();
+      if (tint < 0.25) {
+        starColors[i * 3] = 0.78; starColors[i * 3 + 1] = 0.90; starColors[i * 3 + 2] = 1.0;
+      } else if (tint < 0.48) {
+        starColors[i * 3] = 1.0; starColors[i * 3 + 1] = 0.92; starColors[i * 3 + 2] = 0.74;
+      } else {
+        starColors[i * 3] = 0.95; starColors[i * 3 + 1] = 0.97; starColors[i * 3 + 2] = 1.0;
+      }
     }
   }
   const starGeometry = new THREE.BufferGeometry();
   starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+  starGeometry.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
   const starMat = new THREE.PointsMaterial({
-    color: 0xeef4ff,
+    color: 0xffffff,
+    vertexColors: true,
     map: sharedParticleGlowTex,
-    size: 2.6,
+    size: 2.9,
     sizeAttenuation: false,
     transparent: true,
     opacity: 0,
@@ -825,6 +836,7 @@ export function initRevolverAndAtmosphereFX({
     toneMapped: false
   });
   const stars = new THREE.Points(starGeometry, starMat);
+  stars.frustumCulled = false;
   stars.visible = false;
   scene.add(stars);
 
@@ -1049,6 +1061,10 @@ export function initRevolverAndAtmosphereFX({
     const py = playerPos.y;
     const pz = playerPos.z;
     const night = nightAmount;
+
+    // Hold stjernehimmel og måne forankret rundt spilleren i hele 2.4km x 2.4km-verdenen
+    stars.position.set(px, py, pz);
+    moonGroup.position.set(px - 190, py + 215, pz - 385);
 
     ambientParticleMat.color.copy(dayDustColor).lerp(nightEmberColor, night);
     ambientParticleMat.size = 0.105 + night * 0.045;
