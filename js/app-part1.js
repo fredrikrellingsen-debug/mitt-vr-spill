@@ -4,7 +4,7 @@ const {
   initTexturesAndMaterials, initCreatureModels,
   applySkyShaderParams, getTerrainHeight, buildEnvironmentAndScenery,
   buildTownBuildings, initWesternAudio, initRevolverAndAtmosphereFX,
-  initWorldEntities, initMMOAndCoopSystem
+  initWorldEntities, initMMOAndCoopSystem, initShopAndCameraSystem, getArmorDefByTier
 } = window.__WVR_DEPS;
 
     // =========================================================================
@@ -74,6 +74,9 @@ const {
     let damageMultiplier = 1.0;
     let nightMonsterDamage = 1;
     let currentOutfitTier = 0;
+    let visualOutfitTier = 0;
+    let armorPaddingRanks = 0;
+    const redeemedStripeSessions = [];
     let weaponMasteryRank = 0; // +20 % all våpenskade per nivå hos Våpensmeden
     let totalPlaySeconds = 0;
     let autoSaveAccum = 0;
@@ -239,6 +242,9 @@ const {
           pelt: playerState.pelt,
           dynamite: playerState.dynamite,
           outfitTier: currentOutfitTier,
+          visualOutfitTier,
+          armorPaddingRanks,
+          redeemedStripeSessions: redeemedStripeSessions.slice(-100),
           damageMultiplier,
           nightMonsterDamage,
           weaponDamage,
@@ -282,8 +288,22 @@ const {
         if (typeof data.food === 'number') playerState.food = Math.max(0, Math.round(data.food));
         if (typeof data.pelt === 'number') playerState.pelt = Math.max(0, Math.round(data.pelt));
         if (typeof data.dynamite === 'number') playerState.dynamite = Math.max(0, Math.round(data.dynamite));
-        if (typeof data.outfitTier === 'number') currentOutfitTier = Math.max(0, Math.min(4, Math.round(data.outfitTier)));
-        if (typeof data.damageMultiplier === 'number') damageMultiplier = Math.max(0.2, Math.min(1, data.damageMultiplier));
+        if (typeof data.outfitTier === 'number') currentOutfitTier = Math.max(0, Math.min(6, Math.round(data.outfitTier)));
+        visualOutfitTier = typeof data.visualOutfitTier === 'number'
+          ? Math.max(0, Math.min(currentOutfitTier, Math.round(data.visualOutfitTier)))
+          : currentOutfitTier;
+        if (typeof data.armorPaddingRanks === 'number') {
+          armorPaddingRanks = Math.max(0, Math.min(25, Math.round(data.armorPaddingRanks)));
+        }
+        if (Array.isArray(data.redeemedStripeSessions)) {
+          redeemedStripeSessions.length = 0;
+          data.redeemedStripeSessions.forEach((sid) => {
+            if (typeof sid === 'string' && !redeemedStripeSessions.includes(sid)) {
+              redeemedStripeSessions.push(sid);
+            }
+          });
+        }
+        if (typeof data.damageMultiplier === 'number') damageMultiplier = Math.max(0.15, Math.min(1, data.damageMultiplier));
         if (typeof data.nightMonsterDamage === 'number') nightMonsterDamage = Math.max(1, Math.min(4, data.nightMonsterDamage));
         if (typeof data.weaponDamage === 'number') weaponDamage = Math.max(1, data.weaponDamage);
         if (typeof data.weaponMasteryRank === 'number') weaponMasteryRank = Math.max(0, Math.min(40, Math.round(data.weaponMasteryRank)));
@@ -371,6 +391,7 @@ const {
     let refreshGunsmithHook = null;
     let refreshHomesteadHook = null;
     let mmoSystem = null;
+    let shopAndCameraSystem = null;
     let refreshSheriffHook = null;
     let equipWeaponHook = null;
     let playStoryFanfareHook = null;
@@ -423,7 +444,8 @@ const {
       sensPct: 100,
       invertY: false,
       vrSmoothTurn: false,
-      perfMode: 'auto' // 'auto' | 'fast' | 'ultra'
+      perfMode: 'auto', // 'auto' | 'fast' | 'ultra'
+      viewMode: 'first' // 'first' | 'third'
     };
     try {
       const savedRaw = localStorage.getItem(CONTROL_STORAGE_KEY);
@@ -436,6 +458,9 @@ const {
         if (typeof parsed.vrSmoothTurn === 'boolean') controlSettings.vrSmoothTurn = parsed.vrSmoothTurn;
         if (parsed.perfMode === 'auto' || parsed.perfMode === 'fast' || parsed.perfMode === 'ultra') {
           controlSettings.perfMode = parsed.perfMode;
+        }
+        if (parsed.viewMode === 'first' || parsed.viewMode === 'third') {
+          controlSettings.viewMode = parsed.viewMode;
         }
       }
     } catch (_) {
@@ -1062,20 +1087,26 @@ const {
         leftSleeveMat.color.setHex(0x8f491d);
         leftCuffMat.color.setHex(0xd49b4b);
       } else if (tier === 2) {
-        leftSleeveMat.color.setHex(0x636d7a);
-        leftCuffMat.color.setHex(0xdce2ec);
+        leftSleeveMat.color.setHex(0x6d5239);
+        leftCuffMat.color.setHex(0xe2b34c);
       } else if (tier === 3) {
-        leftSleeveMat.color.setHex(0x5e1124);
+        leftSleeveMat.color.setHex(0x556070);
+        leftCuffMat.color.setHex(0xdce6f5);
+      } else if (tier === 4) {
+        leftSleeveMat.color.setHex(0x5c1424);
         leftCuffMat.color.setHex(0xe8bd54);
-      } else if (tier >= 4) {
-        leftSleeveMat.color.setHex(0x1f2838);
-        leftCuffMat.color.setHex(0xffd65e);
+      } else if (tier === 5) {
+        leftSleeveMat.color.setHex(0x1f3654);
+        leftCuffMat.color.setHex(0xffd25a);
+      } else if (tier >= 6) {
+        leftSleeveMat.color.setHex(0x261d12);
+        leftCuffMat.color.setHex(0xffdf4f);
       } else {
         leftSleeveMat.color.setHex(0xc8b28e);
         leftCuffMat.color.setHex(0x8c6d46);
       }
     }
-    updateLeftSleeveAppearance(currentOutfitTier);
+    updateLeftSleeveAppearance(visualOutfitTier);
 
     const wristCanvas = document.createElement('canvas');
     wristCanvas.width = 640;
@@ -1606,6 +1637,10 @@ const {
       if (refreshSheriffHook) refreshSheriffHook();
       if (refreshWorldSignsHook) refreshWorldSignsHook();
       if (mmoSystem) mmoSystem.refreshLanguage();
+      if (shopAndCameraSystem) {
+        shopAndCameraSystem.syncViewButtonsUI();
+        if (shopAndCameraSystem.isStoreModalOpen()) shopAndCameraSystem.renderStoreModal();
+      }
     }
 
     function setLanguage(lang) {
@@ -2078,9 +2113,9 @@ const {
 
     // --- 5b. Skredder-butikk med disk, skulpturert skredder-NPC og interaktivt verksted ---
     const TAILOR_OUTFITS = [
-      { level: 1, cost: 2, damageMultiplier: 0.75, nightMonsterDamage: 1 },
-      { level: 2, cost: 4, damageMultiplier: 0.50, nightMonsterDamage: 1 },
-      { level: 3, cost: 6, damageMultiplier: 0.30, nightMonsterDamage: 2 }
+      { level: 1, tier: 1, cost: 2, goldCost: 55, damageMultiplier: 0.75, nightMonsterDamage: 1 },
+      { level: 2, tier: 3, cost: 4, goldCost: 220, damageMultiplier: 0.45, nightMonsterDamage: 2 },
+      { level: 3, tier: 4, cost: 6, goldCost: 380, damageMultiplier: 0.30, nightMonsterDamage: 2 }
     ];
 
     let tailorCounterMesh = null;
@@ -2172,7 +2207,7 @@ const {
         workshopBoardCtx.font = 'bold 24px sans-serif';
         workshopBoardCtx.fillStyle = '#f2c16b';
         workshopBoardCtx.fillText(
-          dict.tailorInfo(playerState.pelt, playerState.outfit, playerState.maxHealth),
+          dict.tailorInfo(playerState.pelt, playerState.outfit, playerState.maxHealth, playerState.gold),
           512,
           112
         );
@@ -2180,9 +2215,10 @@ const {
 
       workshopBoardTexture.needsUpdate = true;
 
-      const endgameMode = currentOutfitTier >= 3;
-      const hpRanks = Math.round((playerState.maxHealth - 100) / 15);
+      const endgameMode = currentOutfitTier >= 4;
+      const hpRanks = armorPaddingRanks;
       const hpCost = 5 + hpRanks * 3;
+      const hpGoldCost = 95 + hpRanks * 35;
 
       tailorButtonEntries.forEach((entry, idx) => {
         const { outfit, canvas, ctx, texture } = entry;
@@ -2192,24 +2228,25 @@ const {
         let canAfford = false;
 
         if (!endgameMode) {
-          isEquipped = currentOutfitTier === outfit.level;
-          isLowerTier = currentOutfitTier > outfit.level;
-          canAfford = playerState.pelt >= outfit.cost && !isEquipped && !isLowerTier;
+          const targetT = outfit.tier || outfit.level;
+          isEquipped = currentOutfitTier === targetT;
+          isLowerTier = currentOutfitTier > targetT;
+          canAfford = (playerState.gold >= outfit.goldCost || playerState.pelt >= outfit.cost) && !isEquipped && !isLowerTier;
           const baseLabel = dict.tailorButtons[idx] || '';
           displayLabel = isEquipped ? `${baseLabel} ${dict.equippedTag}` : baseLabel;
         } else if (idx === 0) {
-          isEquipped = currentOutfitTier >= 4;
-          canAfford = !isEquipped && playerState.pelt >= 12;
-          displayLabel = dict.tailorMythicBtn ? dict.tailorMythicBtn(isEquipped) : 'Mythic Frontier Duster (12 Pelts)';
+          isEquipped = currentOutfitTier >= 6;
+          canAfford = !isEquipped && (playerState.gold >= 1250 || playerState.pelt >= 16);
+          displayLabel = dict.tailorMythicBtn ? dict.tailorMythicBtn(isEquipped) : 'Golden Legend Armor (1250 Gold)';
         } else if (idx === 1) {
-          isEquipped = playerState.maxHealth >= 300;
-          canAfford = !isEquipped && playerState.pelt >= hpCost;
+          isEquipped = playerState.maxHealth >= 500;
+          canAfford = !isEquipped && (playerState.gold >= hpGoldCost || playerState.pelt >= hpCost);
           displayLabel = dict.tailorReinforceBtn
             ? dict.tailorReinforceBtn(hpCost, playerState.maxHealth)
-            : `Reinforce Armor (${hpCost} Pelts) -> +15 Max HP`;
+            : `Reinforce Armor (${hpGoldCost}G / ${hpCost}P) -> +20 Max HP`;
         } else {
-          canAfford = playerState.pelt >= 2;
-          displayLabel = dict.tailorRationsBtn || 'Smoked Venison Pack (2 Pelts) -> +4 Food & Heal';
+          canAfford = playerState.gold >= 25 || playerState.pelt >= 2;
+          displayLabel = dict.tailorRationsBtn || 'Smoked Venison Pack (25G / 2 Pelts) -> +4 Food & Heal';
         }
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
