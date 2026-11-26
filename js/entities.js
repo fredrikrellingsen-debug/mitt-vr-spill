@@ -56,8 +56,11 @@ export function initWorldEntities(ctx) {
     createWolfModel,
     createCougarModel,
     createAlphaDirewolfModel,
+    createWarhoundCompanionModel,
+    createHellhoundModel,
     createBearModel,
     createBisonModel,
+    createElderKodiakBossModel,
     createHorseModel,
     createBanditModel,
     createFortDesperadoModel,
@@ -65,6 +68,8 @@ export function initWorldEntities(ctx) {
     createBanditCaptainModel,
     createGeneralCortezModel,
     createBrimstoneMarshalModel,
+    createElFuegoBossModel,
+    createBlackfeatherBossModel,
     createForemanSladeModel,
     createNightEnemyModel,
     createBrimstoneRevenantModel,
@@ -72,6 +77,7 @@ export function initWorldEntities(ctx) {
     createCatacombGuardianModel,
     createBossVampireModel,
     createAncientWendigoBossModel,
+    createSandwraithBossModel,
     createSilverRelicMesh,
     animateQuadrupedLegs
   } = C;
@@ -80,7 +86,8 @@ export function initWorldEntities(ctx) {
     return 1 + (storyState.prestigeRank || 0) * 0.22;
   }
   function scaleGoldReward(baseGold) {
-    return Math.max(1, Math.round(baseGold * (1 + (storyState.prestigeRank || 0) * 0.35)));
+    const bonusMult = S.goldBonusMult || 1;
+    return Math.max(1, Math.round(baseGold * (1 + (storyState.prestigeRank || 0) * 0.35) * bonusMult));
   }
 
   const {
@@ -454,7 +461,9 @@ export function initWorldEntities(ctx) {
 
     const SILVERPINE_BOUNDS = { minX: -195, maxX: -90, minZ: -192, maxZ: -90 };
     const PLAINS_BOUNDS = { minX: -195, maxX: -82, minZ: 82, maxZ: 192 };
-    const WIDE_NORTH_BOUNDS = { minX: -195, maxX: 185, minZ: -192, maxZ: -26 };
+    const WIDE_NORTH_BOUNDS = { minX: -195, maxX: 185, minZ: -195, maxZ: -26 };
+    const MILL_BOUNDS = { minX: -28, maxX: 32, minZ: -198, maxZ: -150 };
+    const CALDERA_BOUNDS = { minX: 148, maxX: 198, minZ: 36, maxZ: 88 };
 
     const deerHomes = [
       { x: -12, z: -34, whiteStag: false },
@@ -520,7 +529,13 @@ export function initWorldEntities(ctx) {
       { x: 66, z: -98, isCougar: true, bounds: WIDE_NORTH_BOUNDS },
       { x: -148, z: -124, isAlphaWolf: true, bounds: SILVERPINE_BOUNDS },
       { x: -132, z: -160, isAlphaWolf: true, bounds: SILVERPINE_BOUNDS },
-      { x: -28, z: -128, isAlphaWolf: true, bounds: WIDE_NORTH_BOUNDS }
+      { x: -28, z: -128, isAlphaWolf: true, bounds: WIDE_NORTH_BOUNDS },
+      // Frostfang Timber Mill vaktulver + Diablo Caldera Hellhounds
+      { x: -9, z: -167, isAlphaWolf: true, bounds: MILL_BOUNDS },
+      { x: 12, z: -183, isAlphaWolf: true, bounds: MILL_BOUNDS },
+      { x: 165, z: 55, isHellhound: true, bounds: CALDERA_BOUNDS },
+      { x: 184, z: 65, isHellhound: true, bounds: CALDERA_BOUNDS },
+      { x: 174, z: 74, isHellhound: true, bounds: CALDERA_BOUNDS }
     ];
 
     function chooseWolfTarget(wolf) {
@@ -536,18 +551,22 @@ export function initWorldEntities(ctx) {
     function createWolfAt(x, z, opts = {}) {
       const isCougar = !!opts.isCougar;
       const isAlphaWolf = !!opts.isAlphaWolf;
-      const group = (isCougar && createCougarModel)
-        ? createCougarModel()
-        : ((isAlphaWolf && createAlphaDirewolfModel) ? createAlphaDirewolfModel() : createWolfModel());
+      const isHellhound = !!opts.isHellhound;
+      const group = (isHellhound && createHellhoundModel)
+        ? createHellhoundModel()
+        : ((isCougar && createCougarModel)
+          ? createCougarModel()
+          : ((isAlphaWolf && createAlphaDirewolfModel) ? createAlphaDirewolfModel() : createWolfModel()));
       group.position.set(x, getTerrainHeight(x, z), z);
       group.rotation.y = Math.random() * Math.PI * 2;
       scene.add(group);
 
-      const maxHp = isAlphaWolf ? 5 : (isCougar ? 4 : 2);
+      const maxHp = isHellhound ? 7 : (isAlphaWolf ? 5 : (isCougar ? 4 : 2));
       const wolf = {
         kind: 'wolf',
         isCougar,
         isAlphaWolf,
+        isHellhound,
         bounds: opts.bounds || FOREST_BOUNDS,
         group,
         alive: true,
@@ -577,7 +596,9 @@ export function initWorldEntities(ctx) {
       { x: -122, z: 118, isBison: true, bounds: PLAINS_BOUNDS },
       { x: -152, z: 122, isBison: true, bounds: PLAINS_BOUNDS },
       { x: -128, z: 152, isBison: true, bounds: PLAINS_BOUNDS },
-      { x: -158, z: 148, isBison: true, bounds: PLAINS_BOUNDS }
+      { x: -158, z: 148, isBison: true, bounds: PLAINS_BOUNDS },
+      // Boss #6 ved Frostfang Timber Mill i Nord: Old Goliath (Elder Kodiak Boss!)
+      { x: 2.0, z: -170.5, isOldGoliath: true, bounds: MILL_BOUNDS }
     ];
 
     function chooseBearTarget(bear) {
@@ -592,15 +613,19 @@ export function initWorldEntities(ctx) {
 
     function createBearAt(x, z, opts = {}) {
       const isBison = !!opts.isBison;
-      const group = (isBison && createBisonModel) ? createBisonModel() : createBearModel();
+      const isOldGoliath = !!opts.isOldGoliath;
+      const group = (isOldGoliath && createElderKodiakBossModel)
+        ? createElderKodiakBossModel()
+        : ((isBison && createBisonModel) ? createBisonModel() : createBearModel());
       group.position.set(x, getTerrainHeight(x, z), z);
       group.rotation.y = Math.random() * Math.PI * 2;
       scene.add(group);
 
-      const maxHp = isBison ? 9 : 6;
+      const maxHp = isOldGoliath ? 52 : (isBison ? 9 : 6);
       const bear = {
         kind: 'bear',
         isBison,
+        isOldGoliath,
         bounds: opts.bounds || { minX: -148, maxX: 148, minZ: -148, maxZ: -26 },
         group,
         alive: true,
@@ -652,12 +677,25 @@ export function initWorldEntities(ctx) {
       { pos: new THREE.Vector3(135.5, 0, 139.5), isBrimstoneRaider: true, faceX: 125, faceZ: 136 },
       { pos: new THREE.Vector3(146.0, 0, 132.5), isBrimstoneRaider: true, faceX: 135, faceZ: 136 },
       { pos: new THREE.Vector3(151.5, 0, 139.0), isBrimstoneRaider: true, faceX: 138, faceZ: 136 },
-      { pos: new THREE.Vector3(142.5, 0, 136.0), isBrimstoneMarshal: true, faceX: 125, faceZ: 136 }
+      { pos: new THREE.Vector3(142.5, 0, 136.0), isBrimstoneMarshal: true, faceX: 125, faceZ: 136 },
+      // Diablo Caldera (Øst-SØ): 2 Obsidian-plyndrere + Boss #7 El Fuego!
+      { pos: new THREE.Vector3(167.0, 0, 66.5), isCalderaRaider: true, isBrimstoneRaider: true, faceX: 150, faceZ: 55 },
+      { pos: new THREE.Vector3(182.5, 0, 55.0), isCalderaRaider: true, isBrimstoneRaider: true, faceX: 165, faceZ: 55 },
+      { pos: new THREE.Vector3(178.5, 0, 62.0), isElFuego: true, faceX: 155, faceZ: 62 },
+      // Raven's Roost Observatory (Vest-NV): 3 Spøkelsesskyttere + Boss #8 Blackfeather!
+      { pos: new THREE.Vector3(-166.5, 0, -61.5), isObservatoryOutlaw: true, isFortDesperado: true, faceX: -145, faceZ: -55 },
+      { pos: new THREE.Vector3(-183.5, 0, -63.5), isObservatoryOutlaw: true, isFortDesperado: true, faceX: -165, faceZ: -60 },
+      { pos: new THREE.Vector3(-174.5, 0, -76.5), isObservatoryOutlaw: true, isFortDesperado: true, faceX: -165, faceZ: -66 },
+      { pos: new THREE.Vector3(-176.0, 0, -69.5), isBlackfeather: true, faceX: -155, faceZ: -62 }
     ];
 
     function createBanditFromDef(def, index) {
       let group;
-      if (def.isGeneralCortez && createGeneralCortezModel) {
+      if (def.isElFuego && createElFuegoBossModel) {
+        group = createElFuegoBossModel();
+      } else if (def.isBlackfeather && createBlackfeatherBossModel) {
+        group = createBlackfeatherBossModel();
+      } else if (def.isGeneralCortez && createGeneralCortezModel) {
         group = createGeneralCortezModel();
       } else if (def.isBrimstoneMarshal && createBrimstoneMarshalModel) {
         group = createBrimstoneMarshalModel();
@@ -680,15 +718,19 @@ export function initWorldEntities(ctx) {
       faceToward(group, def.faceX, def.faceZ);
       scene.add(group);
 
-      const baseHp = def.isBrimstoneMarshal
-        ? 34
-        : (def.isGeneralCortez
-          ? 26
-          : (def.isForemanSlade
-            ? 12
-            : (def.isCaptain
-              ? 8
-              : (def.isBrimstoneRaider ? 6 : (def.isFortDesperado ? 5 : (def.isTrainSniper ? 4 : 3))))));
+      const baseHp = def.isElFuego
+        ? 56
+        : (def.isBlackfeather
+          ? 54
+          : (def.isBrimstoneMarshal
+            ? 34
+            : (def.isGeneralCortez
+              ? 26
+              : (def.isForemanSlade
+                ? 12
+                : (def.isCaptain
+                  ? 8
+                  : (def.isBrimstoneRaider ? 6 : (def.isFortDesperado ? 5 : (def.isTrainSniper ? 4 : 3))))))));
       const maxHp = Math.round(baseHp * getPrestigeHpMult());
       const bandit = {
         kind: 'bandit',
@@ -699,6 +741,10 @@ export function initWorldEntities(ctx) {
         isGeneralCortez: !!def.isGeneralCortez,
         isBrimstoneRaider: !!def.isBrimstoneRaider,
         isBrimstoneMarshal: !!def.isBrimstoneMarshal,
+        isElFuego: !!def.isElFuego,
+        isBlackfeather: !!def.isBlackfeather,
+        isCalderaRaider: !!def.isCalderaRaider,
+        isObservatoryOutlaw: !!def.isObservatoryOutlaw,
         baseHp,
         customGroundY: def.customGroundY,
         group,
@@ -741,7 +787,11 @@ export function initWorldEntities(ctx) {
       new THREE.Vector3(-128, 0, 142),
       new THREE.Vector3(-152, 0, 130),
       new THREE.Vector3(-142, 0, 152),
-      new THREE.Vector3(-145, 0, -148)
+      new THREE.Vector3(-145, 0, -148),
+      // Index 18..20: Dead Man's Oasis voktere + Boss #5 Sandwraith King (Sør: x=-6, z=168)!
+      new THREE.Vector3(-16, 0, 163),
+      new THREE.Vector3(4, 0, 163),
+      new THREE.Vector3(-6, 0, 173.5)
     ];
 
     function chooseNightWanderAwayTarget(enemy) {
@@ -760,13 +810,17 @@ export function initWorldEntities(ctx) {
     function createNightEnemyAt(index) {
       const isCatacomb = index >= 8 && index <= 10;
       const isBrimstoneRevenant = index >= 11 && index <= 13;
-      const isWendigoStalker = index >= 14;
-      const isAlwaysActiveSurface = isBrimstoneRevenant || isWendigoStalker;
+      const isWendigoStalker = index >= 14 && index <= 17;
+      const isOasisStalker = index === 18 || index === 19;
+      const isSandwraithBoss = index === 20;
+      const isAlwaysActiveSurface = isBrimstoneRevenant || isWendigoStalker || isOasisStalker || isSandwraithBoss;
 
       let group;
-      if (isCatacomb && createCatacombGuardianModel) {
+      if (isSandwraithBoss && createSandwraithBossModel) {
+        group = createSandwraithBossModel();
+      } else if (isCatacomb && createCatacombGuardianModel) {
         group = createCatacombGuardianModel();
-      } else if (isBrimstoneRevenant && createBrimstoneRevenantModel) {
+      } else if ((isBrimstoneRevenant || isOasisStalker) && createBrimstoneRevenantModel) {
         group = createBrimstoneRevenantModel();
       } else if (isWendigoStalker && createWendigoStalkerModel) {
         group = createWendigoStalkerModel();
@@ -779,13 +833,15 @@ export function initWorldEntities(ctx) {
       group.visible = isCatacomb || isAlwaysActiveSurface;
       scene.add(group);
 
-      const baseHp = isWendigoStalker ? 9 : (isBrimstoneRevenant ? 7 : (isCatacomb ? 5 : 3));
+      const baseHp = isSandwraithBoss ? 48 : (isWendigoStalker ? 9 : ((isBrimstoneRevenant || isOasisStalker) ? 7 : (isCatacomb ? 5 : 3)));
       const maxHp = Math.round(baseHp * getPrestigeHpMult());
       const enemy = {
         kind: 'night',
         isCatacombGuardian: isCatacomb,
         isBrimstoneRevenant,
         isWendigoStalker,
+        isOasisStalker,
+        isSandwraithBoss,
         isAlwaysActiveSurface,
         baseHp,
         group,
@@ -950,6 +1006,14 @@ export function initWorldEntities(ctx) {
       awakenAncientWendigo(true);
     };
 
+    function getBanditBossTitle(b) {
+      const d = L();
+      if (b.isElFuego) return d.elFuegoBarTitle || 'EL FUEGO';
+      if (b.isBlackfeather) return d.blackfeatherBarTitle || 'BLACKFEATHER';
+      if (b.isGeneralCortez) return d.cortezBarTitle || 'GENERAL CORTEZ';
+      return d.marshalBarTitle || 'BRIMSTONE MARSHAL';
+    }
+
     function syncBossHealthBarUI() {
       storyState.bossHp = bossEnemy.hp;
       storyState.bossMaxHp = bossEnemy.maxHp;
@@ -961,14 +1025,22 @@ export function initWorldEntities(ctx) {
         );
       }
       syncWendigoBossHealthBarUI();
-      // Oppdater 3D-helsemålere på General Cortez og Brimstone Marshal ved språkbytte
       for (let i = 0; i < banditList.length; i++) {
         const b = banditList[i];
         if (b.group && b.group.userData.updateBossHealthBar) {
-          const lbl = b.isGeneralCortez
-            ? (L().cortezBarTitle || 'GENERAL CORTEZ')
-            : (L().marshalBarTitle || 'BRIMSTONE MARSHAL');
-          b.group.userData.updateBossHealthBar(b.hp, b.maxHp, lbl);
+          b.group.userData.updateBossHealthBar(b.hp, b.maxHp, getBanditBossTitle(b));
+        }
+      }
+      for (let i = 0; i < bearList.length; i++) {
+        const br = bearList[i];
+        if (br.group && br.group.userData.updateBossHealthBar) {
+          br.group.userData.updateBossHealthBar(br.hp, br.maxHp, L().goliathBarTitle || 'OLD GOLIATH');
+        }
+      }
+      for (let i = 0; i < nightEnemies.length; i++) {
+        const ne = nightEnemies[i];
+        if (ne.group && ne.group.userData.updateBossHealthBar) {
+          ne.group.userData.updateBossHealthBar(ne.hp, ne.maxHp, L().sandwraithBarTitle || 'SANDWRAITH KING');
         }
       }
     }
@@ -1078,6 +1150,7 @@ export function initWorldEntities(ctx) {
       wolf.group.position.set(wx, getTerrainHeight(wx, wz), wz);
       wolf.group.rotation.set(0, Math.random() * Math.PI * 2, 0);
       if (wolf.isAlphaWolf) wolf.group.scale.setScalar(1.28);
+      else if (wolf.isHellhound) wolf.group.scale.setScalar(1.22);
       else if (wolf.isCougar) wolf.group.scale.set(1.06, 1.04, 1.12);
       else wolf.group.scale.setScalar(1);
       wolf.group.visible = true;
@@ -1089,7 +1162,8 @@ export function initWorldEntities(ctx) {
     function respawnBear(bear) {
       const b = bear.bounds || { minX: FOREST_BOUNDS.minX, maxX: FOREST_BOUNDS.maxX, minZ: -142, maxZ: -62 };
       bear.alive = true;
-      bear.hp = Math.round((bear.maxHp || 6) * getPrestigeHpMult());
+      bear.maxHp = Math.round((bear.isOldGoliath ? 52 : (bear.isBison ? 9 : 6)) * getPrestigeHpMult());
+      bear.hp = bear.maxHp;
       bear.state = 'patrol';
       bear.roared = false;
       bear.deathTimer = 0;
@@ -1103,8 +1177,12 @@ export function initWorldEntities(ctx) {
       const bz = THREE.MathUtils.clamp(bear.home.z + (Math.random() - 0.5) * 14, b.minZ, b.maxZ);
       bear.group.position.set(bx, getTerrainHeight(bx, bz), bz);
       bear.group.rotation.set(0, Math.random() * Math.PI * 2, 0);
-      if (bear.isBison) bear.group.scale.set(1.14, 1.12, 1.18);
+      if (bear.isOldGoliath) bear.group.scale.setScalar(1.48);
+      else if (bear.isBison) bear.group.scale.set(1.14, 1.12, 1.18);
       else bear.group.scale.setScalar(1);
+      if (bear.group.userData.updateBossHealthBar) {
+        bear.group.userData.updateBossHealthBar(bear.hp, bear.maxHp, L().goliathBarTitle || 'OLD GOLIATH');
+      }
       bear.group.visible = true;
       if (!bear.animationMixer) animateQuadrupedLegs(bear.group, 0, 0);
       setEntityAnimation(bear, 'Idle');
@@ -1122,7 +1200,9 @@ export function initWorldEntities(ctx) {
         bandit.maxHp = Math.round((bandit.baseHp || 3) * getPrestigeHpMult());
         bandit.alive = true;
         bandit.hp = bandit.maxHp;
-        const activeAtNightToo = bandit.isForemanSlade || bandit.isBrimstoneMarshal || bandit.isGeneralCortez;
+        const activeAtNightToo =
+          bandit.isForemanSlade || bandit.isBrimstoneMarshal ||
+          bandit.isGeneralCortez || bandit.isElFuego || bandit.isBlackfeather;
         bandit.active = !S.isNight || activeAtNightToo;
         bandit.deathTimer = 0;
         bandit.attackAnimTimer = 0;
@@ -1133,14 +1213,17 @@ export function initWorldEntities(ctx) {
           ? bandit.customGroundY
           : getTerrainHeight(bandit.group.position.x, bandit.group.position.z);
         bandit.group.rotation.set(0, bandit.baseYaw, 0);
-        const sc = bandit.isBrimstoneMarshal ? 1.34 : (bandit.isGeneralCortez ? 1.26 : (bandit.isForemanSlade ? 1.22 : (bandit.isCaptain ? 1.14 : 1)));
+        const sc = bandit.isElFuego
+          ? 1.38
+          : (bandit.isBrimstoneMarshal
+            ? 1.34
+            : (bandit.isBlackfeather
+              ? 1.32
+              : (bandit.isGeneralCortez ? 1.26 : (bandit.isForemanSlade ? 1.22 : (bandit.isCaptain ? 1.14 : 1)))));
         bandit.group.scale.setScalar(sc);
         bandit.group.visible = !S.isNight || activeAtNightToo;
         if (bandit.group.userData.updateBossHealthBar) {
-          const lbl = bandit.isGeneralCortez
-            ? (L().cortezBarTitle || 'GENERAL CORTEZ')
-            : (L().marshalBarTitle || 'BRIMSTONE MARSHAL');
-          bandit.group.userData.updateBossHealthBar(bandit.hp, bandit.maxHp, lbl);
+          bandit.group.userData.updateBossHealthBar(bandit.hp, bandit.maxHp, getBanditBossTitle(bandit));
         }
         setEntityAnimation(bandit, 'Idle');
       });
@@ -1232,14 +1315,14 @@ export function initWorldEntities(ctx) {
       setEntityAnimation(deer, deer.hasDeathClip ? 'Death' : 'Idle');
 
       if (deer.isWhiteStag) {
-        playerState.food += 3;
-        playerState.pelt += 4;
+        playerState.food += 3 + (S.extraFoodBonus || 0);
+        playerState.pelt += 4 + (S.extraPeltBonus || 0);
         playerState.gold += scaleGoldReward(35);
         storyState.whiteStagsHunted = (storyState.whiteStagsHunted || 0) + 1;
         playGoldPickupSound();
       } else {
-        playerState.food += 1;
-        playerState.pelt += 1;
+        playerState.food += 1 + (S.extraFoodBonus || 0);
+        playerState.pelt += 1 + (S.extraPeltBonus || 0);
         playerState.gold += scaleGoldReward(5);
         playCollectSound();
       }
@@ -1269,26 +1352,33 @@ export function initWorldEntities(ctx) {
 
       wolf.alive = false;
       wolf.deathTimer = 1.25;
-      wolf.respawnTimer = wolf.isAlphaWolf ? 30 : 20;
+      wolf.respawnTimer = (wolf.isAlphaWolf || wolf.isHellhound) ? 30 : 20;
       wolf.group.rotation.z = 0;
       setEntityAnimation(wolf, wolf.hasDeathClip ? 'Death' : 'Idle');
 
-      if (wolf.isAlphaWolf) {
-        playerState.pelt += 2;
+      if (wolf.isHellhound) {
+        playerState.pelt += 2 + (S.extraPeltBonus || 0);
+        playerState.gold += scaleGoldReward(22);
+        storyState.hellhoundsKilled = (storyState.hellhoundsKilled || 0) + 1;
+        storyState.eliteKills = (storyState.eliteKills || 0) + 1;
+      } else if (wolf.isAlphaWolf) {
+        playerState.pelt += 2 + (S.extraPeltBonus || 0);
         playerState.gold += scaleGoldReward(14);
         storyState.alphaWolvesKilled = (storyState.alphaWolvesKilled || 0) + 1;
       } else if (wolf.isCougar) {
-        playerState.food += 1;
-        playerState.pelt += 2;
+        playerState.food += 1 + (S.extraFoodBonus || 0);
+        playerState.pelt += 2 + (S.extraPeltBonus || 0);
         playerState.gold += scaleGoldReward(12);
         storyState.cougarsHunted = (storyState.cougarsHunted || 0) + 1;
       } else {
-        playerState.pelt += 1;
+        playerState.pelt += 1 + (S.extraPeltBonus || 0);
         playerState.gold += scaleGoldReward(6);
       }
       storyState.level2Wolves += 1;
       storyState.totalKills = (storyState.totalKills || 0) + 1;
-      if (wolf.isAlphaWolf) {
+      if (wolf.isHellhound) {
+        recordQuestKill(['wild_beast', 'wolf', 'hellhound', 'caldera_foe', 'apex_predator', 'elite_foe', 'deer']);
+      } else if (wolf.isAlphaWolf) {
         recordQuestKill(['wild_beast', 'wolf', 'alpha_wolf', 'apex_predator', 'deer']);
       } else if (wolf.isCougar) {
         recordQuestKill(['wild_beast', 'cougar', 'apex_predator', 'deer']);
@@ -1303,8 +1393,11 @@ export function initWorldEntities(ctx) {
     function damageBear(bear, _dir, bulletInfo, rawOverride = 0) {
       if (!bear.alive) return;
       const dmg = rawOverride > 0 ? rawOverride : computeShotBaseDamage(bulletInfo);
-      bear.hp -= dmg;
+      bear.hp = Math.max(0, bear.hp - dmg);
       playFleshHitSound();
+      if (bear.group.userData.updateBossHealthBar) {
+        bear.group.userData.updateBossHealthBar(bear.hp, bear.maxHp, L().goliathBarTitle || 'OLD GOLIATH');
+      }
 
       if (bear.hp > 0) {
         if (!bear.roared) {
@@ -1318,28 +1411,40 @@ export function initWorldEntities(ctx) {
 
       bear.alive = false;
       bear.deathTimer = 1.3;
-      bear.respawnTimer = 32;
+      bear.respawnTimer = bear.isOldGoliath ? 72 : 32;
       bear.group.rotation.z = 0;
       setEntityAnimation(bear, bear.hasDeathClip ? 'Death' : 'Idle');
 
-      if (bear.isBison) {
-        playerState.food += 4;
-        playerState.pelt += 3;
+      if (bear.isOldGoliath) {
+        playerState.food += 5 + (S.extraFoodBonus || 0);
+        playerState.pelt += 5 + (S.extraPeltBonus || 0);
+        playerState.gold += scaleGoldReward(125);
+        storyState.goliathDefeated = true;
+        storyState.grizzlyDefeated = true;
+        storyState.eliteKills = (storyState.eliteKills || 0) + 1;
+        if (storyState.currentLevel >= 51) storyState.prestigeBosses = (storyState.prestigeBosses || 0) + 1;
+        playBossVictoryFanfare();
+      } else if (bear.isBison) {
+        playerState.food += 4 + (S.extraFoodBonus || 0);
+        playerState.pelt += 3 + (S.extraPeltBonus || 0);
         playerState.gold += scaleGoldReward(18);
         storyState.bisonHunted = (storyState.bisonHunted || 0) + 1;
+        playGoldPickupSound();
       } else {
-        playerState.food += 3;
-        playerState.pelt += 3;
+        playerState.food += 3 + (S.extraFoodBonus || 0);
+        playerState.pelt += 3 + (S.extraPeltBonus || 0);
         playerState.gold += scaleGoldReward(15);
         storyState.grizzlyDefeated = true;
+        playGoldPickupSound();
       }
       storyState.act1Deer += 1;
       storyState.totalKills = (storyState.totalKills || 0) + 1;
-      playGoldPickupSound();
       recordQuestKill(
-        bear.isBison
-          ? ['wild_beast', 'bison', 'deer']
-          : ['wild_beast', 'grizzly', 'apex_predator', 'deer']
+        bear.isOldGoliath
+          ? ['wild_beast', 'grizzly', 'goliath', 'apex_predator', 'any_boss', 'elite_foe', 'deer']
+          : (bear.isBison
+            ? ['wild_beast', 'bison', 'deer']
+            : ['wild_beast', 'grizzly', 'apex_predator', 'deer'])
       );
       checkStoryProgression();
       updateStatusUI();
@@ -1351,10 +1456,7 @@ export function initWorldEntities(ctx) {
       bandit.hp = Math.max(0, bandit.hp - dmg);
       playFleshHitSound();
       if (bandit.group.userData.updateBossHealthBar) {
-        const lbl = bandit.isGeneralCortez
-          ? (L().cortezBarTitle || 'GENERAL CORTEZ')
-          : (L().marshalBarTitle || 'BRIMSTONE MARSHAL');
-        bandit.group.userData.updateBossHealthBar(bandit.hp, bandit.maxHp, lbl);
+        bandit.group.userData.updateBossHealthBar(bandit.hp, bandit.maxHp, getBanditBossTitle(bandit));
       }
 
       if (bandit.hp > 0) return;
@@ -1362,30 +1464,48 @@ export function initWorldEntities(ctx) {
       bandit.alive = false;
       bandit.active = false;
       bandit.deathTimer = 1.2;
-      bandit.respawnTimer = (bandit.isGeneralCortez || bandit.isBrimstoneMarshal || bandit.isCaptain || bandit.isForemanSlade) ? 75 : 24;
+      bandit.respawnTimer = (
+        bandit.isGeneralCortez || bandit.isBrimstoneMarshal ||
+        bandit.isElFuego || bandit.isBlackfeather ||
+        bandit.isCaptain || bandit.isForemanSlade
+      ) ? 75 : 24;
       bandit.group.rotation.z = 0;
       setEntityAnimation(bandit, bandit.hasDeathClip ? 'Death' : 'Idle');
 
       const banditQuestTags = ['bandit_any', 'combat_any', 'bandit'];
-      if (bandit.isGeneralCortez) {
+      if (bandit.isElFuego) {
+        playerState.gold += scaleGoldReward(140);
+        storyState.elFuegoDefeated = true;
+        storyState.eliteKills = (storyState.eliteKills || 0) + 1;
+        if (storyState.currentLevel >= 51) storyState.prestigeBosses = (storyState.prestigeBosses || 0) + 1;
+        banditQuestTags.push('el_fuego', 'caldera_foe', 'elite_foe', 'any_boss');
+        playBossVictoryFanfare();
+      } else if (bandit.isBlackfeather) {
+        playerState.gold += scaleGoldReward(135);
+        storyState.blackfeatherDefeated = true;
+        storyState.eliteKills = (storyState.eliteKills || 0) + 1;
+        if (storyState.currentLevel >= 51) storyState.prestigeBosses = (storyState.prestigeBosses || 0) + 1;
+        banditQuestTags.push('blackfeather', 'observatory_foe', 'elite_foe', 'any_boss');
+        playBossVictoryFanfare();
+      } else if (bandit.isGeneralCortez) {
         playerState.gold += scaleGoldReward(75);
         storyState.cortezDefeated = true;
         storyState.eliteKills = (storyState.eliteKills || 0) + 1;
-        if (storyState.currentLevel >= 21) storyState.prestigeBosses = (storyState.prestigeBosses || 0) + 1;
+        if (storyState.currentLevel >= 51) storyState.prestigeBosses = (storyState.prestigeBosses || 0) + 1;
         banditQuestTags.push('cortez', 'fort_bandit', 'elite_foe', 'any_boss');
         playBossVictoryFanfare();
       } else if (bandit.isBrimstoneMarshal) {
         playerState.gold += scaleGoldReward(90);
         storyState.brimstoneMarshalDefeated = true;
         storyState.eliteKills = (storyState.eliteKills || 0) + 1;
-        if (storyState.currentLevel >= 21) storyState.prestigeBosses = (storyState.prestigeBosses || 0) + 1;
+        if (storyState.currentLevel >= 51) storyState.prestigeBosses = (storyState.prestigeBosses || 0) + 1;
         banditQuestTags.push('marshal', 'brimstone_foe', 'elite_foe', 'any_boss');
         playBossVictoryFanfare();
       } else if (bandit.isForemanSlade) {
         playerState.gold += scaleGoldReward(50);
         storyState.sladeDefeated = true;
         storyState.eliteKills = (storyState.eliteKills || 0) + 1;
-        if (storyState.currentLevel >= 21) storyState.prestigeBosses = (storyState.prestigeBosses || 0) + 1;
+        if (storyState.currentLevel >= 51) storyState.prestigeBosses = (storyState.prestigeBosses || 0) + 1;
         banditQuestTags.push('mine_action', 'elite_foe', 'any_boss');
         playGoldPickupSound();
       } else if (bandit.isFortDesperado) {
@@ -1393,11 +1513,19 @@ export function initWorldEntities(ctx) {
         storyState.fortBanditsKilled = (storyState.fortBanditsKilled || 0) + 1;
         storyState.eliteKills = (storyState.eliteKills || 0) + 1;
         banditQuestTags.push('fort_bandit', 'elite_foe');
+        if (bandit.isObservatoryOutlaw) {
+          storyState.observatoryFoesKilled = (storyState.observatoryFoesKilled || 0) + 1;
+          banditQuestTags.push('observatory_foe');
+        }
       } else if (bandit.isBrimstoneRaider) {
         playerState.gold += scaleGoldReward(22);
         storyState.brimstoneFoesKilled = (storyState.brimstoneFoesKilled || 0) + 1;
         storyState.eliteKills = (storyState.eliteKills || 0) + 1;
         banditQuestTags.push('brimstone_foe', 'elite_foe');
+        if (bandit.isCalderaRaider) {
+          storyState.calderaFoesKilled = (storyState.calderaFoesKilled || 0) + 1;
+          banditQuestTags.push('caldera_foe');
+        }
       } else if (bandit.isTrainSniper) {
         playerState.gold += scaleGoldReward(15);
         storyState.trainSnipersKilled += 1;
@@ -1427,16 +1555,32 @@ export function initWorldEntities(ctx) {
       enemy.igniteTimer = 0;
       enemy.group.visible = false;
       enemy.group.scale.setScalar(1);
-      enemy.respawnTimer = (enemy.isCatacombGuardian || enemy.isAlwaysActiveSurface) ? 36 : 15;
+      enemy.respawnTimer = enemy.isSandwraithBoss ? 75 : ((enemy.isCatacombGuardian || enemy.isAlwaysActiveSurface) ? 36 : 15);
       setEntityAnimation(enemy, 'Idle');
 
       nightDeathImpactPosition.copy(enemy.group.position);
       nightDeathImpactPosition.y += 1.0;
-      spawnImpact(nightDeathImpactPosition, enemy.isWendigoStalker ? 0x4effa8 : (enemy.isCatacombGuardian ? 0x62ccff : 0xff3a1f), 0.38);
-      spawnVampireAshDissolution(enemy.group.position, 1.0);
+      spawnImpact(nightDeathImpactPosition, enemy.isSandwraithBoss ? 0xffd24c : (enemy.isWendigoStalker ? 0x4effa8 : (enemy.isCatacombGuardian ? 0x62ccff : 0xff3a1f)), enemy.isSandwraithBoss ? 1.55 : 0.38);
+      spawnVampireAshDissolution(enemy.group.position, enemy.isSandwraithBoss ? 2.1 : 1.0);
 
       const nightQuestTags = ['night_any', 'combat_any', 'night'];
-      if (enemy.isWendigoStalker) {
+      if (enemy.isSandwraithBoss) {
+        playerState.gold += scaleGoldReward(130);
+        playerState.pelt += 3;
+        storyState.sandwraithDefeated = true;
+        storyState.oasisFoesKilled = (storyState.oasisFoesKilled || 0) + 1;
+        storyState.eclipseKills = (storyState.eclipseKills || 0) + 1;
+        storyState.eliteKills = (storyState.eliteKills || 0) + 1;
+        if (storyState.currentLevel >= 51) storyState.prestigeBosses = (storyState.prestigeBosses || 0) + 1;
+        nightQuestTags.push('sandwraith', 'oasis_foe', 'any_boss', 'elite_foe');
+        playBossVictoryFanfare();
+      } else if (enemy.isOasisStalker) {
+        playerState.gold += scaleGoldReward(24);
+        storyState.oasisFoesKilled = (storyState.oasisFoesKilled || 0) + 1;
+        storyState.eclipseKills = (storyState.eclipseKills || 0) + 1;
+        storyState.eliteKills = (storyState.eliteKills || 0) + 1;
+        nightQuestTags.push('oasis_foe', 'elite_foe');
+      } else if (enemy.isWendigoStalker) {
         playerState.gold += scaleGoldReward(28);
         playerState.pelt += 2;
         storyState.wendigosKilled = (storyState.wendigosKilled || 0) + 1;
@@ -1477,7 +1621,10 @@ export function initWorldEntities(ctx) {
       const isSilver = !!(bulletInfo && bulletInfo.isSilverBolt);
       const vampMult = isSilver ? Math.max(3, S.nightMonsterDamage * 2) : S.nightMonsterDamage;
       const totalDamage = rawOverride > 0 ? rawOverride : computeShotBaseDamage(bulletInfo) * vampMult;
-      enemy.hp -= totalDamage;
+      enemy.hp = Math.max(0, enemy.hp - totalDamage);
+      if (enemy.group.userData.updateBossHealthBar) {
+        enemy.group.userData.updateBossHealthBar(enemy.hp, enemy.maxHp, L().sandwraithBarTitle || 'SANDWRAITH KING');
+      }
       if (isSilver) {
         enemy.igniteTimer = 3.2;
         enemy.igniteTick = 0.25;
@@ -1508,7 +1655,7 @@ export function initWorldEntities(ctx) {
       storyState.bossDefeated = true;
       storyState.totalKills = (storyState.totalKills || 0) + 1;
       storyState.eliteKills = (storyState.eliteKills || 0) + 1;
-      if (storyState.currentLevel >= 21) storyState.prestigeBosses = (storyState.prestigeBosses || 0) + 1;
+      if (storyState.currentLevel >= 51) storyState.prestigeBosses = (storyState.prestigeBosses || 0) + 1;
       S.grantLegendTitle();
       playerState.gold += scaleGoldReward(120);
       playerState.health = playerState.maxHealth || 100;
@@ -1546,7 +1693,7 @@ export function initWorldEntities(ctx) {
         storyState.wendigoBossDefeated = true;
         storyState.totalKills = (storyState.totalKills || 0) + 1;
         storyState.eliteKills = (storyState.eliteKills || 0) + 1;
-        if (storyState.currentLevel >= 21) storyState.prestigeBosses = (storyState.prestigeBosses || 0) + 1;
+        if (storyState.currentLevel >= 51) storyState.prestigeBosses = (storyState.prestigeBosses || 0) + 1;
         playerState.gold += scaleGoldReward(110);
         playerState.pelt += 4;
         recordQuestKill(['night_any', 'wendigo', 'wendigo_boss', 'any_boss', 'elite_foe', 'combat_any', 'night']);
@@ -2189,6 +2336,9 @@ export function initWorldEntities(ctx) {
               enemy.maxHp = Math.round((enemy.baseHp || 3) * getPrestigeHpMult());
               enemy.alive = true;
               enemy.hp = enemy.maxHp;
+              if (enemy.group.userData.updateBossHealthBar) {
+                enemy.group.userData.updateBossHealthBar(enemy.hp, enemy.maxHp, L().sandwraithBarTitle || 'SANDWRAITH KING');
+              }
               enemy.burning = false;
               enemy.burnTimer = 0;
               enemy.igniteTimer = 0;
@@ -2693,14 +2843,18 @@ export function initWorldEntities(ctx) {
         considerCombatTarget(a, b, wolf, 'wolf', 0.6, 0.62);
       }
       for (const bear of bearList) {
-        considerCombatTarget(a, b, bear, 'bear', 0.95, 1.05);
+        considerCombatTarget(a, b, bear, 'bear', bear.isOldGoliath ? 1.25 : 0.95, bear.isOldGoliath ? 1.38 : 1.05);
       }
       for (const bandit of banditList) {
-        const bRad = (bandit.isGeneralCortez || bandit.isBrimstoneMarshal) ? 0.92 : (bandit.isCaptain ? 0.78 : 0.66);
+        const bRad = (bandit.isGeneralCortez || bandit.isBrimstoneMarshal || bandit.isElFuego || bandit.isBlackfeather)
+          ? 0.94
+          : (bandit.isCaptain ? 0.78 : 0.66);
         considerCombatTarget(a, b, bandit, 'bandit', 1.0, bRad);
       }
       for (const enemy of nightEnemies) {
-        considerCombatTarget(a, b, enemy, 'night', 1.0, enemy.isWendigoStalker ? 0.85 : 0.7);
+        const nRad = enemy.isSandwraithBoss ? 1.12 : (enemy.isWendigoStalker ? 0.85 : 0.7);
+        const nCenterY = enemy.isSandwraithBoss ? 1.42 : 1.0;
+        considerCombatTarget(a, b, enemy, 'night', nCenterY, nRad);
       }
       if (bossEnemy.alive && bossEnemy.group.visible) {
         considerCombatTarget(a, b, bossEnemy, 'boss', 1.45, 1.12);
@@ -2738,6 +2892,138 @@ export function initWorldEntities(ctx) {
     banditDefs.forEach((def, index) => createBanditFromDef(def, index));
     for (let i = 0; i < nightSpawnPoints.length; i++) createNightEnemyAt(i);
 
+
+    // --- Lojal Grenselands-Jakthund «Rex» (følger spilleren & angriper fiender automatisk når rekruttert på Ranchen!) ---
+    const warhoundGroup = createWarhoundCompanionModel ? createWarhoundCompanionModel() : createWolfModel();
+    warhoundGroup.position.set(9.2, getTerrainHeight(9.2, 12.8), 12.8);
+    warhoundGroup.visible = false;
+    scene.add(warhoundGroup);
+    const warhoundEntity = {
+      kind: 'wolf',
+      isCompanion: true,
+      group: warhoundGroup,
+      stride: 0,
+      biteCooldown: 0,
+      attackAnimTimer: 0
+    };
+    registerEntityAnimations(warhoundEntity, quadrupedAnimationClips);
+
+    function updateWarhoundCompanion(dt) {
+      const rank = S.warhoundRank || 0;
+      if (rank <= 0) {
+        if (warhoundEntity.group.visible) warhoundEntity.group.visible = false;
+        return;
+      }
+      if (!warhoundEntity.group.visible) {
+        warhoundEntity.group.position.set(
+          playerRig.position.x + 1.8,
+          getTerrainHeight(playerRig.position.x + 1.8, playerRig.position.z - 1.2, playerRig.position.y),
+          playerRig.position.z - 1.2
+        );
+        warhoundEntity.group.visible = true;
+      }
+
+      warhoundEntity.biteCooldown = Math.max(0, warhoundEntity.biteCooldown - dt);
+      warhoundEntity.attackAnimTimer = Math.max(0, warhoundEntity.attackAnimTimer - dt);
+
+      const px = playerRig.position.x;
+      const pz = playerRig.position.z;
+      const distToPlayer = Math.hypot(warhoundEntity.group.position.x - px, warhoundEntity.group.position.z - pz);
+
+      // Teleporter hunden pent ved siden av spilleren ved Diligense-hurtigreise eller stort sprang (> 36m)
+      if (distToPlayer > 36.0) {
+        warhoundEntity.group.position.set(px + 2.0, getTerrainHeight(px + 2.0, pz - 1.4, playerRig.position.y), pz - 1.4);
+      }
+
+      // Søk nærmeste levende fiende innenfor 15m fra spilleren (ikke i Safe House)
+      let bestTarget = null;
+      let bestKind = '';
+      let bestDistSq = 15.5 * 15.5;
+      if (!S.playerHiddenStatus && distToPlayer < 24.0) {
+        for (let i = 0; i < wolfList.length; i++) {
+          const w = wolfList[i];
+          if (!w.alive || !w.group.visible) continue;
+          const dSq = (w.group.position.x - px) ** 2 + (w.group.position.z - pz) ** 2;
+          if (dSq < bestDistSq) { bestDistSq = dSq; bestTarget = w; bestKind = 'wolf'; }
+        }
+        for (let i = 0; i < bearList.length; i++) {
+          const b = bearList[i];
+          if (!b.alive || !b.group.visible) continue;
+          const dSq = (b.group.position.x - px) ** 2 + (b.group.position.z - pz) ** 2;
+          if (dSq < bestDistSq) { bestDistSq = dSq; bestTarget = b; bestKind = 'bear'; }
+        }
+        for (let i = 0; i < banditList.length; i++) {
+          const bd = banditList[i];
+          if (!bd.alive || !bd.group.visible) continue;
+          const dSq = (bd.group.position.x - px) ** 2 + (bd.group.position.z - pz) ** 2;
+          if (dSq < bestDistSq) { bestDistSq = dSq; bestTarget = bd; bestKind = 'bandit'; }
+        }
+        for (let i = 0; i < nightEnemies.length; i++) {
+          const ne = nightEnemies[i];
+          if (!ne.alive || !ne.group.visible || ne.burning) continue;
+          const dSq = (ne.group.position.x - px) ** 2 + (ne.group.position.z - pz) ** 2;
+          if (dSq < bestDistSq) { bestDistSq = dSq; bestTarget = ne; bestKind = 'night'; }
+        }
+        if (bossEnemy.alive && bossEnemy.group.visible) {
+          const dSq = (bossEnemy.group.position.x - px) ** 2 + (bossEnemy.group.position.z - pz) ** 2;
+          if (dSq < bestDistSq) { bestDistSq = dSq; bestTarget = bossEnemy; bestKind = 'boss'; }
+        }
+        if (wendigoBossEnemy.alive && wendigoBossEnemy.group.visible) {
+          const dSq = (wendigoBossEnemy.group.position.x - px) ** 2 + (wendigoBossEnemy.group.position.z - pz) ** 2;
+          if (dSq < bestDistSq) { bestDistSq = dSq; bestTarget = wendigoBossEnemy; bestKind = 'wendigo_boss'; }
+        }
+      }
+
+      let speed = 0;
+      if (bestTarget) {
+        const tx = bestTarget.group.position.x;
+        const tz = bestTarget.group.position.z;
+        const dEnemy = Math.hypot(tx - warhoundEntity.group.position.x, tz - warhoundEntity.group.position.z);
+        if (dEnemy > 1.75) {
+          moveEntityToward(warhoundEntity.group, tx, tz, 8.2, dt, 1.35, 0.48, false);
+          speed = 8.2;
+        } else {
+          faceToward(warhoundEntity.group, tx, tz);
+          if (warhoundEntity.biteCooldown <= 0) {
+            warhoundEntity.biteCooldown = Math.max(0.85, 1.75 - rank * 0.05);
+            warhoundEntity.attackAnimTimer = 0.4;
+            const biteDmg = 1.5 + rank * 0.9;
+            spawnSparkBurst(bestTarget.group.position, 6, 0xffd668, 0.85);
+            if (bestKind === 'wolf') damageWolf(bestTarget, null, null, biteDmg);
+            else if (bestKind === 'bear') damageBear(bestTarget, null, null, biteDmg);
+            else if (bestKind === 'bandit') damageBandit(bestTarget, null, null, biteDmg);
+            else if (bestKind === 'night') damageNightEnemy(bestTarget, null, null, biteDmg);
+            else if (bestKind === 'boss') damageBossEnemy(null, null, biteDmg);
+            else if (bestKind === 'wendigo_boss') damageWendigoBoss(null, null, biteDmg);
+          }
+        }
+      } else {
+        const yaw = playerRig.rotation.y;
+        const flankX = px + Math.cos(yaw) * 2.15 - Math.sin(yaw) * 1.1;
+        const flankZ = pz - Math.sin(yaw) * 2.15 - Math.cos(yaw) * 1.1;
+        const dFlank = Math.hypot(flankX - warhoundEntity.group.position.x, flankZ - warhoundEntity.group.position.z);
+        if (dFlank > 0.85) {
+          const followSpd = dFlank > 5.0 ? 11.5 : 5.8;
+          moveEntityToward(warhoundEntity.group, flankX, flankZ, followSpd, dt, 0.55, 0.45, false);
+          speed = followSpd;
+        }
+      }
+
+      resolveWallCollisions(warhoundEntity.group.position, 0.45, false);
+      warhoundEntity.group.position.y = getTerrainHeight(
+        warhoundEntity.group.position.x,
+        warhoundEntity.group.position.z,
+        playerRig.position.y
+      );
+      if (!warhoundEntity.animationMixer) {
+        warhoundEntity.stride += dt * (speed > 0.3 ? 13 : 0);
+        animateQuadrupedLegs(warhoundEntity.group, speed > 0.3 ? warhoundEntity.stride : 0, speed > 0.3 ? 0.48 : 0);
+      }
+      setEntityAnimation(
+        warhoundEntity,
+        warhoundEntity.attackAnimTimer > 0 ? 'Attack' : (speed > 4.2 ? 'Run' : (speed > 0.2 ? 'Walk' : 'Idle'))
+      );
+    }
 
     function collectSilverRelic(relicEntry) {
       if (!relicEntry || relicEntry.collected) return false;
@@ -2817,6 +3103,9 @@ export function initWorldEntities(ctx) {
         }
       }
 
+      // Oppdater lojal jakthund «Rex»
+      updateWarhoundCompanion(dt);
+
       // Ridbar Western Mustang
       if (S.isRidingHorse) {
         horseEntity.calling = false;
@@ -2880,6 +3169,7 @@ export function initWorldEntities(ctx) {
     bossEnemy,
     wendigoBossEnemy,
     horseEntity,
+    warhoundEntity,
     silverRelics,
     silverRelicHitMeshes,
     collectSilverRelic,
