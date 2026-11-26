@@ -36,8 +36,8 @@ export function getTerrainBaseHeight(x, z) {
     Math.sin((x + z) * 0.095) * 0.24 +
     Math.cos((x - z * 1.2) * 0.075) * 0.20;
 
-  const outerFactor = Math.max(0, (cheb - 175.0) / 55.0);
-  const rimLift = outerFactor * outerFactor * (2.6 + 0.9 * Math.sin(x * 0.05) * Math.cos(z * 0.05));
+  const outerFactor = Math.min(2.15, Math.max(0, (cheb - 175.0) / 85.0));
+  const rimLift = outerFactor * outerFactor * (1.85 + 0.65 * Math.sin(x * 0.038) * Math.cos(z * 0.038));
 
   let h = (dunePrimary + duneSecondary + rimLift + 0.18) * blend;
 
@@ -148,6 +148,32 @@ export function getTerrainBaseHeight(x, z) {
     h = THREE.MathUtils.lerp(2.45, h, fob * fob * (3 - 2 * fob));
   }
 
+  // 4 Nye Ytterbyer med Trygge Fristeder (840m x 840m Utvidelse):
+  // 1) Silver Creek (NV: x = -275, z = -285, h = 2.60)
+  const dSilverCreek = Math.max(Math.abs(x + 275.0), Math.abs(z + 285.0));
+  if (dSilverCreek < 34.0) {
+    const ft1 = Math.max(0, Math.min(1, (dSilverCreek - 20.0) / 14.0));
+    h = THREE.MathUtils.lerp(2.60, h, ft1 * ft1 * (3 - 2 * ft1));
+  }
+  // 2) Copper Mesa (NØ: x = 290, z = -265, h = 1.85)
+  const dCopperMesa = Math.max(Math.abs(x - 290.0), Math.abs(z + 265.0));
+  if (dCopperMesa < 34.0) {
+    const ft2 = Math.max(0, Math.min(1, (dCopperMesa - 20.0) / 14.0));
+    h = THREE.MathUtils.lerp(1.85, h, ft2 * ft2 * (3 - 2 * ft2));
+  }
+  // 3) Sanctuary Springs (SV: x = -280, z = 285, h = 0.45)
+  const dSanctuary = Math.max(Math.abs(x + 280.0), Math.abs(z - 285.0));
+  if (dSanctuary < 34.0) {
+    const ft3 = Math.max(0, Math.min(1, (dSanctuary - 20.0) / 14.0));
+    h = THREE.MathUtils.lerp(0.45, h, ft3 * ft3 * (3 - 2 * ft3));
+  }
+  // 4) Ironwood Crossing (SØ: x = 285, z = 280, h = 1.10)
+  const dIronwood = Math.max(Math.abs(x - 285.0), Math.abs(z - 280.0));
+  if (dIronwood < 34.0) {
+    const ft4 = Math.max(0, Math.min(1, (dIronwood - 20.0) / 14.0));
+    h = THREE.MathUtils.lerp(1.10, h, ft4 * ft4 * (3 - 2 * ft4));
+  }
+
   return h;
 }
 
@@ -205,7 +231,7 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
 
   // --- 3f. Ekte HDRI-miljølys (.hdr + PMREMGenerator) med prosedyrisk Sky-fallback ---
   const sky = new SkyClass();
-  sky.scale.setScalar(720);
+  sky.scale.setScalar(1280);
   scene.add(sky);
 
   const skySunVec = new THREE.Vector3();
@@ -319,8 +345,8 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
   sunMesh.position.copy(skySunVec).multiplyScalar(295);
   scene.add(sunMesh);
 
-  // --- 3g. Utvidet ørkenlandskap (-220 til +220) med ekte fotografisk 4-biome PBR Terrain Splatting & Anti-Tiling ---
-  const desertGroundGeo = new THREE.PlaneGeometry(520, 520, 180, 180);
+  // --- 3g. Kraftig utvidet landskap (-415 til +415 = 830m x 830m) med 4-biome PBR Terrain Splatting ---
+  const desertGroundGeo = new THREE.PlaneGeometry(920, 920, 224, 224);
   desertGroundGeo.rotateX(-Math.PI / 2);
   {
     const pos = desertGroundGeo.attributes.position;
@@ -437,19 +463,23 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
           float swayNS = (wNoise2(vec2(wz * 0.055, 3.1)) - 0.5) * 0.85;
           float swayEW = (wNoise2(vec2(wx * 0.055, 8.7)) - 0.5) * 0.85;
 
-          float spanNS = smoothstep(-154.0, -136.0, wz) * smoothstep(82.0, 68.0, wz);
+          float spanNS = smoothstep(-370.0, -340.0, wz) * smoothstep(370.0, 340.0, wz);
           float halfW_NS = mix(2.15, 3.35, exp(-pow(wz / 18.0, 2.0))) + sandDrift;
           float dNS = smoothstep(halfW_NS + 1.35, max(0.35, halfW_NS - 1.25), abs(wx - swayNS)) * spanNS;
 
-          float spanEW = smoothstep(-132.0, -114.0, wx) * smoothstep(134.0, 116.0, wx);
+          float spanEW = smoothstep(-370.0, -340.0, wx) * smoothstep(370.0, 340.0, wx);
           float halfW_EW = mix(2.05, 2.85, exp(-pow(wx / 18.0, 2.0))) + sandDrift;
           float dEW = smoothstep(halfW_EW + 1.35, max(0.35, halfW_EW - 1.20), abs((wz + 1.5) - swayEW)) * spanEW;
+
+          float spanDiag = smoothstep(24.0, 42.0, max(abs(wx), abs(wz))) * smoothstep(315.0, 290.0, max(abs(wx), abs(wz)));
+          float dDiagA = smoothstep(3.1 + sandDrift * 0.5, 1.0, abs(wx - wz * 0.98) * 0.707) * spanDiag;
+          float dDiagB = smoothstep(3.1 + sandDrift * 0.5, 1.0, abs(wx + wz * 1.02) * 0.707) * spanDiag;
 
           float spanRail = smoothstep(-146.0, -132.0, wx) * smoothstep(54.0, 44.0, wx);
           float dRail = smoothstep(3.4 + sandDrift * 0.6, 1.35, abs(wz - 75.0)) * spanRail;
 
           float townCourt = exp(-(wx * wx) / 38.0 - ((wz - 1.5) * (wz - 1.5)) / 185.0) * (0.68 + 0.32 * macroN);
-          float roadMask = clamp(max(max(dNS, dEW), max(dRail, townCourt)), 0.0, 1.0);
+          float roadMask = clamp(max(max(max(dNS, dEW), max(dDiagA, dDiagB)), max(dRail, townCourt)), 0.0, 1.0);
 
           vec3 baseSand = antiTiledSand * mix(0.91, 1.06, clamp(wy * 0.18 + 0.45, 0.0, 1.0));
           vec3 splatted = baseSand;
@@ -608,17 +638,19 @@ export function buildEnvironmentAndScenery({ scene, renderer, L, M, maxAnisotrop
     staticDesertPropsGroup.add(g);
   }
 
-  // Plasser Monument Valley-platåer i en vid horisontring utenfor PLAY_AREA_LIMIT (215) (åpen siktlinje langs x = 0 for HDRI-horisonten)
+  // Plasser Monument Valley-platåer i en vid horisontring utenfor den utvidede PLAY_AREA_LIMIT (412m)
   [
-    { x: -165, z: -245, r: 32, h: 42, seed: 101, spire: true },
-    { x: 104, z: -258, r: 36, h: 38, seed: 202, spire: false },
-    { x: 192, z: -235, r: 34, h: 44, seed: 303, spire: true },
-    { x: -248, z: -85, r: 30, h: 38, seed: 404, spire: false },
-    { x: 252, z: -68, r: 32, h: 40, seed: 505, spire: true },
-    { x: -244, z: 88, r: 28, h: 36, seed: 606, spire: false },
-    { x: 248, z: 96, r: 30, h: 38, seed: 707, spire: false },
-    { x: -102, z: 246, r: 34, h: 42, seed: 808, spire: true },
-    { x: 110, z: 252, r: 36, h: 44, seed: 909, spire: false }
+    { x: -315, z: -455, r: 44, h: 56, seed: 101, spire: true },
+    { x: 165, z: -468, r: 48, h: 52, seed: 202, spire: false },
+    { x: 355, z: -445, r: 46, h: 58, seed: 303, spire: true },
+    { x: -458, z: -175, r: 42, h: 52, seed: 404, spire: false },
+    { x: 462, z: -155, r: 44, h: 54, seed: 505, spire: true },
+    { x: -454, z: 168, r: 40, h: 48, seed: 606, spire: false },
+    { x: 458, z: 185, r: 42, h: 52, seed: 707, spire: true },
+    { x: -195, z: 456, r: 46, h: 56, seed: 808, spire: true },
+    { x: 215, z: 462, r: 48, h: 58, seed: 909, spire: false },
+    { x: -435, z: -425, r: 42, h: 54, seed: 951, spire: true },
+    { x: 438, z: 428, r: 44, h: 56, seed: 977, spire: true }
   ].forEach((m) => spawnMonumentMesa(m.x, m.z, m.r, m.h, m.seed, m.spire));
 
   // Forrevne, skarpt lagdelte sandsteinsklipper (erstatter glatte kuler/bobler med ekte kløvede klippeblokker + boks-UV!)
