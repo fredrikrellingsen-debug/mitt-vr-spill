@@ -113,6 +113,106 @@ export const OUTER_TOWNS = [
     noSafeSub: 'Monstre slipper aldri inn!',
     enTravelLabel: '↘ Ironwood Crossing (Safe Haven)',
     noTravelLabel: '↘ Ironwood Crossing (Fristed & Depot)'
+  },
+  {
+    id: 'frostpeak_citadel',
+    x: -860,
+    z: -880,
+    y: 6.20,
+    travelX: -860,
+    travelZ: -861,
+    travelYaw: 0,
+    shopTab: 'armor',
+    theme: 'timber',
+    enName: 'FROSTPEAK CITADEL',
+    noName: 'FROSTPEAK CITADEL',
+    enSub: 'NORTHERN GLACIER FORTRESS & HAVEN',
+    noSub: 'SNØFJELLSBY & TRYGT FRISTED',
+    enShopTitle: 'FROSTPEAK FURS & ARMOR',
+    noShopTitle: 'FROSTPEAK RUSTNINGSHUS',
+    enShopSub: 'Heavy Pelts, Armor & Gold [Click / B]',
+    noShopSub: 'Vinterrustning, Klær & Gull [Klikk / B]',
+    enSafeTitle: '🛡 SAFE HAVEN GREAT HALL',
+    noSafeTitle: '🛡 FRISTED — FJELLHALLEN',
+    enSafeSub: 'Monsters Cannot Enter!',
+    noSafeSub: 'Monstre slipper aldri inn!',
+    enTravelLabel: '↖↖ Frostpeak Citadel (Far North 1.2km)',
+    noTravelLabel: '↖↖ Frostpeak Citadel (Snøfjellsby 1,2 km)'
+  },
+  {
+    id: 'sunfire_canyon',
+    x: 890,
+    z: -840,
+    y: 3.85,
+    travelX: 890,
+    travelZ: -821,
+    travelYaw: 0,
+    shopTab: 'weapons',
+    theme: 'canyon',
+    enName: 'SUNFIRE CANYON CITY',
+    noName: 'SUNFIRE KLØFTEBY',
+    enSub: 'GOLDEN MESA CITADEL & SAFE HAVEN',
+    noSub: 'SOLKLØFT-BY & TRYGT FRISTED',
+    enShopTitle: 'SUNFIRE MASTER GUNSMITH',
+    noShopTitle: 'SUNFIRE MESTERSMED',
+    enShopSub: 'Legendary Weapons & Gold [Click / B]',
+    noShopSub: 'Mestervåpen & Gull [Klikk / B]',
+    enSafeTitle: '🛡 SAFE HAVEN CITADEL',
+    noSafeTitle: '🛡 FRISTED — SOLBORG',
+    enSafeSub: 'Monsters Cannot Enter!',
+    noSafeSub: 'Monstre slipper aldri inn!',
+    enTravelLabel: '↗↗ Sunfire Canyon City (Far NE 1.2km)',
+    noTravelLabel: '↗↗ Sunfire Kløfteby (Solkløft 1,2 km)'
+  },
+  {
+    id: 'emerald_mirage',
+    x: -880,
+    z: 870,
+    y: 0.55,
+    travelX: -880,
+    travelZ: 851,
+    travelYaw: Math.PI,
+    shopTab: 'armor',
+    theme: 'oasis',
+    enName: 'EMERALD MIRAGE LAGOON',
+    noName: 'SMARAGD-LAGUNEN',
+    enSub: 'ENCHANTED OASIS & SAFE HAVEN',
+    noSub: 'MAGISK OASEBY & TRYGT FRISTED',
+    enShopTitle: 'EMERALD SILK & ARMOR BAZAAR',
+    noShopTitle: 'SMARAGD-BASAREN',
+    enShopSub: 'Exotic Gear & Gold [Click / B]',
+    noShopSub: 'Rustning, Utstyr & Gull [Klikk / B]',
+    enSafeTitle: '🛡 SAFE HAVEN SANCTUM',
+    noSafeTitle: '🛡 FRISTED — HELLIGDOMMEN',
+    enSafeSub: 'Monsters Cannot Enter!',
+    noSafeSub: 'Monstre slipper aldri inn!',
+    enTravelLabel: '↙↙ Emerald Mirage Lagoon (Far SW 1.2km)',
+    noTravelLabel: '↙↙ Smaragd-Lagunen (Magisk Oase 1,2 km)'
+  },
+  {
+    id: 'ashenforge_bastion',
+    x: 875,
+    z: 885,
+    y: 2.85,
+    travelX: 875,
+    travelZ: 866,
+    travelYaw: Math.PI,
+    shopTab: 'weapons',
+    theme: 'outpost',
+    enName: 'ASHENFORGE BASTION',
+    noName: 'ASHENFORGE BASTION',
+    enSub: 'OBSIDIAN FORGE TOWN & SAFE HAVEN',
+    noSub: 'OBSIDIAN-BY & TRYGT FRISTED',
+    enShopTitle: 'ASHENFORGE WAR-ARMORY',
+    noShopTitle: 'ASHENFORGE VÅPENSMIE',
+    enShopSub: 'Heavy Artillery & Gold [Click / B]',
+    noShopSub: 'Tunge Våpen & Gull [Klikk / B]',
+    enSafeTitle: '🛡 SAFE HAVEN FORTRESS',
+    noSafeTitle: '🛡 FRISTED — JERNBASTION',
+    enSafeSub: 'Monsters Cannot Enter!',
+    noSafeSub: 'Monstre slipper aldri inn!',
+    enTravelLabel: '↘↘ Ashenforge Bastion (Far SE 1.2km)',
+    noTravelLabel: '↘↘ Ashenforge Bastion (Vulkanby 1,2 km)'
   }
 ];
 
@@ -280,18 +380,16 @@ export function initFrontierExpansion(ctx) {
         const t = OUTER_TOWNS[i];
         if (Math.hypot(x - t.x, z - t.z) < 34) return true;
       }
-      // Hold hovedveiene og diagonale stier til de 4 nye byene åpne
-      if (Math.abs(x) < 9 && Math.abs(z) < 370) return true;
-      if (Math.abs(z + 1.5) < 9 && Math.abs(x) < 370) return true;
-      if (Math.abs(x - z * 0.96) < 8.5 && x < -30 && z < -30) return true;
-      if (Math.abs(x + z * 1.09) < 8.5 && x > 30 && z < -30) return true;
-      if (Math.abs(x + z * 0.98) < 8.5 && x < -30 && z > 30) return true;
-      if (Math.abs(x - z * 1.02) < 8.5 && x > 30 && z > 30) return true;
+      // Hold hovedveiene og diagonale kontinentalveier til alle 8 byene åpne
+      if (Math.abs(x) < 9.5 && Math.abs(z) < 1140) return true;
+      if (Math.abs(z + 1.5) < 9.5 && Math.abs(x) < 1140) return true;
+      if (Math.abs(x - z * 0.985) < 10.5) return true;
+      if (Math.abs(x + z * 1.015) < 10.5) return true;
       return false;
     };
 
-    // Instanced Furutrær i Nord / Nordvest (140 trær for 1 draw call per del!)
-    const pineCount = 150;
+    // Instanced Furutrær i Nord / Nordvest ut til -1120m (420 trær i kun 3 InstancedMesh draw calls!)
+    const pineCount = 420;
     const trunkGeo = new THREE.CylinderGeometry(0.18, 0.34, 2.8, 7);
     const coneLowGeo = new THREE.ConeGeometry(1.85, 3.2, 8);
     const coneTopGeo = new THREE.ConeGeometry(1.25, 2.7, 8);
@@ -308,14 +406,14 @@ export function initFrontierExpansion(ctx) {
     const dummy = new THREE.Object3D();
     let pPlaced = 0;
     let guard = 0;
-    while (pPlaced < pineCount && guard < 1500) {
+    while (pPlaced < pineCount && guard < 3600) {
       guard++;
-      const px = -395 + rng() * 580; // -395..+185
-      const pz = -395 + rng() * 210; // -395..-185
+      const px = -1120 + rng() * 1650; // -1120..+530
+      const pz = -1120 + rng() * 930;  // -1120..-190
       if (Math.abs(px) < 195 && Math.abs(pz) < 195) continue;
       if (isNearTownOrRoad(px, pz)) continue;
       const py = getTerrainHeight(px, pz);
-      const sc = 0.88 + rng() * 0.65;
+      const sc = 0.88 + rng() * 0.85;
       dummy.position.set(px, py + 1.35 * sc, pz);
       dummy.rotation.set(0, rng() * Math.PI * 2, 0);
       dummy.scale.setScalar(sc);
@@ -336,8 +434,8 @@ export function initFrontierExpansion(ctx) {
     instTop.count = pPlaced;
     sceneryGroup.add(instTrunks, instLow, instTop);
 
-    // Instanced Saguaro-kaktuser i Øst / Sørvest / Sørøst (110 stk)
-    const cactusCount = 110;
+    // Instanced Saguaro-kaktuser ut til +-1120m (280 stk)
+    const cactusCount = 280;
     const cacMainGeo = new THREE.CylinderGeometry(0.24, 0.30, 3.1, 8);
     const cacArmGeo = new THREE.CylinderGeometry(0.16, 0.19, 1.35, 7);
     const cactusMat = new THREE.MeshStandardMaterial({ color: 0x4b7a3f, roughness: 0.86 });
@@ -345,15 +443,15 @@ export function initFrontierExpansion(ctx) {
     const instCacArm = new THREE.InstancedMesh(cacArmGeo, cactusMat, cactusCount);
     let cPlaced = 0;
     guard = 0;
-    while (cPlaced < cactusCount && guard < 1200) {
+    while (cPlaced < cactusCount && guard < 2800) {
       guard++;
-      const cx = -390 + rng() * 780;
-      const cz = -260 + rng() * 650;
+      const cx = -1120 + rng() * 2240;
+      const cz = -920 + rng() * 2040;
       if (Math.abs(cx) < 205 && Math.abs(cz) < 205) continue;
-      if (cx < -120 && cz < -120) continue; // Ikke i alpinskogen i NV
+      if (cx < -120 && cz < -120) continue;
       if (isNearTownOrRoad(cx, cz)) continue;
       const cy = getTerrainHeight(cx, cz);
-      const sc = 0.85 + rng() * 0.55;
+      const sc = 0.85 + rng() * 0.72;
       const yaw = rng() * Math.PI * 2;
       dummy.position.set(cx, cy + 1.5 * sc, cz);
       dummy.rotation.set(0, yaw, 0);
@@ -371,7 +469,7 @@ export function initFrontierExpansion(ctx) {
     instCacArm.count = cPlaced;
     sceneryGroup.add(instCacMain, instCacArm);
 
-    // Instanced Kampesteiner / Røde Klippeblokker og Basalt-spir i ytterverdenen (95 stk med kollisjon på de største)
+    // Instanced Kampesteiner / Røde Klippeblokker og Basalt-spir over hele kontinentet
     const boulderGeo = new THREE.DodecahedronGeometry(1.55, 1);
     const boulderMat = new THREE.MeshStandardMaterial({
       color: 0x9b6d52,
@@ -383,24 +481,24 @@ export function initFrontierExpansion(ctx) {
       roughness: 0.88,
       metalness: 0.08
     });
-    const instBoulders = new THREE.InstancedMesh(boulderGeo, boulderMat, 70);
-    const instBasalt = new THREE.InstancedMesh(new THREE.ConeGeometry(1.5, 5.2, 6), basaltMat, 36);
+    const instBoulders = new THREE.InstancedMesh(boulderGeo, boulderMat, 190);
+    const instBasalt = new THREE.InstancedMesh(new THREE.ConeGeometry(1.5, 5.2, 6), basaltMat, 90);
     let bIdx = 0;
-    for (let i = 0; i < 400 && bIdx < 70; i++) {
-      const bx = -395 + rng() * 790;
-      const bz = -395 + rng() * 790;
+    for (let i = 0; i < 1200 && bIdx < 190; i++) {
+      const bx = -1130 + rng() * 2260;
+      const bz = -1130 + rng() * 2260;
       if (Math.abs(bx) < 208 && Math.abs(bz) < 208) continue;
       if (isNearTownOrRoad(bx, bz)) continue;
       const by = getTerrainHeight(bx, bz);
-      const sx = 1.1 + rng() * 1.8;
-      const sy = 0.85 + rng() * 1.6;
-      const sz = 1.1 + rng() * 1.7;
+      const sx = 1.1 + rng() * 2.2;
+      const sy = 0.85 + rng() * 2.0;
+      const sz = 1.1 + rng() * 2.1;
       dummy.position.set(bx, by + sy * 0.7, bz);
       dummy.rotation.set((rng() - 0.5) * 0.25, rng() * Math.PI * 2, (rng() - 0.5) * 0.25);
       dummy.scale.set(sx, sy, sz);
       dummy.updateMatrix();
       instBoulders.setMatrixAt(bIdx++, dummy.matrix);
-      if (sx > 1.8 && addWorldWallCollider) {
+      if (sx > 2.1 && addWorldWallCollider) {
         const rad = Math.max(sx, sz) * 1.15;
         addWorldWallCollider(bx - rad, bx + rad, bz - rad, bz + rad, by + sy * 2.2);
       }
@@ -408,12 +506,12 @@ export function initFrontierExpansion(ctx) {
     instBoulders.count = bIdx;
 
     let vIdx = 0;
-    for (let i = 0; i < 240 && vIdx < 36; i++) {
-      const vx = 195 + rng() * 198;
-      const vz = 160 + rng() * 232;
+    for (let i = 0; i < 650 && vIdx < 90; i++) {
+      const vx = 195 + rng() * 930;
+      const vz = 160 + rng() * 960;
       if (isNearTownOrRoad(vx, vz)) continue;
       const vy = getTerrainHeight(vx, vz);
-      const sc = 0.9 + rng() * 1.25;
+      const sc = 0.9 + rng() * 1.65;
       dummy.position.set(vx, vy + 2.3 * sc, vz);
       dummy.rotation.set((rng() - 0.5) * 0.18, rng() * Math.PI * 2, (rng() - 0.5) * 0.18);
       dummy.scale.set(sc, sc * (1.0 + rng() * 0.45), sc);
@@ -423,12 +521,16 @@ export function initFrontierExpansion(ctx) {
     instBasalt.count = vIdx;
     sceneryGroup.add(instBoulders, instBasalt);
 
-    // Veiskilt halvveis ut langs stiene til de 4 nye byene!
+    // Veiskilt langs stiene både til mellom-byene (~285m) og de fjerne kontinent-citadellene (~880m)!
     const trailSigns = [
-      { x: -185, z: -192, yaw: 0.78, enT: '↖ SILVER CREEK (120m)', noT: '↖ SILVER CREEK BY (120m)', enS: 'Safe Haven & Trapper Store', noS: 'Trygt Fristed & Butikk' },
-      { x: 196, z: -182, yaw: -0.78, enT: '↗ COPPER MESA (120m)', noT: '↗ COPPER MESA BY (120m)', enS: 'Safe Haven & Armory', noS: 'Trygt Fristed & Våpensmed' },
-      { x: -190, z: 194, yaw: 2.35, enT: '↙ SANCTUARY SPRINGS', noT: '↙ SANCTUARY SPRINGS BY', enS: 'Oasis Safe Haven & Bazaar', noS: 'Oase-Fristed & Butikk' },
-      { x: 194, z: 190, yaw: -2.35, enT: '↘ IRONWOOD CROSSING', noT: '↘ IRONWOOD CROSSING BY', enS: 'Safe Haven & Supply Depot', noS: 'Trygt Fristed & Våpendepot' }
+      { x: -185, z: -192, yaw: 0.78, enT: '↖ SILVER CREEK & FROSTPEAK', noT: '↖ SILVER CREEK & FROSTPEAK', enS: 'Safe Havens & Northern Trail', noS: 'Trygge Fristeder & Nordveien' },
+      { x: 196, z: -182, yaw: -0.78, enT: '↗ COPPER MESA & SUNFIRE', noT: '↗ COPPER MESA & SUNFIRE', enS: 'Safe Havens & Canyon Highway', noS: 'Trygge Fristeder & Kløfteveien' },
+      { x: -190, z: 194, yaw: 2.35, enT: '↙ SANCTUARY & EMERALD LAGOON', noT: '↙ SANCTUARY & SMARAGDOASEN', enS: 'Oasis Safe Havens', noS: 'Oasebyer med Fristed' },
+      { x: 194, z: 190, yaw: -2.35, enT: '↘ IRONWOOD & ASHENFORGE', noT: '↘ IRONWOOD & ASHENFORGE', enS: 'Safe Havens & Volcanic Trail', noS: 'Trygge Fristeder & Vulkanveien' },
+      { x: -545, z: -555, yaw: 0.78, enT: '↖ FROSTPEAK CITADEL (450m)', noT: '↖ FROSTPEAK CITADEL (450m)', enS: 'Glacier Titan & Safe Hall', noS: 'Is-Titanen & Fjell-Fristed' },
+      { x: 560, z: -540, yaw: -0.78, enT: '↗ SUNFIRE CANYON CITY (450m)', noT: '↗ SUNFIRE KLØFTEBY (450m)', enS: 'Sunstone Colossus & Armory', noS: 'Sol-Kolossen & Våpensmie' },
+      { x: -555, z: 550, yaw: 2.35, enT: '↙ EMERALD MIRAGE LAGOON', noT: '↙ SMARAGD-LAGUNEN (450m)', enS: 'Enchanted Lagoon & Safe Haven', noS: 'Magisk Lagune & Fristed' },
+      { x: 555, z: 560, yaw: -2.35, enT: '↘ ASHENFORGE BASTION (450m)', noT: '↘ ASHENFORGE BASTION (450m)', enS: 'Ignis Rex & War-Armory', noS: 'Ignis Rex & Våpensmie' }
     ];
     trailSigns.forEach((ts) => {
       const postGrp = new THREE.Group();
@@ -781,6 +883,15 @@ export function initFrontierExpansion(ctx) {
       }
       fixedSpots.push({ x: fx, z: fz, amt: rng() < 0.42 ? 2 : 1 });
     }
+    // 84 ekstra vedstabler langs de lange kontinentalveiene og rundt ytter-citadellene (+-400..+-1100m)!
+    for (let i = 0; i < 84; i++) {
+      let fx = -1090 + rng() * 2180;
+      let fz = -1090 + rng() * 2180;
+      if (Math.abs(fx) < 380 && Math.abs(fz) < 380) {
+        fx = (fx < 0 ? -1 : 1) * (420 + rng() * 640);
+      }
+      fixedSpots.push({ x: fx, z: fz, amt: rng() < 0.55 ? 2 : 1 });
+    }
 
     const logGeo = new THREE.CylinderGeometry(0.095, 0.105, 0.92, 8);
     logGeo.rotateZ(Math.PI / 2);
@@ -1120,8 +1231,8 @@ export function initFrontierExpansion(ctx) {
     const yaw = playerRig.rotation.y;
     let fx = playerRig.position.x - Math.sin(yaw) * 2.25;
     let fz = playerRig.position.z - Math.cos(yaw) * 2.25;
-    fx = THREE.MathUtils.clamp(fx, -408, 408);
-    fz = THREE.MathUtils.clamp(fz, -408, 408);
+    fx = THREE.MathUtils.clamp(fx, -1172, 1172);
+    fz = THREE.MathUtils.clamp(fz, -1172, 1172);
     const fy = getTerrainHeight(fx, fz, playerRig.position.y);
 
     playerState.wood = wood - WOOD_PER_CAMPFIRE;
@@ -1412,7 +1523,8 @@ export function initFrontierExpansion(ctx) {
         defensiveCharge: false,
         spawns: [
           { x: -135, z: -245 }, { x: -45, z: -268 }, { x: 48, z: -285 },
-          { x: 122, z: -252 }, { x: -88, z: -332 }, { x: 15, z: -348 }
+          { x: 122, z: -252 }, { x: -88, z: -332 }, { x: 15, z: -348 },
+          { x: -520, z: -640 }, { x: -280, z: -780 }, { x: 140, z: -760 }, { x: -690, z: -890 }
         ]
       },
       {
@@ -1438,7 +1550,8 @@ export function initFrontierExpansion(ctx) {
         defensiveCharge: false,
         spawns: [
           { x: -225, z: -235 }, { x: -328, z: -255 }, { x: -310, z: -338 },
-          { x: -238, z: -342 }, { x: -355, z: -292 }, { x: -205, z: -298 }
+          { x: -238, z: -342 }, { x: -355, z: -292 }, { x: -205, z: -298 },
+          { x: -780, z: -790 }, { x: -940, z: -840 }, { x: -820, z: -960 }, { x: -640, z: -580 }
         ]
       },
       {
@@ -1464,7 +1577,8 @@ export function initFrontierExpansion(ctx) {
         defensiveCharge: true,
         spawns: [
           { x: 212, z: -195 }, { x: 245, z: -318 }, { x: 338, z: -235 },
-          { x: 342, z: -312 }, { x: 225, z: -145 }, { x: 318, z: -172 }
+          { x: 342, z: -312 }, { x: 225, z: -145 }, { x: 318, z: -172 },
+          { x: 640, z: -590 }, { x: 810, z: -780 }, { x: 760, z: 680 }, { x: 920, z: 790 }
         ]
       },
       {
@@ -1490,7 +1604,8 @@ export function initFrontierExpansion(ctx) {
         defensiveCharge: false,
         spawns: [
           { x: -225, z: 225 }, { x: -332, z: 255 }, { x: -315, z: 338 },
-          { x: -228, z: 342 }, { x: -95, z: 265 }, { x: 65, z: 275 }
+          { x: -228, z: 342 }, { x: -95, z: 265 }, { x: 65, z: 275 },
+          { x: -640, z: 620 }, { x: -810, z: 790 }, { x: -940, z: 920 }, { x: -480, z: 780 }
         ]
       }
     ];
@@ -1850,7 +1965,8 @@ export function initFrontierExpansion(ctx) {
         buildMesh: createScorpionModel,
         spawns: [
           { x: 225, z: -185 }, { x: 342, z: -195 }, { x: 348, z: -315 },
-          { x: 242, z: -328 }, { x: 258, z: -45 }, { x: 325, z: 32 }
+          { x: 242, z: -328 }, { x: 258, z: -45 }, { x: 325, z: 32 },
+          { x: 680, z: -660 }, { x: 820, z: -915 }, { x: 965, z: -810 }, { x: 760, z: -420 }
         ]
       },
       {
@@ -1875,7 +1991,8 @@ export function initFrontierExpansion(ctx) {
         buildMesh: createChupacabraModel,
         spawns: [
           { x: -222, z: 215 }, { x: -342, z: 238 }, { x: -345, z: 342 },
-          { x: -225, z: 348 }, { x: -175, z: 295 }, { x: -355, z: 185 }
+          { x: -225, z: 348 }, { x: -175, z: 295 }, { x: -355, z: 185 },
+          { x: -680, z: 690 }, { x: -815, z: 935 }, { x: -960, z: 830 }, { x: -740, z: 480 }
         ]
       },
       {
@@ -1900,7 +2017,8 @@ export function initFrontierExpansion(ctx) {
         buildMesh: createSkinwalkerModel,
         spawns: [
           { x: -215, z: -218 }, { x: -342, z: -228 }, { x: -348, z: -345 },
-          { x: -228, z: -352 }, { x: -185, z: -312 }, { x: -358, z: -185 }
+          { x: -228, z: -352 }, { x: -185, z: -312 }, { x: -358, z: -185 },
+          { x: -690, z: -710 }, { x: -790, z: -945 }, { x: -945, z: -830 }, { x: -580, z: -820 }
         ]
       },
       {
@@ -1925,14 +2043,119 @@ export function initFrontierExpansion(ctx) {
         buildMesh: createMagmaGolemModel,
         spawns: [
           { x: 218, z: 215 }, { x: 342, z: 225 }, { x: 348, z: 342 },
-          { x: 228, z: 348 }, { x: 235, z: 162 }, { x: 345, z: 168 }
+          { x: 228, z: 348 }, { x: 235, z: 162 }, { x: 345, z: 168 },
+          { x: 690, z: 685 }, { x: 810, z: 945 }, { x: 955, z: 840 }, { x: 740, z: 510 }
         ]
+      },
+      // 4 KOLOSSALE VERDENSENDE-BOSSER (~990..1015m ut i hvert hjørne av 2.4km-kontinentet!)
+      {
+        species: 'boss_kaelith',
+        isContinentBoss: true,
+        bossId: 'kaelith',
+        enName: '★ KAELITH — GLACIER TITAN',
+        noName: '★ KAELITH — ISBRE-TITANEN',
+        barColor: '#5cf2ff',
+        impactColor: 0x5cf2ff,
+        projStyle: 'frost',
+        hp: 85,
+        speed: 2.95,
+        meleeDmg: 34,
+        rangedDmg: 24,
+        rangedCooldown: 3.1,
+        gold: 280,
+        pelts: 5,
+        scaleMult: 1.68,
+        radius: 1.15,
+        hitCenterY: 2.35,
+        hitRadius: 1.75,
+        undeadBonus: true,
+        questTags: ['combat_any', 'any_boss', 'elite_foe', 'wendigo', 'night_any'],
+        buildMesh: createSkinwalkerModel,
+        spawns: [{ x: -990, z: -985 }]
+      },
+      {
+        species: 'boss_solaris',
+        isContinentBoss: true,
+        bossId: 'solaris',
+        enName: '★ SOLARIS — SUNSTONE EMPEROR',
+        noName: '★ SOLARIS — SOLKLØFT-KEISEREN',
+        barColor: '#ffd447',
+        impactColor: 0xffd447,
+        projStyle: 'venom',
+        hp: 90,
+        speed: 3.25,
+        meleeDmg: 35,
+        rangedDmg: 25,
+        rangedCooldown: 2.9,
+        gold: 295,
+        pelts: 4,
+        scaleMult: 1.85,
+        radius: 1.25,
+        hitCenterY: 1.55,
+        hitRadius: 1.95,
+        undeadBonus: false,
+        questTags: ['combat_any', 'any_boss', 'elite_foe', 'bandit_any', 'caldera_foe'],
+        buildMesh: createScorpionModel,
+        spawns: [{ x: 1005, z: -955 }]
+      },
+      {
+        species: 'boss_mirage',
+        isContinentBoss: true,
+        bossId: 'mirage_sovereign',
+        enName: '★ MIRAGE SOVEREIGN — DUNE HYDRA',
+        noName: '★ OASE-HERSKEREN — SKYGGEBEIST',
+        barColor: '#ff4278',
+        impactColor: 0xff4278,
+        projStyle: 'shadow',
+        hp: 95,
+        speed: 4.15,
+        meleeDmg: 36,
+        rangedDmg: 24,
+        rangedCooldown: 3.2,
+        gold: 310,
+        pelts: 5,
+        scaleMult: 1.95,
+        radius: 1.10,
+        hitCenterY: 1.55,
+        hitRadius: 1.75,
+        undeadBonus: true,
+        questTags: ['combat_any', 'any_boss', 'elite_foe', 'oasis_foe', 'night_any'],
+        buildMesh: createChupacabraModel,
+        spawns: [{ x: -995, z: 985 }]
+      },
+      {
+        species: 'boss_ignis',
+        isContinentBoss: true,
+        bossId: 'ignis_rex',
+        enName: '★ IGNIS REX — OVERLORD OF ASHENFORGE',
+        noName: '★ IGNIS REX — VULKAN-OVERHERREN',
+        barColor: '#ff5e18',
+        impactColor: 0xff5e18,
+        projStyle: 'magma',
+        hp: 115,
+        speed: 2.75,
+        meleeDmg: 40,
+        rangedDmg: 28,
+        rangedCooldown: 2.8,
+        gold: 350,
+        pelts: 4,
+        scaleMult: 1.72,
+        radius: 1.38,
+        hitCenterY: 2.55,
+        hitRadius: 2.10,
+        undeadBonus: false,
+        questTags: ['combat_any', 'any_boss', 'elite_foe', 'caldera_foe', 'brimstone_foe'],
+        buildMesh: createMagmaGolemModel,
+        spawns: [{ x: 995, z: 995 }]
       }
     ];
 
     monsterDefs.forEach((def) => {
       def.spawns.forEach((pt, idx) => {
         const group = def.buildMesh();
+        if (def.scaleMult) {
+          group.scale.setScalar(def.scaleMult);
+        }
         const gy = getTerrainHeight(pt.x, pt.z);
         group.position.set(pt.x, gy, pt.z);
         repelGroupFromSafeZonesAndCampfires(group, def.radius);
@@ -2102,7 +2325,19 @@ export function initFrontierExpansion(ctx) {
     monster.alive = false;
     monster.igniteTimer = 0;
     monster.group.visible = false;
-    monster.respawnTimer = 34;
+    monster.respawnTimer = monster.def.isContinentBoss ? 85 : 34;
+
+    if (monster.def.isContinentBoss && monster.def.bossId) {
+      if (!Array.isArray(storyState.continentBossesSlain)) {
+        storyState.continentBossesSlain = [];
+      }
+      if (!storyState.continentBossesSlain.includes(monster.def.bossId)) {
+        storyState.continentBossesSlain.push(monster.def.bossId);
+      }
+      if (storyState.currentLevel >= 51) {
+        storyState.prestigeBosses = (storyState.prestigeBosses || 0) + 1;
+      }
+    }
 
     tmpVecA.copy(monster.group.position);
     tmpVecA.y += 1.1;
@@ -2226,8 +2461,8 @@ export function initFrontierExpansion(ctx) {
     }
     repelGroupFromSafeZonesAndCampfires(group, radius);
     resolveWallCollisions(group.position, radius, true);
-    group.position.x = THREE.MathUtils.clamp(group.position.x, -406, 406);
-    group.position.z = THREE.MathUtils.clamp(group.position.z, -406, 406);
+    group.position.x = THREE.MathUtils.clamp(group.position.x, -1172, 1172);
+    group.position.z = THREE.MathUtils.clamp(group.position.z, -1172, 1172);
     group.position.y = getTerrainHeight(group.position.x, group.position.z);
   }
 
@@ -2394,8 +2629,8 @@ export function initFrontierExpansion(ctx) {
         const dTarget = Math.hypot(an.targetX - an.group.position.x, an.targetZ - an.group.position.z);
         if (dTarget < 2.0) {
           const ang = (worldTime * 0.7 + i * 2.1) % (Math.PI * 2);
-          an.targetX = THREE.MathUtils.clamp(an.homeX + Math.cos(ang) * 18, -395, 395);
-          an.targetZ = THREE.MathUtils.clamp(an.homeZ + Math.sin(ang) * 18, -395, 395);
+          an.targetX = THREE.MathUtils.clamp(an.homeX + Math.cos(ang) * 22, -1165, 1165);
+          an.targetZ = THREE.MathUtils.clamp(an.homeZ + Math.sin(ang) * 22, -1165, 1165);
         }
         stepToward(an.group, an.targetX, an.targetZ, an.def.speedWalk, dt, an.radius);
         moveSpd = an.def.speedWalk;
@@ -2499,8 +2734,8 @@ export function initFrontierExpansion(ctx) {
         const dWander = Math.hypot(mo.wanderX - mo.group.position.x, mo.wanderZ - mo.group.position.z);
         if (dWander < 2.2) {
           const ang = (worldTime * 0.55 + i * 1.7) % (Math.PI * 2);
-          mo.wanderX = THREE.MathUtils.clamp(mo.homeX + Math.cos(ang) * 16, -398, 398);
-          mo.wanderZ = THREE.MathUtils.clamp(mo.homeZ + Math.sin(ang) * 16, -398, 398);
+          mo.wanderX = THREE.MathUtils.clamp(mo.homeX + Math.cos(ang) * 20, -1165, 1165);
+          mo.wanderZ = THREE.MathUtils.clamp(mo.homeZ + Math.sin(ang) * 20, -1165, 1165);
         }
         stepToward(mo.group, mo.wanderX, mo.wanderZ, mo.def.speed * 0.58, dt, mo.radius);
         moveSpd = mo.def.speed * 0.58;
