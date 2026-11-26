@@ -47,7 +47,7 @@
     #hud-row {
       display: flex;
       flex-wrap: wrap;
-      align-items: stretch;
+      align-items: center;
       gap: 8px;
       max-width: 100%;
     }
@@ -428,12 +428,13 @@
       text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
     }
     #npc-quest-modal,
-    #coop-modal {
+    #coop-modal,
+    #store-modal {
       display: none;
       position: fixed;
       inset: 0;
       z-index: 32;
-      background: rgba(12, 7, 3, 0.74);
+      background: rgba(12, 7, 3, 0.76);
       align-items: center;
       justify-content: center;
       padding: 14px;
@@ -442,8 +443,107 @@
       touch-action: manipulation;
     }
     #npc-quest-modal.open,
-    #coop-modal.open {
+    #coop-modal.open,
+    #store-modal.open {
       display: flex;
+    }
+    #store-open-btn {
+      background: linear-gradient(180deg, rgba(112, 66, 16, 0.96) 0%, rgba(68, 38, 12, 0.96) 100%);
+      border-color: #ffd86b;
+      color: #fff8df;
+    }
+    #view-mode-btn.active-view-third {
+      background: rgba(34, 78, 52, 0.96);
+      border-color: #8cf2a8;
+      color: #efffef;
+    }
+    .store-stats-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-bottom: 8px;
+    }
+    .store-stat-pill {
+      background: rgba(20, 11, 5, 0.92);
+      border: 1.5px solid rgba(229, 178, 93, 0.55);
+      border-radius: 7px;
+      padding: 5px 10px;
+      font-size: 12.5px;
+      color: #fff2d6;
+    }
+    .store-stat-pill.gold {
+      border-color: #ffd866;
+      color: #ffe999;
+      background: rgba(62, 36, 10, 0.92);
+    }
+    .store-tabs-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-bottom: 10px;
+    }
+    .store-items-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(238px, 1fr));
+      gap: 9px;
+    }
+    .store-item-card {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 9px;
+      background: rgba(54, 31, 15, 0.93);
+      border: 2px solid rgba(217, 160, 78, 0.55);
+      border-radius: 9px;
+      padding: 10px 12px;
+    }
+    .store-item-card.equipped {
+      background: rgba(32, 62, 36, 0.94);
+      border-color: #90f28c;
+      box-shadow: 0 0 12px rgba(124, 240, 120, 0.25);
+    }
+    .store-item-card.stripe-pack {
+      background: linear-gradient(180deg, rgba(64, 38, 14, 0.96) 0%, rgba(36, 20, 9, 0.96) 100%);
+      border-color: #f0be59;
+    }
+    .store-item-hdr {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      margin-bottom: 5px;
+    }
+    .store-item-title {
+      font-family: Georgia, serif;
+      font-size: 14px;
+      font-weight: bold;
+      color: #ffe7a0;
+    }
+    .store-item-badge {
+      font-size: 11px;
+      font-weight: bold;
+      background: rgba(18, 10, 4, 0.85);
+      border: 1px solid rgba(255, 216, 110, 0.55);
+      color: #ffd97d;
+      padding: 2px 6px;
+      border-radius: 5px;
+      white-space: nowrap;
+    }
+    .store-item-desc {
+      font-size: 12px;
+      line-height: 1.38;
+      color: #f2e2c6;
+    }
+    .store-stripe-hero {
+      background: linear-gradient(90deg, rgba(44, 30, 68, 0.92) 0%, rgba(62, 36, 14, 0.92) 100%);
+      border: 2px solid #eab85c;
+      border-radius: 9px;
+      padding: 10px 13px;
+    }
+    .stripe-checkout-btn {
+      width: 100%;
+      background: linear-gradient(180deg, #635bff 0%, #4338ca 100%);
+      border-color: #b8b5ff;
     }
     .wow-scroll-card {
       width: min(560px, 100%);
@@ -820,19 +920,20 @@
       "imports": {
         "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
         "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/",
-        "./js/i18n.js": "./js/i18n.js?v=20261126wow8",
-        "./js/textures.js": "./js/textures.js?v=20261126wow8",
-        "./js/glb-utils.js": "./js/glb-utils.js?v=20261126wow8",
-        "./js/creatures.js": "./js/creatures.js?v=20261126wow8",
-        "./js/world.js": "./js/world.js?v=20261126wow8",
-        "./js/buildings.js": "./js/buildings.js?v=20261126wow8",
-        "./js/audio.js": "./js/audio.js?v=20261126wow8",
-        "./js/revolver-fx.js": "./js/revolver-fx.js?v=20261126wow8",
-        "./js/entities.js": "./js/entities.js?v=20261126wow8",
-        "./js/i18n-wow.js": "./js/i18n-wow.js?v=20261126wow8",
-        "./js/world-outer.js": "./js/world-outer.js?v=20261126wow8",
-        "./js/world-botany.js": "./js/world-botany.js?v=20261126wow8",
-        "./js/mmo-coop.js": "./js/mmo-coop.js?v=20261126wow8"
+        "./js/i18n.js": "./js/i18n.js?v=20261126shop3",
+        "./js/textures.js": "./js/textures.js?v=20261126shop3",
+        "./js/glb-utils.js": "./js/glb-utils.js?v=20261126shop3",
+        "./js/creatures.js": "./js/creatures.js?v=20261126shop3",
+        "./js/world.js": "./js/world.js?v=20261126shop3",
+        "./js/buildings.js": "./js/buildings.js?v=20261126shop3",
+        "./js/audio.js": "./js/audio.js?v=20261126shop3",
+        "./js/revolver-fx.js": "./js/revolver-fx.js?v=20261126shop3",
+        "./js/entities.js": "./js/entities.js?v=20261126shop3",
+        "./js/i18n-wow.js": "./js/i18n-wow.js?v=20261126shop3",
+        "./js/world-outer.js": "./js/world-outer.js?v=20261126shop3",
+        "./js/world-botany.js": "./js/world-botany.js?v=20261126shop3",
+        "./js/mmo-coop.js": "./js/mmo-coop.js?v=20261126shop3",
+        "./js/shop-and-camera.js": "./js/shop-and-camera.js?v=20261126shop3"
       }
     }
   </script>
@@ -841,6 +942,8 @@
   <div id="top-left-ui">
     <div id="hud-row">
       <div id="hud">Health: 100 | Food: 0 (E = eat) | Pelts: 0 | Outfit: Plain | Time: Day</div>
+      <button id="view-mode-btn" class="hud-top-btn" type="button" title="Switch 1st-Person (VR) / 3rd-Person Character View (V)">🎥 View: 1st Person (VR) [V]</button>
+      <button id="store-open-btn" class="hud-top-btn" type="button" title="Armor, Weapons & Stripe Gold Store (B)">🛒 Shop & Gold: 15 💰 [B]</button>
       <button id="class-skill-btn" class="hud-top-btn" type="button" title="Cowboy Class Skill (G)">🤠 [G] Skill</button>
       <button id="coop-mode-btn" class="hud-top-btn" type="button" title="Singleplayer / Co-op Multiplayer & Classes (M)">👥 Mode: Solo [M]</button>
       <button id="codex-btn" class="hud-top-btn" type="button" title="100% Codex & Stagecoach Fast Travel (K)">📖 Codex: 0.0%</button>
@@ -860,6 +963,10 @@
         <button id="sens-minus-btn" class="sens-mini-btn" type="button">−</button>
         <input id="sens-range" type="range" min="25" max="250" step="5" value="100" />
         <button id="sens-plus-btn" class="sens-mini-btn" type="button">+</button>
+      </div>
+      <div class="sens-row">
+        <span id="sens-view-label">Character / Camera View [V]</span>
+        <button id="sens-view-btn" class="sens-mini-btn" type="button">1st Person (Best for VR)</button>
       </div>
       <div class="sens-row">
         <span id="sens-invert-label">Invert Y-Axis</span>
@@ -966,6 +1073,27 @@
     </div>
   </div>
 
+  <div id="store-modal" role="dialog" aria-label="Armor, Weapons and Gold Store">
+    <div class="codex-card">
+      <div class="codex-top-row">
+        <div id="store-modal-title" class="codex-title">🤠 DUSTWOOD OUTFITTER, ARMORY & GOLD BANK [B]</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button id="store-preview-view-btn" class="sens-mini-btn" type="button">🎥 See Character (3rd Person)</button>
+          <button id="store-close-btn" class="sens-mini-btn" type="button">Close [B]</button>
+        </div>
+      </div>
+      <div id="store-stats-bar" class="store-stats-bar"></div>
+      <div id="store-earn-note" style="font-size:12px;color:#ffe6a8;background:rgba(24,14,6,0.75);border:1px solid rgba(229,178,93,0.35);border-radius:7px;padding:7px 10px;margin-bottom:9px"></div>
+      <div class="store-tabs-row">
+        <button id="store-tab-armor" class="sens-mini-btn active" type="button">🧥 Armor & Clothes (+Protection)</button>
+        <button id="store-tab-weapons" class="sens-mini-btn" type="button">🔫 Weapons & Upgrades</button>
+        <button id="store-tab-gold" class="sens-mini-btn" type="button">💳 Buy Gold (Stripe)</button>
+      </div>
+      <div id="store-status-banner" style="display:none;background:rgba(32,74,42,0.94);border:1.5px solid #8ef79e;border-radius:8px;padding:8px 11px;font-size:12.5px;font-weight:bold;color:#ecffef;margin-bottom:9px"></div>
+      <div id="store-items-grid" class="store-items-grid"></div>
+    </div>
+  </div>
+
   <div id="crosshair"></div>
 
   <div id="touch-controls" aria-label="Touch Controls">
@@ -997,6 +1125,7 @@
     import { initRevolverAndAtmosphereFX } from './js/revolver-fx.js';
     import { initWorldEntities } from './js/entities.js';
     import { initMMOAndCoopSystem } from './js/mmo-coop.js';
+    import { initShopAndCameraSystem, getArmorDefByTier } from './js/shop-and-camera.js';
 
     const gltfLoader = new GLTFLoader();
     const rgbeLoader = new RGBELoader();
@@ -1044,7 +1173,7 @@
       initTexturesAndMaterials, initCreatureModels,
       applySkyShaderParams, getTerrainHeight, buildEnvironmentAndScenery,
       buildTownBuildings, initWesternAudio, initRevolverAndAtmosphereFX,
-      initWorldEntities, initMMOAndCoopSystem, preloaded
+      initWorldEntities, initMMOAndCoopSystem, initShopAndCameraSystem, getArmorDefByTier, preloaded
     };
 
     const loadClassicScript = (src) => new Promise((resolve, reject) => {
@@ -1056,9 +1185,9 @@
       document.body.appendChild(s);
     });
 
-    await loadClassicScript('./js/app-part1.js?v=20261126wow4');
-    await loadClassicScript('./js/app-part2.js?v=20261126wow4');
-    await loadClassicScript('./js/app-part3.js?v=20261126wow4');
+    await loadClassicScript('./js/app-part1.js?v=20261126shop3');
+    await loadClassicScript('./js/app-part2.js?v=20261126shop3');
+    await loadClassicScript('./js/app-part3.js?v=20261126shop3');
   </script>
 </body>
 </html>
