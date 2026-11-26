@@ -962,6 +962,10 @@ export function initMMOAndCoopSystem(ctx) {
     pushAlive(entities.nightEnemies, 'night');
     pushAlive(entities.wolfList, 'wolf');
     pushAlive(entities.bearList, 'bear');
+    const expSys = ctx.getExpansion ? ctx.getExpansion() : null;
+    if (expSys && Array.isArray(expSys.regionalMonsters)) {
+      pushAlive(expSys.regionalMonsters, 'exp_monster');
+    }
     if (entities.bossEnemy && entities.bossEnemy.alive && entities.bossEnemy.group.visible) {
       const d = Math.hypot(entities.bossEnemy.group.position.x - px, entities.bossEnemy.group.position.z - pz);
       if (d <= maxRange) candidates.push({ type: 'boss', target: entities.bossEnemy, d, point: entities.bossEnemy.group.position });
@@ -1831,7 +1835,7 @@ export function initMMOAndCoopSystem(ctx) {
     const cx = w * 0.5;
     const cy = h * 0.5;
     const r = cx - 6;
-    const radarRange = 165; // meter i spillverdenen
+    const radarRange = 235; // meter i den utvidede spillverdenen
 
     minimapCtx.clearRect(0, 0, w, h);
     minimapCtx.save();
@@ -1922,6 +1926,12 @@ export function initMMOAndCoopSystem(ctx) {
       const st = ent.marker.state;
       minimapCtx.fillStyle = st === 'turnin' ? '#7cff72' : (st === 'progress' ? '#cfd8e6' : '#ffd84a');
       minimapCtx.fillText(st === 'turnin' || st === 'progress' ? '?' : '!', pt.sx, pt.sy);
+    }
+
+    // 2b) De 4 nye ytterbyene (Fristeder) og spillerens aktive Leirbål
+    const expRadar = ctx.getExpansion ? ctx.getExpansion() : null;
+    if (expRadar && expRadar.drawExpansionOnMinimap) {
+      expRadar.drawExpansionOnMinimap(minimapCtx, toRadar);
     }
 
     // 3) Co-op Posse-medspillere (lysende grønne/blå prikker!)
