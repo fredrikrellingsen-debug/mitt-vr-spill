@@ -107,8 +107,8 @@
       if (currentBloodMoonBlend > 0.01) {
         scene.fog.color.lerp(bloodFogColor, currentBloodMoonBlend * 0.78);
       }
-      scene.fog.near = THREE.MathUtils.lerp(62, 18, night);
-      scene.fog.far = THREE.MathUtils.lerp(325, 135, night);
+      scene.fog.near = THREE.MathUtils.lerp(68, 18, night);
+      scene.fog.far = THREE.MathUtils.lerp(395, 145, night);
 
       // Kinematisk Golden Hour-lys med kjølige blå-lilla skygger (HemisphereLight)
       hemiLight.color.copy(dayHemiSkyColor).lerp(nightHemiSkyColor, night);
@@ -396,6 +396,13 @@
       if (shopAndCameraSystem && shopAndCameraSystem.getNearbyShopTab()) {
         shopAndCameraSystem.toggleStoreModal(true, shopAndCameraSystem.getNearbyShopTab());
         return;
+      }
+      if (frontierExpansion) {
+        const nearOuter = frontierExpansion.getNearbyOuterTownShop();
+        if (nearOuter && shopAndCameraSystem) {
+          shopAndCameraSystem.toggleStoreModal(true, nearOuter.tab || 'armor');
+          return;
+        }
       }
       if (isPlayerNearSafeHouseDoor(14.0)) {
         toggleSafeHouseDoor();
@@ -1155,6 +1162,11 @@
         return true;
       }
 
+      // 5b. Klikk på bybutikker i de 4 nye byene eller tørre vedstabler langs stiene
+      if (frontierExpansion && frontierExpansion.tryRayExpansionInteractions(uiRaycaster)) {
+        return true;
+      }
+
       // 6. Klikk på 3D-språkskiltet på Saloonen (EN / NO)
       if (worldLangButtonMeshes.length > 0) {
         const langHits = uiRaycaster.intersectObjects(worldLangButtonMeshes, false);
@@ -1550,6 +1562,7 @@
       getActiveWeaponId: () => activeWeaponId,
       getIsRidingHorse: () => isRidingHorse,
       getOutfitTier: () => currentOutfitTier,
+      getExpansion: () => frontierExpansion,
       audio: {
         playQuestSelectSound,
         playQuestFanfare,
@@ -1636,6 +1649,71 @@
         playShopDenySound
       }
     });
+
+    frontierExpansion = initFrontierExpansion({
+      scene,
+      camera,
+      playerRig,
+      playerState,
+      storyState,
+      M,
+      W,
+      C,
+      getLang: () => currentLang,
+      getTerrainHeight,
+      addWorldWallCollider,
+      resolveWallCollisions,
+      pointHitsSolidWall,
+      segmentPointDistance,
+      awardScaledGold,
+      recordQuestKill,
+      checkStoryProgression,
+      saveCareerProgress,
+      updateStatusUI,
+      showFrontierToast,
+      spawnSparkBurst,
+      spawnImpact,
+      spawnVampireAshDissolution,
+      damagePlayer,
+      playerHeadPosition,
+      playerChestPosition,
+      updatePlayerBodyPoints,
+      getWeaponDamage: () => {
+        const mult = 1 + weaponMasteryRank * 0.20 + (homesteadRanks.deadeye || 0) * 0.12 + collectedHorseshoeIds.length * 0.02;
+        const stormMult = activeWorldEventId === 'frontier_storm' ? 1.35 : 1.0;
+        const mmoMult = mmoSystem ? mmoSystem.getEffectiveDamageMultiplier() : 1.0;
+        return weaponDamage * mult * stormMult * mmoMult;
+      },
+      getNightMonsterDamage: () => nightMonsterDamage,
+      getExtraFoodBonus: () => {
+        const evFood = activeWorldEventId === 'great_migration' ? 1 : 0;
+        return evFood + ((homesteadRanks.cattle || 0) >= 8 ? 1 : 0);
+      },
+      getExtraPeltBonus: () => {
+        const evPelt = (activeWorldEventId === 'great_migration' || activeWorldEventId === 'blood_eclipse') ? 1 : 0;
+        return evPelt + ((homesteadRanks.trapper || 0) >= 8 ? 1 : 0);
+      },
+      getPrestigeHpMult: () => 1 + (storyState.prestigeRank || 0) * 0.35,
+      getIsNight: () => isNight,
+      getPlayerHiddenStatus: () => playerHiddenStatus,
+      openStoreModal: (open, tab) => {
+        if (shopAndCameraSystem && !renderer.xr.isPresenting) {
+          shopAndCameraSystem.toggleStoreModal(open, tab);
+        }
+      },
+      entities: E,
+      audio: {
+        playCollectSound,
+        playGoldPickupSound,
+        playFleshHitSound,
+        playUpgradeSound,
+        playShopDenySound,
+        playBanditShotSound
+      }
+    });
+    if (E.setExpansionHooks) {
+      E.setExpansionHooks(frontierExpansion);
+    }
     updateStatusUI();
 
     if (activeQuest) ensureQuestTargetsAvailable(activeQuest);
@@ -2427,6 +2505,9 @@
       if (updateHorseAndRelics) {
         updateHorseAndRelics(dt, worldTime, currentMoveSpeed, currentMoveDirX, currentMoveDirZ);
       }
+      if (frontierExpansion) {
+        frontierExpansion.updateFrontierExpansion(dt, worldTime);
+      }
       enforceAllActorWallCollisions();
       updatePlayerBodyPoints();
       updatePlayerHiddenStatus();
@@ -2485,9 +2566,10 @@
       if (vrActiveWeapon) updateWeaponViewFX(vrActiveWeapon, dt);
       if (shopAndCameraSystem) {
         shopAndCameraSystem.updateThirdPersonCameraAndAvatar(dt, worldTime);
+        const outerShop = frontierExpansion ? frontierExpansion.getNearbyOuterTownShop() : null;
         shopAndCameraSystem.updateNearbyShopPrompt(
-          isPlayerNearTailorCounter(5.5),
-          isPlayerNearGunsmithCounter(5.5)
+          isPlayerNearTailorCounter(5.5) || !!(outerShop && outerShop.tab === 'armor'),
+          isPlayerNearGunsmithCounter(5.5) || !!(outerShop && outerShop.tab === 'weapons')
         );
       }
 
@@ -2562,6 +2644,7 @@
       triggerWorldEvent,
       mmoSystem,
       shopAndCameraSystem,
+      frontierExpansion,
       playerState,
       storyState,
       toggleDayNight,
