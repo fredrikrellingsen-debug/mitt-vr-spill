@@ -282,7 +282,7 @@
 
     const uiRaycaster = new THREE.Raycaster();
     uiRaycaster.near = 0.01;
-    uiRaycaster.far = 20;
+    uiRaycaster.far = 30;
     const uiTempMatrix = new THREE.Matrix4();
     const uiPointerNDC = new THREE.Vector2();
     const tailorCounterWorldPos = new THREE.Vector3();
@@ -294,7 +294,7 @@
     const bottleCheckWorldPos = new THREE.Vector3();
     const bottleRayOffset = new THREE.Vector3();
 
-    function isPlayerNearTailorCounter() {
+    function isPlayerNearTailorCounter(maxRange = 12.5) {
       if (!tailorCounterMesh) return false;
       tailorCounterMesh.getWorldPosition(tailorCounterWorldPos);
       camera.getWorldPosition(playerCheckWorldPos);
@@ -306,10 +306,10 @@
         playerRig.position.x - tailorCounterWorldPos.x,
         playerRig.position.z - tailorCounterWorldPos.z
       );
-      return Math.min(camDist, rigDist) <= 6.0;
+      return Math.min(camDist, rigDist) <= maxRange;
     }
 
-    function isPlayerNearGunsmithCounter() {
+    function isPlayerNearGunsmithCounter(maxRange = 12.5) {
       if (!gunsmithCounterMesh) return false;
       gunsmithCounterMesh.getWorldPosition(gunsmithCounterWorldPos);
       camera.getWorldPosition(playerCheckWorldPos);
@@ -321,10 +321,10 @@
         playerRig.position.x - gunsmithCounterWorldPos.x,
         playerRig.position.z - gunsmithCounterWorldPos.z
       );
-      return Math.min(camDist, rigDist) <= 6.0;
+      return Math.min(camDist, rigDist) <= maxRange;
     }
 
-    function isPlayerNearHomesteadCounter() {
+    function isPlayerNearHomesteadCounter(maxRange = 12.5) {
       if (!homesteadCounterMesh) return false;
       homesteadCounterMesh.getWorldPosition(homesteadCounterWorldPos);
       camera.getWorldPosition(playerCheckWorldPos);
@@ -336,10 +336,10 @@
         playerRig.position.x - homesteadCounterWorldPos.x,
         playerRig.position.z - homesteadCounterWorldPos.z
       );
-      return Math.min(camDist, rigDist) <= 6.8;
+      return Math.min(camDist, rigDist) <= maxRange;
     }
 
-    function isPlayerNearSaloonQuestBoard() {
+    function isPlayerNearSaloonQuestBoard(maxRange = 12.5) {
       if (!saloonQuestAnchorMesh) return false;
       saloonQuestAnchorMesh.getWorldPosition(saloonQuestWorldPos);
       camera.getWorldPosition(playerCheckWorldPos);
@@ -351,7 +351,7 @@
         playerRig.position.x - saloonQuestWorldPos.x,
         playerRig.position.z - saloonQuestWorldPos.z
       );
-      return Math.min(camDist, rigDist) <= 6.0;
+      return Math.min(camDist, rigDist) <= maxRange;
     }
 
     function isPlayerNearSheriff() {
@@ -393,6 +393,10 @@
     }
 
     function tryKeyFSafeHouseDoor() {
+      if (shopAndCameraSystem && shopAndCameraSystem.getNearbyShopTab()) {
+        shopAndCameraSystem.toggleStoreModal(true, shopAndCameraSystem.getNearbyShopTab());
+        return;
+      }
       if (isPlayerNearSafeHouseDoor(14.0)) {
         toggleSafeHouseDoor();
       }
@@ -777,9 +781,9 @@
           playUpgradeSound();
           return;
         }
-        // Slot 3: Røkt Viltproviant (25 Gull eller 2 Skinn -> +4 Mat & Full Helse)
-        if (playerState.gold >= 25) {
-          playerState.gold -= 25;
+        // Slot 3: Røkt Viltproviant (15 Gull eller 2 Skinn -> +4 Mat & Full Helse)
+        if (playerState.gold >= 15) {
+          playerState.gold -= 15;
         } else if (playerState.pelt >= 2) {
           playerState.pelt -= 2;
         } else {
@@ -1084,40 +1088,7 @@
     }
 
     function tryRayBoardInteractions() {
-      // 0. Klikk / pek på WoW Quest-Giver NPC-er i verden (gyllen ! og ?)
-      if (mmoSystem && mmoSystem.tryRayNpcInteraction(uiRaycaster)) {
-        return true;
-      }
-
-      // 1. Klikk på 3D-språkskiltet på Saloonen (EN / NO)
-      if (worldLangButtonMeshes.length > 0) {
-        const langHits = uiRaycaster.intersectObjects(worldLangButtonMeshes, false);
-        if (langHits.length > 0 && langHits[0].distance <= 9.0) {
-          toggleLanguage();
-          playQuestSelectSound();
-          return true;
-        }
-      }
-
-      // 2. Klikk på den tunge Safe House-tredøren (åpne/lukke uten å bruke skudd nær døren)
-      if (isPlayerNearSafeHouseDoor(8.5) && safeHouseDoorHitMeshes.length > 0) {
-        const doorHits = uiRaycaster.intersectObjects(safeHouseDoorHitMeshes, false);
-        if (doorHits.length > 0) {
-          toggleSafeHouseDoor();
-          return true;
-        }
-      }
-
-      // 3. Klikk på Sheriff Vance utenfor Safe House / Saloonen (innenfor 6,5m)
-      if (isPlayerNearSheriff() && sheriffHitMeshes.length > 0) {
-        const sHits = uiRaycaster.intersectObjects(sheriffHitMeshes, false);
-        if (sHits.length > 0) {
-          talkToSheriffVance();
-          return true;
-        }
-      }
-
-      // 4. Skredder-butikken (innenfor 6m)
+      // 1. Skredder-butikken (innenfor 12,5m — sjekkes FØR NPC-er slik at tavle, skilt og skredder alltid kan handles fra!)
       if (isPlayerNearTailorCounter()) {
         const btnHits = uiRaycaster.intersectObjects(tailorButtonMeshes, false);
         if (btnHits.length > 0) {
@@ -1125,12 +1096,17 @@
           return true;
         }
         const shieldHits = uiRaycaster.intersectObjects(tailorBlockHitMeshes, false);
-        if (shieldHits.length > 0) {
+        const signHit = tailorMainSignMesh ? uiRaycaster.intersectObject(tailorMainSignMesh, true) : [];
+        const bldgHit = (isPlayerNearTailorCounter(7.5) && tailorBuilding) ? uiRaycaster.intersectObject(tailorBuilding, true) : [];
+        if (shieldHits.length > 0 || signHit.length > 0 || (bldgHit.length > 0 && bldgHit[0].distance <= 9.5)) {
+          if (shopAndCameraSystem && !renderer.xr.isPresenting) {
+            shopAndCameraSystem.toggleStoreModal(true, 'armor');
+          }
           return true;
         }
       }
 
-      // 5. Våpensmed-butikken (innenfor 6m)
+      // 2. Våpensmed-butikken (innenfor 12,5m)
       if (isPlayerNearGunsmithCounter()) {
         const gHits = uiRaycaster.intersectObjects(gunsmithButtonMeshes, false);
         if (gHits.length > 0) {
@@ -1138,12 +1114,17 @@
           return true;
         }
         const gShieldHits = uiRaycaster.intersectObjects(gunsmithBlockHitMeshes, false);
-        if (gShieldHits.length > 0) {
+        const gSignHit = gunsmithMainSignMesh ? uiRaycaster.intersectObject(gunsmithMainSignMesh, true) : [];
+        const gBldgHit = (isPlayerNearGunsmithCounter(7.5) && gunsmithBuilding) ? uiRaycaster.intersectObject(gunsmithBuilding, true) : [];
+        if (gShieldHits.length > 0 || gSignHit.length > 0 || (gBldgHit.length > 0 && gBldgHit[0].distance <= 9.5)) {
+          if (shopAndCameraSystem && !renderer.xr.isPresenting) {
+            shopAndCameraSystem.toggleStoreModal(true, 'weapons');
+          }
           return true;
         }
       }
 
-      // 5b. Homestead Ranch & Talenttavle i Dustwood (innenfor 6,8m)
+      // 3. Homestead Ranch & Talenttavle i Dustwood (innenfor 12,5m)
       if (isPlayerNearHomesteadCounter()) {
         const hHits = uiRaycaster.intersectObjects(homesteadButtonMeshes, false);
         if (hHits.length > 0) {
@@ -1156,7 +1137,7 @@
         }
       }
 
-      // 6. Sheriffens oppdragstavle utenfor Saloonen (innenfor 6m)
+      // 4. Sheriffens oppdragstavle utenfor Saloonen (innenfor 12,5m)
       if (isPlayerNearSaloonQuestBoard()) {
         const qHits = uiRaycaster.intersectObjects(saloonQuestButtonMeshes, false);
         if (qHits.length > 0 && !isPracticeBottleCloserOnRay(uiRaycaster.ray, qHits[0].distance)) {
@@ -1165,6 +1146,39 @@
         }
         const qShieldHits = uiRaycaster.intersectObjects(saloonQuestBlockMeshes, false);
         if (qShieldHits.length > 0 && !isPracticeBottleCloserOnRay(uiRaycaster.ray, qShieldHits[0].distance)) {
+          return true;
+        }
+      }
+
+      // 5. Klikk / pek på WoW Quest-Giver NPC-er i verden (gyllen ! og ?)
+      if (mmoSystem && mmoSystem.tryRayNpcInteraction(uiRaycaster)) {
+        return true;
+      }
+
+      // 6. Klikk på 3D-språkskiltet på Saloonen (EN / NO)
+      if (worldLangButtonMeshes.length > 0) {
+        const langHits = uiRaycaster.intersectObjects(worldLangButtonMeshes, false);
+        if (langHits.length > 0 && langHits[0].distance <= 12.0) {
+          toggleLanguage();
+          playQuestSelectSound();
+          return true;
+        }
+      }
+
+      // 7. Klikk på den tunge Safe House-tredøren (åpne/lukke uten å bruke skudd nær døren)
+      if (isPlayerNearSafeHouseDoor(9.5) && safeHouseDoorHitMeshes.length > 0) {
+        const doorHits = uiRaycaster.intersectObjects(safeHouseDoorHitMeshes, false);
+        if (doorHits.length > 0) {
+          toggleSafeHouseDoor();
+          return true;
+        }
+      }
+
+      // 8. Klikk på Sheriff Vance utenfor Safe House / Saloonen (innenfor 7,5m)
+      if (isPlayerNearSheriff() && sheriffHitMeshes.length > 0) {
+        const sHits = uiRaycaster.intersectObjects(sheriffHitMeshes, false);
+        if (sHits.length > 0) {
+          talkToSheriffVance();
           return true;
         }
       }
@@ -2471,6 +2485,10 @@
       if (vrActiveWeapon) updateWeaponViewFX(vrActiveWeapon, dt);
       if (shopAndCameraSystem) {
         shopAndCameraSystem.updateThirdPersonCameraAndAvatar(dt, worldTime);
+        shopAndCameraSystem.updateNearbyShopPrompt(
+          isPlayerNearTailorCounter(5.5),
+          isPlayerNearGunsmithCounter(5.5)
+        );
       }
 
       // Nullstill blinkene automatisk litt etter at alle er truffet
