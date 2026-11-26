@@ -2173,6 +2173,110 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     return g;
   }
 
+  // 12) Trofast Grenselands-Jakthund «Rex» (følgesvenn med PBR lærhalsbånd og messingstjerne!)
+  function createWarhoundCompanionModel() {
+    const g = createWolfModel();
+    g.scale.set(0.96, 0.98, 1.02);
+    tintCreatureMeshes(g, 0xc88a42, 0.72);
+    const collar = new THREE.Mesh(
+      new THREE.TorusGeometry(0.155, 0.024, 8, 18),
+      sharedHolsterLeatherMat
+    );
+    collar.position.set(0, 0.66, -0.34);
+    collar.rotation.x = Math.PI * 0.36;
+    g.add(collar);
+    const starTag = new THREE.Mesh(new THREE.OctahedronGeometry(0.045, 0), polishedBrassMat);
+    starTag.position.set(0, 0.52, -0.44);
+    g.add(starTag);
+    return g;
+  }
+
+  // 13) Caldera Hellhound (vulkansk ulv med glødende magmakam ved Diablo Caldera)
+  function createHellhoundModel() {
+    const g = createWolfModel();
+    g.scale.setScalar(1.22);
+    tintCreatureMeshes(g, 0x2b1814, 0.84);
+    const spineRidge = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.10, 0),
+      new THREE.MeshStandardMaterial({ color: 0xff6a1f, emissive: 0xff3b05, emissiveIntensity: 2.3 })
+    );
+    spineRidge.scale.set(0.65, 0.95, 2.1);
+    spineRidge.position.set(0, 0.78, -0.08);
+    g.add(spineRidge);
+    return g;
+  }
+
+  // 14) Boss #5: Sandwraith King — Vokteren av Dead Man's Oasis
+  function createSandwraithBossModel() {
+    const bossGLTF = loadedAssets && loadedAssets.bossVampire;
+    let g;
+    if (bossGLTF && bossGLTF.scene) {
+      const inst = instantiateGLTFCreature(bossGLTF, 'sandwraithBoss', 2.72, -1);
+      g = inst.group;
+      const arm0 = inst.model.getObjectByName('arm0');
+      const arm1 = inst.model.getObjectByName('arm1');
+      g.userData.arms = [arm0, arm1].filter(Boolean);
+    } else {
+      g = createNightEnemyModel();
+      g.scale.setScalar(1.58);
+    }
+    if (createContactShadow) g.add(createContactShadow(1.08, 1.08));
+    tintCreatureMeshes(g, 0xd8a84c, 0.78);
+    const sunCrown = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.036, 8, 20), polishedBrassMat);
+    sunCrown.position.set(0, 2.58, -0.05);
+    g.add(sunCrown);
+    attachOverheadBossBar(g, 3.04, 48, 'SANDWRAITH KING', '#ffd24c');
+    return g;
+  }
+
+  // 15) Boss #6: Old Goliath — Elder Kodiak ved Frostfang Timber Mill
+  function createElderKodiakBossModel() {
+    const g = createBearModel();
+    g.scale.setScalar(1.48);
+    tintCreatureMeshes(g, 0x4b3b32, 0.68);
+    [-1, 1].forEach((side) => {
+      const spear = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 0.78, 6), wroughtIronMat);
+      spear.position.set(side * 0.22, 1.24, -0.22 + side * 0.12);
+      spear.rotation.z = side * 0.42;
+      spear.rotation.x = -0.35;
+      g.add(spear);
+    });
+    attachOverheadBossBar(g, 2.25, 52, 'OLD GOLIATH', '#8be878');
+    return g;
+  }
+
+  // 16) Boss #7: El Fuego — Obsidian Juggernaut ved Diablo Caldera
+  function createElFuegoBossModel() {
+    const g = createBanditCaptainModel();
+    g.scale.setScalar(1.38);
+    tintCreatureMeshes(g, 0x261714, 0.84);
+    [-1, 1].forEach((side) => {
+      const pauldron = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.14, 0),
+        new THREE.MeshStandardMaterial({ color: 0xff6218, emissive: 0xff3200, emissiveIntensity: 2.3 })
+      );
+      pauldron.position.set(side * 0.26, 1.52, -0.04);
+      g.add(pauldron);
+    });
+    attachOverheadBossBar(g, 2.52, 56, 'EL FUEGO', '#ff5418');
+    return g;
+  }
+
+  // 17) Boss #8: Blackfeather — Spøkelsesskytteren på Raven's Roost Observatory
+  function createBlackfeatherBossModel() {
+    const g = createBanditCaptainModel();
+    g.scale.setScalar(1.32);
+    tintCreatureMeshes(g, 0x3b6e8c, 0.76);
+    const starBadge = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.13, 0),
+      new THREE.MeshStandardMaterial({ color: 0x9ae8ff, emissive: 0x2ab4ff, emissiveIntensity: 2.4 })
+    );
+    starBadge.position.set(0, 1.42, -0.22);
+    g.add(starBadge);
+    attachOverheadBossBar(g, 2.46, 54, 'BLACKFEATHER', '#58d4ff');
+    return g;
+  }
+
   return {
     createSculptedCowboyHat,
     createTailorNPC,
@@ -2183,8 +2287,11 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     createWolfModel,
     createCougarModel,
     createAlphaDirewolfModel,
+    createWarhoundCompanionModel,
+    createHellhoundModel,
     createBearModel,
     createBisonModel,
+    createElderKodiakBossModel,
     createHorseModel,
     createBanditModel,
     createFortDesperadoModel,
@@ -2192,6 +2299,8 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     createBanditCaptainModel,
     createGeneralCortezModel,
     createBrimstoneMarshalModel,
+    createElFuegoBossModel,
+    createBlackfeatherBossModel,
     createForemanSladeModel,
     createNightEnemyModel,
     createBrimstoneRevenantModel,
@@ -2199,6 +2308,7 @@ export function initCreatureModels(M, tailorBlockHitMeshes, loadedAssets = null)
     createCatacombGuardianModel,
     createBossVampireModel,
     createAncientWendigoBossModel,
+    createSandwraithBossModel,
     createSilverRelicMesh,
     animateQuadrupedLegs
   };
