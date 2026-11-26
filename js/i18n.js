@@ -714,7 +714,7 @@ export const I18N = {
     sensResetBtn: 'Nullstill kontroller 100%',
     careerSaveLabel: 'Karriere (Autolagret)',
     careerResetBtn: 'Nytt spill (Nullstill)',
-    careerResetConfirmBtn: 'Bekkrft sletting?'.replace('Bekkrft', 'Bekreft'),
+    careerResetConfirmBtn: 'Bekreft sletting?',
     careerSavedTag: 'Autolagret ✓',
     touchFire: 'SKYT',
     touchWeapon: 'VÅPEN',
