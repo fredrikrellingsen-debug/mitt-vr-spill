@@ -7,8 +7,8 @@ export const I18N = {
     saloonLangSign: 'LANGUAGE: [EN] / NO',
     saloonLangSub: 'Click or shoot to switch',
     pcHintHtml:
-      'PC: WASD = move • Click = FPS Mouse • G = Class Skill • M = Multiplayer Co-op & Class • K = 100% Codex & Fast Travel • J = Saloon Quest • Click NPC (! / ?) = Zone Quest • 1–6/Q = weapon • C/R = horse • E = eat<br />' +
-      'Phone & Pad: Left stick = move • Swipe = look • FIRE / SKILL = combat • Tap 👥 Mode [M] to play Co-op with friends • Meta Quest VR: Sticks + Trigger!',
+      'PC: WASD = move • Click = FPS Mouse • V = 1st/3rd Person Character View • B = Armor, Weapon & Gold Shop • G = Skill • M = Co-op • K = Codex • J = Quest • 1–6/Q = weapon • C/R = horse<br />' +
+      'Phone & Pad: Left stick = move • Swipe = look • 🎥 View [V] = see your cowboy • 🛒 Shop [B] = buy Armor, Weapons & Gold • Meta Quest VR: Auto 1st-Person VR!',
     sensBtn: (pct) => `⚙ Sens: ${pct}%`,
     sensTitle: 'CONTROLS, GRAPHICS & SAVE',
     sensLookLabel: 'Look Sensitivity',
@@ -52,7 +52,15 @@ export const I18N = {
     horseCalledMsg: 'Mustang galloped to your side! Press R (or Left Grip) to mount.',
     day: 'Day',
     night: 'Night',
-    outfits: ['Plain', 'Leather Vest', 'Wolf-Pelt Coat', 'Vampire Hunter Set', 'Mythic Frontier Duster'],
+    outfits: [
+      'Frontier Shirt',
+      'Leather Vest',
+      'Ranger Duster',
+      'Direwolf Armor',
+      'Vampire Hunter Armor',
+      'Marshal Ironclad Armor',
+      'Golden Legend Armor'
+    ],
     weapons: {
       revolver: 'Peacemaker',
       revolverGold: 'Gold Peacemaker',
@@ -568,18 +576,18 @@ export const I18N = {
     ],
 
     // Tailor Shop (Outfits Tiers 1–4 + Repeatable Max HP Reinforcement & Rations)
-    tailorBoardTitle: "TAILOR'S WORKSHOP",
-    tailorInfo: (pelts, outfit, maxHp) =>
-      `Pelts: ${pelts}  •  Outfit: ${outfit}  •  Max HP: ${maxHp || 100}`,
+    tailorBoardTitle: "TAILOR'S ARMOR & OUTFIT SHOP",
+    tailorInfo: (pelts, outfit, maxHp, gold = 0) =>
+      `Gold: ${gold}  •  Pelts: ${pelts}  •  Armor: ${outfit}  •  Max HP: ${maxHp || 100}`,
     tailorButtons: [
-      'Leather Vest (2 Pelts) -> 25% Armor',
-      'Wolf-Pelt Coat (4 Pelts) -> 50% Armor',
-      'Vampire Hunter Set (6 Pelts) -> 70% Armor + 2x Night Dmg'
+      'Leather Vest (55 Gold or 2 Pelts) -> 25% Armor +20 HP',
+      'Direwolf Armor (220 Gold or 4 Pelts) -> 55% Armor +75 HP',
+      'Vampire Hunter Armor (380 Gold or 6 Pelts) -> 70% Armor +110 HP'
     ],
     tailorMythicBtn: (owned) =>
       owned
-        ? 'Mythic Frontier Duster -> 80% Armor + 3x Night Dmg [EQUIPPED]'
-        : 'Mythic Frontier Duster (12 Pelts) -> 80% Armor + 3x Night Dmg',
+        ? 'Golden Legend Armor -> 85% Armor +240 HP [EQUIPPED]'
+        : 'Golden Legend Armor (1250 Gold or 16 Pelts) -> 85% Armor +240 HP',
     tailorReinforceBtn: (cost, maxHp) =>
       maxHp >= 300
         ? `Reinforced Frontier Padding (Max ${maxHp} HP Reached!)`
@@ -599,11 +607,11 @@ export const I18N = {
     gunsmithInfo: (gold, pelts, dyn, mastery = 0) =>
       `Gold: ${gold}  •  Pelts: ${pelts}  •  Dynamite: ${dyn}${mastery > 0 ? `  •  Mastery +${mastery * 20}%` : ''}`,
     gunsmithButtons: [
-      'Double-Barrel Shotgun (25 Gold) -> 6-Pellet Heavy Blast',
-      'Winchester Rifle (40 Gold) -> Long-Range Precision (3x Dmg)',
-      'Silver Crossbow (65 Gold + 2 Pelts) -> 3x Burn vs Undead',
+      'Double-Barrel Shotgun (45 Gold) -> 6-Pellet Heavy Blast',
+      'Winchester Rifle (85 Gold) -> Long-Range Precision (3x Dmg)',
+      'Silver Crossbow (165 Gold or 65G+2P) -> 3x Burn vs Undead',
       '3x Dynamite Pack (15 Gold) -> Thrown 2.2s Explosive Blast',
-      'Hellfire Repeater (120 Gold) -> Rapid Arcane Silver Gatling (Lv 7+)'
+      'Hellfire Repeater (450 Gold / Lv7: 120G) -> Rapid Silver Gatling'
     ],
     gunsmithMasteryBtn: (nextRank, cost) =>
       `Forge Masterwork Rifling Lv.${nextRank} (${cost} Gold) -> +20% All Weapon Dmg`,
@@ -690,8 +698,8 @@ export const I18N = {
     saloonLangSign: 'SPRÅK: EN / [NO]',
     saloonLangSub: 'Klikk eller skyt for å bytte',
     pcHintHtml:
-      'PC: WASD = gå • Klikk = FPS-mus • G = Klasse-egenskap • M = Flerspiller Co-op & Klasse • K = 100% Kodeks & Reise • J = Saloon-oppdrag • Klikk NPC med ! / ? = Sone-oppdrag • 1–6/Q = våpen • C/R = hest • E = spis<br />' +
-      'Telefon & Pad: Venstre spak = gå • Sveip = se rundt • SKYT / SKILL = kamp • Trykk 👥 Flerspiller [M] for å spille sammen • Meta Quest VR: Spaker + Avtrekker!',
+      'PC: WASD = gå • Klikk = FPS-mus • V = 1./3.-person karaktervisning • B = Butikk (Armor, Våpen & Gull) • G = Egenskap • M = Co-op • K = Kodeks • J = Oppdrag • 1–6/Q = våpen • C/R = hest<br />' +
+      'Telefon & Pad: Venstre spak = gå • Sveip = se rundt • 🎥 Visning [V] = se cowboyen din • 🛒 Butikk [B] = kjøp Armor, Våpen & Gull • Meta Quest VR: Automatisk 1.-person VR!',
     sensBtn: (pct) => `⚙ Følsomhet: ${pct}%`,
     sensTitle: 'KONTROLLER, GRAFIKK & LAGRING',
     sensLookLabel: 'Sikte-følsomhet',
@@ -706,7 +714,7 @@ export const I18N = {
     sensResetBtn: 'Nullstill kontroller 100%',
     careerSaveLabel: 'Karriere (Autolagret)',
     careerResetBtn: 'Nytt spill (Nullstill)',
-    careerResetConfirmBtn: 'Bekreft sletting?',
+    careerResetConfirmBtn: 'Bekkrft sletting?'.replace('Bekkrft', 'Bekreft'),
     careerSavedTag: 'Autolagret ✓',
     touchFire: 'SKYT',
     touchWeapon: 'VÅPEN',
@@ -735,7 +743,15 @@ export const I18N = {
     horseCalledMsg: 'Mustangen galopperte til deg! Trykk R (eller venstre grip) for å sitte opp.',
     day: 'Dag',
     night: 'Natt',
-    outfits: ['Vanlig', 'Lærvest', 'Vargpels-frakk', 'Vampyrjeger-sett', 'Mytisk Grenselandsfrakk'],
+    outfits: [
+      'Nybygger-skjorte',
+      'Speider-lærvest',
+      'Prærie-støvfrakk',
+      'Vargpels-rustning',
+      'Vampyrjeger-rustning',
+      'Marskalk-pansring',
+      'Legendarisk Gullrustning'
+    ],
     weapons: {
       revolver: 'Peacemaker',
       revolverGold: 'Gull-revolver',
@@ -1251,18 +1267,18 @@ export const I18N = {
     ],
 
     // Skredderbutikk
-    tailorBoardTitle: 'SKREDDERENS VERKSTED',
-    tailorInfo: (pelts, outfit, maxHp) =>
-      `Skinn: ${pelts}  •  Antrekk: ${outfit}  •  Maks helse: ${maxHp || 100}`,
+    tailorBoardTitle: 'SKREDDERENS ARMOR & KLÆR',
+    tailorInfo: (pelts, outfit, maxHp, gold = 0) =>
+      `Gull: ${gold}  •  Skinn: ${pelts}  •  Antrekk: ${outfit}  •  Maks helse: ${maxHp || 100}`,
     tailorButtons: [
-      'Lærvest (2 Skinn) -> 25% rustning',
-      'Vargpels-frakk (4 Skinn) -> 50% rustning',
-      'Vampyrjeger-sett (6 Skinn) -> 70% rustning + 2x nattskade'
+      'Speider-lærvest (55 Gull eller 2 Skinn) -> 25% beskyttelse +20 HP',
+      'Vargpels-rustning (220 Gull eller 4 Skinn) -> 55% beskyttelse +75 HP',
+      'Vampyrjeger-rustning (380 Gull eller 6 Skinn) -> 70% beskyttelse +110 HP'
     ],
     tailorMythicBtn: (owned) =>
       owned
-        ? 'Mytisk Grenselandsfrakk -> 80% rustning + 3x nattskade [AKTIV]'
-        : 'Mytisk Grenselandsfrakk (12 Skinn) -> 80% rustning + 3x nattskade',
+        ? 'Legendarisk Gullrustning -> 85% beskyttelse +240 HP [AKTIV]'
+        : 'Legendarisk Gullrustning (1250 Gull eller 16 Skinn) -> 85% rustning +240 HP',
     tailorReinforceBtn: (cost, maxHp) =>
       maxHp >= 300
         ? `Forsterket Pelsfôr (Maks ${maxHp} HP nådd!)`
@@ -1282,11 +1298,11 @@ export const I18N = {
     gunsmithInfo: (gold, pelts, dyn, mastery = 0) =>
       `Gull: ${gold}  •  Skinn: ${pelts}  •  Dynamitt: ${dyn}${mastery > 0 ? `  •  Mestring +${mastery * 20}%` : ''}`,
     gunsmithButtons: [
-      'Avsaget Hagle (25 Gull) -> 6 hagl med enorm nærskade',
-      'Winchester Rifle (40 Gull) -> Langtrekkende presisjon (3x skade)',
-      'Sølv-armbrøst (65 Gull + 2 Skinn) -> 3x brannskade mot udøde',
+      'Avsaget Hagle (45 Gull) -> 6 hagl med enorm nærskade',
+      'Winchester Rifle (85 Gull) -> Langtrekkende presisjon (3x skade)',
+      'Sølv-armbrøst (165 Gull eller 65G+2S) -> 3x brannskade mot udøde',
       '3x Dynamitt-pakke (15 Gull) -> Kastes i bue, eksploderer etter 2,2s',
-      'Hellfire-karabin (120 Gull) -> Lynrask sølv-gatling (Level 7+)'
+      'Hellfire-karabin (450 Gull / Lv7: 120G) -> Lynrask sølv-gatling'
     ],
     gunsmithMasteryBtn: (nextRank, cost) =>
       `Smi Mestermunning Nivå ${nextRank} (${cost} Gull) -> +20% våpenskade`,
