@@ -4,7 +4,7 @@ const {
   initTexturesAndMaterials, initCreatureModels,
   applySkyShaderParams, getTerrainHeight, buildEnvironmentAndScenery,
   buildTownBuildings, initWesternAudio, initRevolverAndAtmosphereFX,
-  initWorldEntities, initMMOAndCoopSystem, initShopAndCameraSystem, getArmorDefByTier, initFrontierExpansion
+  initWorldEntities, initMMOAndCoopSystem, initShopAndCameraSystem, getArmorDefByTier, initFrontierExpansion, initMagicalGraphicsAndContinent
 } = window.__WVR_DEPS;
 
     // =========================================================================
@@ -12,9 +12,9 @@ const {
     // =========================================================================
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xd99b66);
-    scene.fog = new THREE.Fog(0xe2b483, 55, 385);
+    scene.fog = new THREE.Fog(0xe2b483, 85, 860);
 
-    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 820);
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1850);
     camera.position.set(0, 1.65, 0);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -130,6 +130,7 @@ const {
       warhound: 0
     };
     const collectedHorseshoeIds = [];
+    const collectedWaystoneIds = [];
     let ranchDividendAccum = 0;
     const WORLD_EVENT_IDS = ['gold_rush', 'great_migration', 'frontier_storm', 'blood_eclipse'];
     let activeWorldEventId = '';
@@ -215,6 +216,8 @@ const {
       blackfeatherDefeated: false,
       immortalFinaleMalakor: false,
       immortalFinaleWendigo: false,
+      waystonesAttuned: 0,
+      continentBossesSlain: [],
       totalKills: 0
     };
 
@@ -254,6 +257,7 @@ const {
           weaponMasteryRank,
           homesteadRanks: { ...homesteadRanks },
           collectedHorseshoeIds: [...collectedHorseshoeIds],
+          collectedWaystoneIds: [...collectedWaystoneIds],
           unlockedWeapons: { ...unlockedWeapons },
           activeWeaponId,
           hasSheriffStar,
@@ -330,6 +334,14 @@ const {
             }
           });
         }
+        if (Array.isArray(data.collectedWaystoneIds)) {
+          collectedWaystoneIds.length = 0;
+          data.collectedWaystoneIds.forEach((wid) => {
+            if (typeof wid === 'string' && !collectedWaystoneIds.includes(wid)) {
+              collectedWaystoneIds.push(wid);
+            }
+          });
+        }
         if (data.unlockedWeapons && typeof data.unlockedWeapons === 'object') {
           for (const wk of WEAPON_ORDER) {
             if (typeof data.unlockedWeapons[wk] === 'boolean') unlockedWeapons[wk] = data.unlockedWeapons[wk];
@@ -401,6 +413,7 @@ const {
     let mmoSystem = null;
     let shopAndCameraSystem = null;
     let frontierExpansion = null;
+    let magicGraphics = null;
     let refreshSheriffHook = null;
     let equipWeaponHook = null;
     let playStoryFanfareHook = null;
@@ -497,6 +510,7 @@ const {
       if (Math.abs(renderer.getPixelRatio() - targetDpr) > 0.03) {
         renderer.setPixelRatio(targetDpr);
         renderer.setSize(window.innerWidth, window.innerHeight);
+        if (magicGraphics) magicGraphics.onResize();
       }
     }
     applyQualityPixelRatio();
@@ -587,7 +601,7 @@ const {
     }
 
     function countUniqueBossesDefeated() {
-      return [
+      const coreBosses = [
         storyState.bossDefeated,
         storyState.cortezDefeated,
         storyState.brimstoneMarshalDefeated,
@@ -597,6 +611,10 @@ const {
         storyState.elFuegoDefeated,
         storyState.blackfeatherDefeated
       ].filter(Boolean).length;
+      const farBosses = Array.isArray(storyState.continentBossesSlain)
+        ? Math.min(4, storyState.continentBossesSlain.length)
+        : 0;
+      return coreBosses + farBosses;
     }
 
     function checkStoryProgression() {
@@ -1377,6 +1395,7 @@ const {
       const prestige = Math.max(0, storyState.prestigeRank || 0);
       const bounties = Math.max(0, storyState.totalBountiesDone || completedQuests.length);
       const horseshoes = Math.min(24, collectedHorseshoeIds.length);
+      const waystones = Math.min(36, collectedWaystoneIds.length);
       const bosses = countUniqueBossesDefeated();
       const ranchRanks = Math.max(0, storyState.ranchTotalRanks || 0);
       const hpTailorRanks = Math.max(0, Math.round((Math.min(300, playerState.maxHealth) - 100) / 15));
@@ -1384,15 +1403,16 @@ const {
       const kills = Math.max(0, storyState.totalKills || 0);
 
       const p1 = Math.min(1, campCompleted / 50);
-      const p2 = Math.min(1, prestige / 10);
-      const p3 = Math.min(1, bounties / 250);
+      const p2 = Math.min(1, prestige / 15);
+      const p3 = Math.min(1, bounties / 300);
       const p4 = Math.min(1, horseshoes / 24);
-      const p5 = Math.min(1, bosses / 8);
-      const p6 = Math.min(1, ranchRanks / 85);
-      const p7 = Math.min(1, gearRanks / 35);
-      const p8 = Math.min(1, kills / 2500);
+      const p5 = Math.min(1, waystones / 36);
+      const p6 = Math.min(1, bosses / 12);
+      const p7 = Math.min(1, ranchRanks / 85);
+      const p8 = Math.min(1, gearRanks / 40);
+      const p9 = Math.min(1, kills / 3000);
 
-      const overallFrac = (p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8) / 8;
+      const overallFrac = (p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9) / 9;
       const pct = Math.min(100, Math.round(overallFrac * 1000) / 10);
       const pctStr = pct.toFixed(1);
 
@@ -1403,6 +1423,7 @@ const {
         prestige,
         bounties,
         horseshoes,
+        waystones,
         bosses,
         ranchRanks,
         gearRanks,
