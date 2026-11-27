@@ -551,13 +551,14 @@ export const I18N = {
     codexOverallLabel: (pct, hours) => `Total 200h Completion: ${pct}%  •  Playtime: ${hours}`,
     codexPillars: (d) => [
       `1. Grand Campaign: Level ${Math.min(50, d.level)} / 50`,
-      `2. Frontier Prestige: Rank ${Math.min(10, d.prestige)} / 10`,
-      `3. Saloon Quests Cleared: ${d.bounties} / 250`,
+      `2. Frontier Prestige: Rank ${Math.min(15, d.prestige)} / 15`,
+      `3. Saloon Quests Cleared: ${d.bounties} / 300`,
       `4. Golden Horseshoes Found: ${d.horseshoes} / 24 (+${d.horseshoes * 2}% Bonus)`,
-      `5. Unique World Bosses Slain: ${d.bosses} / 8`,
-      `6. Homestead Ranch & Rex Ranks: ${d.ranchRanks} / 85`,
-      `7. Armor & Weapon Mastery: ${d.gearRanks} / 35`,
-      `8. Frontier Combat & Hunts: ${d.kills} / 2500`
+      `5. Mystical Waystone Shrines: ${d.waystones || 0} / 36 (+${d.waystones || 0}% Power)`,
+      `6. Unique World Bosses Slain: ${d.bosses} / 12`,
+      `7. Homestead Ranch & Rex Ranks: ${d.ranchRanks} / 85`,
+      `8. Armor & Weapon Mastery: ${d.gearRanks} / 40`,
+      `9. Frontier Combat & Hunts: ${d.kills} / 3000`
     ],
     codexTravelHeader: '🐎 STAGECOACH FAST TRAVEL (Instant Ride to Any Region):',
     codexRegions: [
@@ -577,7 +578,11 @@ export const I18N = {
       { id: 'silver_creek', label: '↖ Silver Creek Town (Safe Haven)', x: -275.0, z: -266.0, yaw: 0 },
       { id: 'copper_mesa', label: '↗ Copper Mesa Town (Safe Haven)', x: 290.0, z: -246.0, yaw: 0 },
       { id: 'sanctuary_springs', label: '↙ Sanctuary Springs (Safe Haven)', x: -280.0, z: 266.0, yaw: 3.14 },
-      { id: 'ironwood_crossing', label: '↘ Ironwood Crossing (Safe Haven)', x: 285.0, z: 261.0, yaw: 3.14 }
+      { id: 'ironwood_crossing', label: '↘ Ironwood Crossing (Safe Haven)', x: 285.0, z: 261.0, yaw: 3.14 },
+      { id: 'frostpeak_citadel', label: '↖↖ Frostpeak Citadel (Far North 1.2km)', x: -860.0, z: -861.0, yaw: 0 },
+      { id: 'sunfire_canyon', label: '↗↗ Sunfire Canyon City (Far NE 1.2km)', x: 890.0, z: -821.0, yaw: 0 },
+      { id: 'emerald_mirage', label: '↙↙ Emerald Mirage Lagoon (Far SW 1.2km)', x: -880.0, z: 851.0, yaw: 3.14 },
+      { id: 'ashenforge_bastion', label: '↘↘ Ashenforge Bastion (Far SE 1.2km)', x: 875.0, z: 866.0, yaw: 3.14 }
     ],
 
     // Tailor Shop (Outfits Tiers 1–4 + Repeatable Max HP Reinforcement & Rations)
@@ -1247,13 +1252,14 @@ export const I18N = {
     codexOverallLabel: (pct, hours) => `Total 200t Fullføring: ${pct}%  •  Spilletid: ${hours}`,
     codexPillars: (d) => [
       `1. Hovedkampanje: Level ${Math.min(50, d.level)} / 50`,
-      `2. Prestisje-rang: Prestisje ${Math.min(10, d.prestige)} / 10`,
-      `3. Saloon-oppdrag fullført: ${d.bounties} / 250`,
+      `2. Prestisje-rang: Prestisje ${Math.min(15, d.prestige)} / 15`,
+      `3. Saloon-oppdrag fullført: ${d.bounties} / 300`,
       `4. Skjulte Gull-Hestesko: ${d.horseshoes} / 24 (+${d.horseshoes * 2}% bonus)`,
-      `5. Unike verdensbosser beseiret: ${d.bosses} / 8`,
-      `6. Homestead Ranch & Rex-trinn: ${d.ranchRanks} / 85`,
-      `7. Rustning & Våpenmestring: ${d.gearRanks} / 35`,
-      `8. Nedlagte fiender & vilt: ${d.kills} / 2500`
+      `5. Magiske Veistein-Helligdommer: ${d.waystones || 0} / 36 (+${d.waystones || 0}% kraft)`,
+      `6. Unike verdensbosser beseiret: ${d.bosses} / 12`,
+      `7. Homestead Ranch & Rex-trinn: ${d.ranchRanks} / 85`,
+      `8. Rustning & Våpenmestring: ${d.gearRanks} / 40`,
+      `9. Nedlagte fiender & vilt: ${d.kills} / 3000`
     ],
     codexTravelHeader: '🐎 DILIGENSE-HURTIGREISE (Klikk for direkte reise til valgt region):',
     codexRegions: [
@@ -1273,7 +1279,11 @@ export const I18N = {
       { id: 'silver_creek', label: '↖ Silver Creek By (Fristed & Butikk)', x: -275.0, z: -266.0, yaw: 0 },
       { id: 'copper_mesa', label: '↗ Copper Mesa By (Fristed & Våpen)', x: 290.0, z: -246.0, yaw: 0 },
       { id: 'sanctuary_springs', label: '↙ Sanctuary Springs (Fristed & Oase)', x: -280.0, z: 266.0, yaw: 3.14 },
-      { id: 'ironwood_crossing', label: '↘ Ironwood Crossing (Fristed & Depot)', x: 285.0, z: 261.0, yaw: 3.14 }
+      { id: 'ironwood_crossing', label: '↘ Ironwood Crossing (Fristed & Depot)', x: 285.0, z: 261.0, yaw: 3.14 },
+      { id: 'frostpeak_citadel', label: '↖↖ Frostpeak Citadel (Snøfjellsby 1,2 km)', x: -860.0, z: -861.0, yaw: 0 },
+      { id: 'sunfire_canyon', label: '↗↗ Sunfire Kløfteby (Solkløft 1,2 km)', x: 890.0, z: -821.0, yaw: 0 },
+      { id: 'emerald_mirage', label: '↙↙ Smaragd-Lagunen (Magisk Oase 1,2 km)', x: -880.0, z: 851.0, yaw: 3.14 },
+      { id: 'ashenforge_bastion', label: '↘↘ Ashenforge Bastion (Vulkanby 1,2 km)', x: 875.0, z: 866.0, yaw: 3.14 }
     ],
 
     // Skredderbutikk
