@@ -1545,7 +1545,7 @@
     const casingOrigin = new THREE.Vector3();
 
     // Prosjektiler fjernes ved treff, bakken, livstid eller maks rekkevidde (utvidet til +-235m).
-    const PROJECTILE_MAX_HORIZONTAL = 445;
+    const PROJECTILE_MAX_HORIZONTAL = 1240;
     const PROJECTILE_MAX_HEIGHT = 110;
     const bullets = [];
     const bulletGeo = new THREE.CylinderGeometry(0.018, 0.018, 0.42, 6);
@@ -2004,6 +2004,10 @@
           removeBullet(i);
           continue;
         }
+        if (magicGraphics && magicGraphics.checkBulletWaystoneHit(bullet.prev, bullet.mesh.position)) {
+          removeBullet(i);
+          continue;
+        }
 
         // Sjekk om kula treffer en gullklump/gullkiste i Crimson Canyon
         if (goldPickups) {
@@ -2171,7 +2175,7 @@
     // --- 7e. Bevegelse: venstre spak i VR, WASD/piltaster på PC (Kartgrenser -215..+215, 2x fart til hest) ---
     const VR_MOVE_SPEED = 3.1;
     const PC_MOVE_SPEED = 7.4;
-    const PLAY_AREA_LIMIT = 412;
+    const PLAY_AREA_LIMIT = 1180;
     const SNAP_TURN_ANGLE = Math.PI / 6;
     const SNAP_TURN_COOLDOWN = 0.35;
 
