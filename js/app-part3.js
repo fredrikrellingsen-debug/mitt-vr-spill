@@ -107,8 +107,8 @@
       if (currentBloodMoonBlend > 0.01) {
         scene.fog.color.lerp(bloodFogColor, currentBloodMoonBlend * 0.78);
       }
-      scene.fog.near = THREE.MathUtils.lerp(68, 18, night);
-      scene.fog.far = THREE.MathUtils.lerp(395, 145, night);
+      scene.fog.near = THREE.MathUtils.lerp(95, 24, night);
+      scene.fog.far = THREE.MathUtils.lerp(880, 285, night);
 
       // Kinematisk Golden Hour-lys med kjølige blå-lilla skygger (HemisphereLight)
       hemiLight.color.copy(dayHemiSkyColor).lerp(nightHemiSkyColor, night);
@@ -1162,8 +1162,11 @@
         return true;
       }
 
-      // 5b. Klikk på bybutikker i de 4 nye byene eller tørre vedstabler langs stiene
+      // 5b. Klikk på bybutikker i de 8 ytterbyene, magiske Veisteiner eller tørre vedstabler langs stiene
       if (frontierExpansion && frontierExpansion.tryRayExpansionInteractions(uiRaycaster)) {
+        return true;
+      }
+      if (magicGraphics && magicGraphics.tryRayWaystoneInteraction(uiRaycaster)) {
         return true;
       }
 
@@ -1407,7 +1410,7 @@
       S: {
         get nightMonsterDamage() { return nightMonsterDamage; },
         get weaponDamage() {
-          const mult = 1 + weaponMasteryRank * 0.20 + (homesteadRanks.deadeye || 0) * 0.12 + collectedHorseshoeIds.length * 0.02;
+          const mult = 1 + weaponMasteryRank * 0.20 + (homesteadRanks.deadeye || 0) * 0.12 + collectedHorseshoeIds.length * 0.02 + collectedWaystoneIds.length * 0.01;
           const stormMult = activeWorldEventId === 'frontier_storm' ? 1.35 : 1.0;
           const mmoMult = mmoSystem ? mmoSystem.getEffectiveDamageMultiplier() : 1.0;
           return weaponDamage * mult * stormMult * mmoMult;
@@ -1563,6 +1566,7 @@
       getIsRidingHorse: () => isRidingHorse,
       getOutfitTier: () => currentOutfitTier,
       getExpansion: () => frontierExpansion,
+      getMagicGraphics: () => magicGraphics,
       audio: {
         playQuestSelectSound,
         playQuestFanfare,
@@ -1679,7 +1683,7 @@
       playerChestPosition,
       updatePlayerBodyPoints,
       getWeaponDamage: () => {
-        const mult = 1 + weaponMasteryRank * 0.20 + (homesteadRanks.deadeye || 0) * 0.12 + collectedHorseshoeIds.length * 0.02;
+        const mult = 1 + weaponMasteryRank * 0.20 + (homesteadRanks.deadeye || 0) * 0.12 + collectedHorseshoeIds.length * 0.02 + collectedWaystoneIds.length * 0.01;
         const stormMult = activeWorldEventId === 'frontier_storm' ? 1.35 : 1.0;
         const mmoMult = mmoSystem ? mmoSystem.getEffectiveDamageMultiplier() : 1.0;
         return weaponDamage * mult * stormMult * mmoMult;
@@ -1714,6 +1718,33 @@
     if (E.setExpansionHooks) {
       E.setExpansionHooks(frontierExpansion);
     }
+
+    magicGraphics = initMagicalGraphicsAndContinent({
+      scene,
+      camera,
+      renderer,
+      playerRig,
+      playerState,
+      storyState,
+      controlSettings,
+      M,
+      W,
+      getLang: () => currentLang,
+      getTerrainBaseHeight: (x, z) => getTerrainHeight(x, z, 0),
+      getTerrainHeight,
+      segmentPointDistance,
+      collectedWaystoneIds,
+      awardScaledGold,
+      recordQuestKill,
+      checkStoryProgression,
+      saveCareerProgress,
+      updateStatusUI,
+      showFrontierToast,
+      spawnSparkBurst,
+      audio: {
+        playQuestFanfare
+      }
+    });
     updateStatusUI();
 
     if (activeQuest) ensureQuestTargetsAvailable(activeQuest);
@@ -2285,6 +2316,7 @@
       camera.updateProjectionMatrix();
       applyQualityPixelRatio();
       renderer.setSize(window.innerWidth, window.innerHeight);
+      if (magicGraphics) magicGraphics.onResize();
     });
 
     // Garanter at resolveWallCollisions kjøres for ALLE aktører i hver eneste frame (0 allokeringer)
@@ -2555,6 +2587,9 @@
       updateImpacts(dt);
       updateFXParticles(dt);
       updateAmbientParticles(dt, playerRig.position, nightAmount, worldTime, getTerrainHeight);
+      if (magicGraphics) {
+        magicGraphics.updateMagicalAtmosphere(dt, worldTime, nightAmount, currentBloodMoonBlend, activeLightDir);
+      }
       updateDamageVignette(dt);
 
       if (weaponDamage >= 2 && !hasGoldenRevolver) {
@@ -2609,7 +2644,11 @@
         }
       }
 
-      renderer.render(scene, camera);
+      if (magicGraphics) {
+        magicGraphics.renderMagicalFrame();
+      } else {
+        renderer.render(scene, camera);
+      }
     });
 
     window.__westernScene = {
@@ -2645,6 +2684,8 @@
       mmoSystem,
       shopAndCameraSystem,
       frontierExpansion,
+      magicGraphics,
+      collectedWaystoneIds,
       playerState,
       storyState,
       toggleDayNight,
