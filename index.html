@@ -940,20 +940,22 @@
       "imports": {
         "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
         "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/",
-        "./js/i18n.js": "./js/i18n.js?v=20261126shop4",
-        "./js/textures.js": "./js/textures.js?v=20261126shop4",
-        "./js/glb-utils.js": "./js/glb-utils.js?v=20261126shop4",
-        "./js/creatures.js": "./js/creatures.js?v=20261126shop4",
-        "./js/world.js": "./js/world.js?v=20261126shop4",
-        "./js/buildings.js": "./js/buildings.js?v=20261126shop4",
-        "./js/audio.js": "./js/audio.js?v=20261126shop4",
-        "./js/revolver-fx.js": "./js/revolver-fx.js?v=20261126shop4",
-        "./js/entities.js": "./js/entities.js?v=20261126shop4",
-        "./js/i18n-wow.js": "./js/i18n-wow.js?v=20261126shop4",
-        "./js/world-outer.js": "./js/world-outer.js?v=20261126shop4",
-        "./js/world-botany.js": "./js/world-botany.js?v=20261126shop4",
-        "./js/mmo-coop.js": "./js/mmo-coop.js?v=20261126shop4",
-        "./js/shop-and-camera.js": "./js/shop-and-camera.js?v=20261126shop4"
+        "./js/i18n.js": "./js/i18n.js?v=20261126magic1",
+        "./js/textures.js": "./js/textures.js?v=20261126magic1",
+        "./js/glb-utils.js": "./js/glb-utils.js?v=20261126magic1",
+        "./js/creatures.js": "./js/creatures.js?v=20261126magic1",
+        "./js/world.js": "./js/world.js?v=20261126magic1",
+        "./js/buildings.js": "./js/buildings.js?v=20261126magic1",
+        "./js/audio.js": "./js/audio.js?v=20261126magic1",
+        "./js/revolver-fx.js": "./js/revolver-fx.js?v=20261126magic1",
+        "./js/entities.js": "./js/entities.js?v=20261126magic1",
+        "./js/i18n-wow.js": "./js/i18n-wow.js?v=20261126magic1",
+        "./js/world-outer.js": "./js/world-outer.js?v=20261126magic1",
+        "./js/world-botany.js": "./js/world-botany.js?v=20261126magic1",
+        "./js/mmo-coop.js": "./js/mmo-coop.js?v=20261126magic1",
+        "./js/shop-and-camera.js": "./js/shop-and-camera.js?v=20261126magic1",
+        "./js/frontier-expansion.js": "./js/frontier-expansion.js?v=20261126magic1",
+        "./js/magic-graphics.js": "./js/magic-graphics.js?v=20261126magic1"
       }
     }
   </script>
@@ -1150,6 +1152,7 @@
     import { initMMOAndCoopSystem } from './js/mmo-coop.js';
     import { initShopAndCameraSystem, getArmorDefByTier } from './js/shop-and-camera.js';
     import { initFrontierExpansion } from './js/frontier-expansion.js';
+    import { initMagicalGraphicsAndContinent } from './js/magic-graphics.js';
 
     const gltfLoader = new GLTFLoader();
     const rgbeLoader = new RGBELoader();
@@ -1197,7 +1200,7 @@
       initTexturesAndMaterials, initCreatureModels,
       applySkyShaderParams, getTerrainHeight, buildEnvironmentAndScenery,
       buildTownBuildings, initWesternAudio, initRevolverAndAtmosphereFX,
-      initWorldEntities, initMMOAndCoopSystem, initShopAndCameraSystem, getArmorDefByTier, initFrontierExpansion, preloaded
+      initWorldEntities, initMMOAndCoopSystem, initShopAndCameraSystem, getArmorDefByTier, initFrontierExpansion, initMagicalGraphicsAndContinent, preloaded
     };
 
     const loadClassicScript = (src) => new Promise((resolve, reject) => {
@@ -1209,9 +1212,9 @@
       document.body.appendChild(s);
     });
 
-    await loadClassicScript('./js/app-part1.js?v=20261126exp1');
-    await loadClassicScript('./js/app-part2.js?v=20261126exp1');
-    await loadClassicScript('./js/app-part3.js?v=20261126exp1');
+    await loadClassicScript('./js/app-part1.js?v=20261126magic1');
+    await loadClassicScript('./js/app-part2.js?v=20261126magic1');
+    await loadClassicScript('./js/app-part3.js?v=20261126magic1');
   </script>
 </body>
 </html>
