@@ -904,8 +904,8 @@ export function initWorldEntities(ctx) {
       const yaw = playerRig.rotation.y;
       const sideX = Math.cos(yaw) * 2.8 - Math.sin(yaw) * 1.8;
       const sideZ = -Math.sin(yaw) * 2.8 - Math.cos(yaw) * 1.8;
-      const tx = THREE.MathUtils.clamp(playerRig.position.x + sideX, -408, 408);
-      const tz = THREE.MathUtils.clamp(playerRig.position.z + sideZ, -408, 408);
+      const tx = THREE.MathUtils.clamp(playerRig.position.x + sideX, -1172, 1172);
+      const tz = THREE.MathUtils.clamp(playerRig.position.z + sideZ, -1172, 1172);
       if (playerRig.position.y < -1.8) {
         horseEntity.targetPos.set(-112.0, getTerrainHeight(-112.0, -1.5), -1.5);
       } else {
@@ -2327,8 +2327,8 @@ export function initWorldEntities(ctx) {
                   point.x = playerRig.position.x + dx * sc;
                   point.z = playerRig.position.z + dz * sc;
                 }
-                point.x = THREE.MathUtils.clamp(point.x, -405, 405);
-                point.z = THREE.MathUtils.clamp(point.z, -405, 405);
+                point.x = THREE.MathUtils.clamp(point.x, -1172, 1172);
+                point.z = THREE.MathUtils.clamp(point.z, -1172, 1172);
                 point.y = getTerrainHeight(point.x, point.z);
               } else {
                 point.x = THREE.MathUtils.clamp(point.x, -170, -136);
@@ -2530,8 +2530,8 @@ export function initWorldEntities(ctx) {
         }
 
         pushOutOfHidingZone(enemy.group, NIGHT_RADIUS);
-        enemy.group.position.x = THREE.MathUtils.clamp(enemy.group.position.x, -405, 405);
-        enemy.group.position.z = THREE.MathUtils.clamp(enemy.group.position.z, -405, 405);
+        enemy.group.position.x = THREE.MathUtils.clamp(enemy.group.position.x, -1172, 1172);
+        enemy.group.position.z = THREE.MathUtils.clamp(enemy.group.position.z, -1172, 1172);
         resolveWallCollisions(enemy.group.position, NIGHT_RADIUS, true);
         pushOutOfHidingZone(enemy.group, NIGHT_RADIUS);
 
@@ -2637,8 +2637,8 @@ export function initWorldEntities(ctx) {
       }
 
       pushOutOfHidingZone(bossEnemy.group, BOSS_RADIUS);
-      bossEnemy.group.position.x = THREE.MathUtils.clamp(bossEnemy.group.position.x, -405, 405);
-      bossEnemy.group.position.z = THREE.MathUtils.clamp(bossEnemy.group.position.z, -405, 405);
+      bossEnemy.group.position.x = THREE.MathUtils.clamp(bossEnemy.group.position.x, -1172, 1172);
+      bossEnemy.group.position.z = THREE.MathUtils.clamp(bossEnemy.group.position.z, -1172, 1172);
       resolveWallCollisions(bossEnemy.group.position, BOSS_RADIUS, true);
       pushOutOfHidingZone(bossEnemy.group, BOSS_RADIUS);
       bossEnemy.group.position.y =
@@ -2718,8 +2718,8 @@ export function initWorldEntities(ctx) {
       }
 
       pushOutOfHidingZone(wendigoBossEnemy.group, BOSS_RADIUS);
-      wendigoBossEnemy.group.position.x = THREE.MathUtils.clamp(wendigoBossEnemy.group.position.x, -405, 405);
-      wendigoBossEnemy.group.position.z = THREE.MathUtils.clamp(wendigoBossEnemy.group.position.z, -405, 405);
+      wendigoBossEnemy.group.position.x = THREE.MathUtils.clamp(wendigoBossEnemy.group.position.x, -1172, 1172);
+      wendigoBossEnemy.group.position.z = THREE.MathUtils.clamp(wendigoBossEnemy.group.position.z, -1172, 1172);
       resolveWallCollisions(wendigoBossEnemy.group.position, BOSS_RADIUS, true);
       wendigoBossEnemy.group.position.y =
         getTerrainHeight(wendigoBossEnemy.group.position.x, wendigoBossEnemy.group.position.z) + 0.04;
