@@ -1835,7 +1835,7 @@ export function initMMOAndCoopSystem(ctx) {
     const cx = w * 0.5;
     const cy = h * 0.5;
     const r = cx - 6;
-    const radarRange = 235; // meter i den utvidede spillverdenen
+    const radarRange = 285; // meter i 2.4km x 2.4km kontinent-verdenen
 
     minimapCtx.clearRect(0, 0, w, h);
     minimapCtx.save();
@@ -1928,7 +1928,11 @@ export function initMMOAndCoopSystem(ctx) {
       minimapCtx.fillText(st === 'turnin' || st === 'progress' ? '?' : '!', pt.sx, pt.sy);
     }
 
-    // 2b) De 4 nye ytterbyene (Fristeder) og spillerens aktive Leirbål
+    // 2b) De 8 ytterbyene (Fristeder), magiske Veisteiner og spillerens aktive Leirbål
+    const magicSys = ctx.getMagicGraphics ? ctx.getMagicGraphics() : null;
+    if (magicSys && magicSys.drawWaystonesOnMinimap) {
+      magicSys.drawWaystonesOnMinimap(minimapCtx, toRadar);
+    }
     const expRadar = ctx.getExpansion ? ctx.getExpansion() : null;
     if (expRadar && expRadar.drawExpansionOnMinimap) {
       expRadar.drawExpansionOnMinimap(minimapCtx, toRadar);
